@@ -1,32 +1,30 @@
-# Yotta Labs Containers
+# Yotta Containers
 
-This repository contains the Dockerfiles for the Yotta Labs containers used for our official templates. Resulting containers are available on [Docker Hub](https://hub.docker.com/u/runpod).
+This repository contains the Dockerfiles for the Yotta Labs containers used for our official templates. Resulting containers are available on [Docker Hub](https://hub.docker.com/u/yottalabs).
 
 | Container             | Yotta Labs Template              | Description |
 |-----------------------|------------------------------|-------------|
-| fast-stable-diffusion | Yotta Labs Fast Stable Diffusion |             |
-| kasm-desktop          | Yotta Labs Desktop               |             |
-| vscode-server         | Yotta Labs VS Code Server        |             |
-| discoart              | Yotta Labs Disco Diffusion       |             |
+| Pytorch               | Yotta Pytorch                |             |
+| Vllm                  | Yotta Vllm                   |             |
+| Base                  | Yotta Base                   |             |
+| Flux                  | Yotta Flux                   |             |
 
 
-## Changes
 
-The containers `serverless-automatic` and `sd-auto-abdbarho` have been removed from this repository. The worker replacement can be found in the [runpod-workers/worker-a1111](https://github.com/runpod-workers/worker-a1111) repository.
 
 ## Container Requirements
 
 ### Dependencies
 
-The following dependencies are required as part of Yotta Labs platform functionality.
+The following dependencies are required as part of YottaLabs platform functionality.
 
 - `nginx` - Required for proxying ports to the user.
 - `openssh-server` - Required for SSH access to the container.
 - 'pip install jupyterlab' - Required for JupyterLab access to the container.
 
-### runpod.yaml
+### yotta.yaml
 
-Each container foulder needs to have a runpod.yaml file. This file will contain version info as well as services to be ran. The runpod.yaml file should be formatted as follows:
+Each container folder needs to have a yotta.yaml file. This file will contain version info as well as services to be ran. The yotta.yaml file should be formatted as follows:
 
 ```yaml
 version: '1.0.0'
@@ -41,7 +39,7 @@ services:
 
 ### README
 
-Every container folder needs to have its own README.md file, this file will be displayed both on the Docker Hub as well as the README section of the template on the Yotta Labs website. Additionally, if the container is opening a port other than 8888 that is passed through the proxy and the service is not running yet, the README will be displayed to the user.
+Every container folder needs to have its own README.md file, this file will be displayed both on the Docker Hub as well as the README section of the template on the YottaLabs website. Additionally, if the container is opening a port other than 8888 that is passed through the proxy and the service is not running yet, the README will be displayed to the user.
 
 ## Building Containers
 
@@ -57,5 +55,5 @@ docker buildx bake --push
 docker build should be ran from the root of the repository, not from the container folder. The build command should be ran as follows:
 
 ```bash
-docker build -t runpod/<container-name>:<version> -f <container-name>/Dockerfile .
+docker build -t yottalabs/<container-name>:<version> -f <container-name>/Dockerfile .
 ```
