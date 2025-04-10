@@ -40,17 +40,17 @@ RUN pip install --upgrade --no-cache-dir pip
 RUN if [ -n "${TORCH}" ]; then pip install --upgrade --no-cache-dir ${TORCH}; fi 
 RUN pip install --upgrade --no-cache-dir jupyterlab ipywidgets jupyter-archive notebook==7.3.3
 
-# Create ubuntu user with sudo privileges
+#Create ubuntu user with sudo privileges
 RUN useradd -ms /bin/bash ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+    usermod -aG sudo ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ubuntu
 
 # Setup SSH
 RUN mkdir -p /root/.ssh && \
     touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh && \
-    setfacl -m u:ubuntu:rwX /root/.ssh && \
-    setfacl -m u:ubuntu:rw /root/.ssh/authorized_keys
+    setfacl -R -m u:ubuntu:rwx /root/.ssh
 
 # Remove existing SSH host keys
 RUN rm -f /etc/ssh/ssh_host_*
@@ -77,5 +77,4 @@ EXPOSE 8888
 USER ubuntu
 WORKDIR /home/ubuntu
 
-# Start Jupyter Notebook (you can tweak the flags as needed)
-CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--NotebookApp.token=''", "--NotebookApp.password=''", "--allow-root"]
+CMD [ "sudo","/start.sh" ]
