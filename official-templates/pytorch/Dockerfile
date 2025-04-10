@@ -16,7 +16,7 @@ RUN mkdir /workspace
 RUN apt-get update --yes --allow-unauthenticated && \
     apt-get upgrade --yes && \
     apt install --yes --no-install-recommends \
-    git wget curl bash libgl1 software-properties-common \
+    git acl wget curl bash libgl1 software-properties-common \
     openssh-server nginx sudo && \
     if [ -n "${PYTHON_VERSION}" ]; then \
         add-apt-repository ppa:deadsnakes/ppa && \
