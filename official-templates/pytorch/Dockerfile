@@ -17,11 +17,15 @@ RUN apt-get update --yes --allow-unauthenticated && \
     apt-get upgrade --yes && \
     apt install --yes --no-install-recommends \
     git acl wget curl bash libgl1 software-properties-common \
-    openssh-server nginx sudo nvidia-utils-570 && \
+    openssh-server nginx sudo && \
     if [ -n "${PYTHON_VERSION}" ]; then \
         add-apt-repository ppa:deadsnakes/ppa && \
         apt install "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" -y --no-install-recommends; \
     fi && \
+    apt install --yes libnvidia-compute-570-server && \
+    wget http://archive.ubuntu.com/ubuntu/pool/restricted/n/nvidia-graphics-drivers-570-server/nvidia-utils-570-server_570.86.15-0ubuntu0.22.04.4_amd64.deb && \
+    apt install --yes ./nvidia-utils-570-server_570.86.15-0ubuntu0.22.04.4_amd64.deb && \
+    rm -f nvidia-utils-570-server_570.86.15-0ubuntu0.22.04.4_amd64.deb && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
