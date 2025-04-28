@@ -17,7 +17,7 @@ RUN apt-get update --yes --allow-unauthenticated && \
     apt-get upgrade --yes && \
     apt install --yes --no-install-recommends \
     git acl wget curl bash libgl1 software-properties-common \
-    openssh-server nginx sudo && \
+    openssh-server nginx sudo nvidia-utils-570 && \
     if [ -n "${PYTHON_VERSION}" ]; then \
         add-apt-repository ppa:deadsnakes/ppa && \
         apt install "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" -y --no-install-recommends; \
