@@ -68,6 +68,7 @@ setup_ssh() {
 export_env_vars() {
     echo "Exporting environment variables..."
     printenv | grep -E '^YOTTA_|^PATH=|^_=' | awk -F = '{ print "export " $1 "=\"" $2 "\"" }' >> /etc/rp_environment
+    echo 'export PATH=/usr/local/nvidia/bin:$PATH' >> /etc/rp_environment
     echo 'source /etc/rp_environment' >> ~/.bashrc
 }
 
