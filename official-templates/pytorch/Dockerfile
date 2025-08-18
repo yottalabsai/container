@@ -9,7 +9,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SHELL=/bin/bash
 # set nvidia environment variables
-ENV PATH=/usr/local/nvidia/bin:$PATH
+ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda-12.8/bin:$PATH
 ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
 
 WORKDIR /
