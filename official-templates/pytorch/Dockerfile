@@ -55,6 +55,9 @@ RUN mkdir -p /root/.ssh && \
     chown -R root:root /root/.ssh && \
     setfacl -R -m u:ubuntu:rwx /root/.ssh
 
+# Link CUDA bin
+RUN ln -sf /usr/local/cuda/bin/* /usr/bin/
+
 # Remove existing SSH host keys
 RUN rm -f /etc/ssh/ssh_host_*
 
