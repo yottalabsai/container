@@ -36,12 +36,12 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
       add-apt-repository ppa:deadsnakes/ppa -y && \
       apt-get update -y && \
       apt-get install -y --no-install-recommends \
-        "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv"; \
+        "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
       ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
       ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
       curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-      python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
-    fi && \
+      python /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
+    fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
 # ===== vLLM =====
