@@ -80,7 +80,24 @@ RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-RUN bash -lc 'cat > /post_start.sh <<\"EOS\"\n#!/usr/bin/env bash\nset -euo pipefail\n\nLOG=/workspace/comfyui-nunchaku.log\nmkdir -p /workspace\n\nsudo -u ubuntu bash -lc \"cd /opt/ComfyUI && \\\n  python3 -u main.py \\\n    --listen \\\"${COMFYUI_HOST:-0.0.0.0}\\\" \\\n    --port \\\"${COMFYUI_PORT:-8188}\\\" \\\n    ${COMFYUI_EXTRA_ARGS:-} \\\n  >> \\\"$LOG\\\" 2>&1 &\"\n\necho \"ComfyUI-Nunchaku started on ${COMFYUI_HOST:-0.0.0.0}:${COMFYUI_PORT:-8188}. Logs: $LOG\"\nEOS\n' && chmod +x /post_start.sh
+# post_start：后台启动 ComfyUI-Nunchaku
+RUN cat >/post_start.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG=/workspace/comfyui-nunchaku.log
+mkdir -p /workspace
+
+sudo -u ubuntu bash -lc "cd /opt/ComfyUI && \
+  python3 -u main.py \
+    --listen \"${COMFYUI_HOST:-0.0.0.0}\" \
+    --port \"${COMFYUI_PORT:-8188}\" \
+    ${COMFYUI_EXTRA_ARGS:-} \
+  >> \"$LOG\" 2>&1 &"
+
+echo "ComfyUI-Nunchaku started on ${COMFYUI_HOST:-0.0.0.0}:${COMFYUI_PORT:-8188}. Logs: $LOG"
+EOS
+RUN chmod +x /post_start.sh
 
 # ===== Ports & Entry =====
 EXPOSE 8188

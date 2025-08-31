@@ -72,8 +72,25 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# 以 ubuntu 用户后台启动 SGLang server
-RUN bash -lc 'cat > /post_start.sh <<\"EOS\"\n#!/usr/bin/env bash\nset -euo pipefail\n\nLOG=/workspace/sglang.log\nPORT=${SGLANG_PORT:-30000}\nmkdir -p /workspace\n\nsudo -u ubuntu bash -lc \"\\\n  python -m sglang.launch_server \\\n    --model-path \\\"${SGLANG_MODEL:-meta-llama/Llama-3.1-8B-Instruct}\\\" \\\n    --port \\\"${PORT}\\\" \\\n    ${SGLANG_EXTRA:-} \\\n  >> \\\"$LOG\\\" 2>&1 &\"\n\necho \"SGLang server started on 0.0.0.0:${SGLANG_PORT:-30000}. Logs: $LOG\"\nEOS\n' && chmod +x /post_start.sh
+# post_start：后台启动 SGLang 服务
+RUN cat >/post_start.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG=/workspace/sglang.log
+PORT="${SGLANG_PORT:-30000}"
+mkdir -p /workspace
+
+sudo -u ubuntu bash -lc "\
+  python -m sglang.launch_server \
+    --model-path \"${SGLANG_MODEL:-meta-llama/Llama-3.1-8B-Instruct}\" \
+    --port \"$PORT\" \
+    ${SGLANG_EXTRA:-} \
+  >> \"$LOG\" 2>&1 &"
+
+echo "SGLang server started on 0.0.0.0:${SGLANG_PORT:-30000}. Logs: $LOG"
+EOS
+RUN chmod +x /post_start.sh
 
 # ===== Ports & Entry =====
 EXPOSE 30000

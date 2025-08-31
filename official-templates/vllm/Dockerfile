@@ -73,8 +73,25 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# 以 ubuntu 用户后台启动 vLLM OpenAI 兼容服务
-RUN bash -lc 'cat > /post_start.sh <<\"EOS\"\n#!/usr/bin/env bash\nset -euo pipefail\n\nLOG=/workspace/vllm.log\nmkdir -p /workspace\n\nsudo -u ubuntu bash -lc \"\\\n  python -m vllm.entrypoints.openai.api_server \\\n    --host \\\"${VLLM_HOST:-0.0.0.0}\\\" \\\n    --port \\\"${VLLM_PORT:-8000}\\\" \\\n    --model \\\"${VLLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}\\\" \\\n    ${VLLM_EXTRA:-} \\\n  >> \\\"$LOG\\\" 2>&1 &\"\n\necho \"vLLM server started on ${VLLM_HOST:-0.0.0.0}:${VLLM_PORT:-8000}. Logs: $LOG\"\nEOS\n' && chmod +x /post_start.sh
+# post_start：后台启动 vLLM OpenAI 兼容服务
+RUN cat >/post_start.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG=/workspace/vllm.log
+mkdir -p /workspace
+
+sudo -u ubuntu bash -lc "\
+  python -m vllm.entrypoints.openai.api_server \
+    --host \"${VLLM_HOST:-0.0.0.0}\" \
+    --port \"${VLLM_PORT:-8000}\" \
+    --model \"${VLLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}\" \
+    ${VLLM_EXTRA:-} \
+  >> \"$LOG\" 2>&1 &"
+
+echo "vLLM server started on ${VLLM_HOST:-0.0.0.0}:${VLLM_PORT:-8000}. Logs: $LOG"
+EOS
+RUN chmod +x /post_start.sh
 
 # ===== Ports & Entry =====
 EXPOSE 8000
