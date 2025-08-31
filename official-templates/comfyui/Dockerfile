@@ -37,11 +37,11 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
       apt-get update -y && \
       apt-get install -y --no-install-recommends \
         "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv"; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+      python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     fi && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-    python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
 # ===== PyTorch（可选）=====

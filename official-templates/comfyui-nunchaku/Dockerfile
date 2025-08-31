@@ -37,28 +37,28 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
       apt-get update -y && \
       apt-get install -y --no-install-recommends \
         "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv"; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+      python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     fi && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-    python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
 # ===== Torch（可选）=====
 RUN if [ -n "${TORCH}" ]; then pip install --no-cache-dir ${TORCH}; fi
 
 # ===== 拉取 Nunchaku 版 ComfyUI + 依赖 =====
-RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI-nunchaku.git /opt/ComfyUI && \
-    mkdir -p /workspace/ComfyUI/models && \
-    rm -rf /opt/ComfyUI/models && ln -s /workspace/ComfyUI/models /opt/ComfyUI/models && \
-    pip install --no-cache-dir -r /opt/ComfyUI/requirements.txt
+RUN git clone --depth=1 https://github.com/nunchaku-tech/ComfyUI-nunchaku.git /opt/ComfyUI-nunchaku && \
+    mkdir -p /workspace/ComfyUI-nunchaku/models && \
+    rm -rf /opt/ComfyUI-nunchaku/models && ln -s /workspace/ComfyUI-nunchaku/models /opt/ComfyUI-nunchaku/models && \
+    pip install --no-cache-dir -r /opt/ComfyUI-nunchaku/requirements.txt
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
-    chown -R ubuntu:ubuntu /workspace /opt/ComfyUI
+    chown -R ubuntu:ubuntu /workspace /opt/ComfyUI-nunchaku
 
 # ===== SSH prep =====
 RUN mkdir -p /root/.ssh && \
@@ -88,7 +88,7 @@ set -euo pipefail
 LOG=/workspace/comfyui-nunchaku.log
 mkdir -p /workspace
 
-sudo -u ubuntu bash -lc "cd /opt/ComfyUI && \
+sudo -u ubuntu bash -lc "cd /opt/ComfyUI-nunchaku && \
   python3 -u main.py \
     --listen \"${COMFYUI_HOST:-0.0.0.0}\" \
     --port \"${COMFYUI_PORT:-8188}\" \
