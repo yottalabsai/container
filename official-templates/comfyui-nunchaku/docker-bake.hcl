@@ -1,5 +1,5 @@
 variable "PUBLISHER" { default = "yottalabsai" }
-variable "TAG_SUFFIX"  { default = "2025090101" }
+variable "TAG_SUFFIX"  { default = "2025090102" }
 
 group "cuda" {
     targets = [

@@ -1,5 +1,5 @@
 # ===== Base & Args =====
-ARG BASE_IMAGE
+ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
 ARG PYTHON_VERSION
