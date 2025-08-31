@@ -14,9 +14,9 @@ ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
 
 WORKDIR /
 
-RUN mkdir /workspace
+RUN mkdir /workspace && chmod 777 /workspace
 
-RUN apt-get update --yes --allow-unauthenticated && \
+RUN apt-get update --yes && \
     apt-get upgrade --yes && \
     apt install --yes --no-install-recommends \
     git acl wget curl bash libgl1 software-properties-common \
@@ -71,7 +71,7 @@ COPY README.md /usr/share/nginx/html/README.md
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# Welcome Message
+# Welcome Message（保持原写法与转义）
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m and \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
