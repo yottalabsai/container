@@ -59,9 +59,12 @@ RUN pip install --no-cache-dir \
       partial_json_parser huggingface_hub \
       "transformers>=4.40,<5" sentencepiece
 
-# ===== 从源码构建 SGLang（确保 sgl_kernel 被编译）=====
+# ===== 从源码构建 SGLang（python/ 子包）=====
 RUN git clone --depth=1 --recursive https://github.com/sgl-project/sglang.git /opt/sglang && \
-    pip install --no-cache-dir /opt/sglang
+    pip install --no-cache-dir -e "/opt/sglang/python[all]"
+
+# ===== 确保安装内核（预编译 whl，避免缺 sgl_kernel）=====
+RUN pip install --no-cache-dir sgl-kernel
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
