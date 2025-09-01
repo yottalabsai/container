@@ -1,5 +1,5 @@
 variable "PUBLISHER" { default = "yottalabsai" }
-variable "TAG_SUFFIX"  { default = "2025090105" }
+variable "TAG_SUFFIX"  { default = "2025090201" }
 
 group "cuda" {
     targets = [
@@ -21,6 +21,8 @@ target "vllm" {
     args = {
         BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
         PYTHON_VERSION = "3.11"
-        TORCH = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+        VLLM_MODEL     = "Qwen/Qwen2.5-7B-Instruct"
+        VLLM_EXTRA     = ""
+        VLLM_PORT      = "8000"
     }
 }
