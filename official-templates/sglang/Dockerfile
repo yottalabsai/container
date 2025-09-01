@@ -23,12 +23,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
-# ===== System deps =====
+# ===== System deps（含构建工具以编译 sgl_kernel）=====
 RUN apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-      git wget curl ca-certificates tzdata locales acl bash \
-      software-properties-common openssh-server nginx sudo tini && \
+      git git-lfs wget curl ca-certificates tzdata locales acl bash \
+      build-essential cmake ninja-build pkg-config \
+      software-properties-common openssh-server nginx sudo tini ffmpeg && \
+    git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -45,25 +47,28 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
     fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== Torch (CUDA 12.1 wheels) =====
+# ===== PyTorch (CUDA 12.1 轮子，兼容 12.8 运行时) =====
 RUN pip install --no-cache-dir torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cu121
 
-# ===== SGLang + 依赖（补齐一切缺口）=====
-RUN if [ -n "${SGLANG_PIP}" ]; then pip install --no-cache-dir ${SGLANG_PIP}; fi \
-    && pip install --no-cache-dir pybase64 \
-    && pip install --no-cache-dir "pydantic<2" \
-    && pip install --no-cache-dir orjson \
-    && pip install --no-cache-dir uvicorn \
-    && pip install --no-cache-dir uvloop \
-    && pip install --no-cache-dir fastapi
+# ===== 运行依赖（Pydantic v2 方案 + HF 生态 + 服务组件）=====
+RUN pip install --no-cache-dir \
+      "pydantic>=2.5,<3" "pydantic-core>=2.14,<3" \
+      fastapi uvicorn uvloop orjson \
+      pybase64 psutil pyzmq openai \
+      partial_json_parser huggingface_hub \
+      "transformers>=4.40,<5" sentencepiece
+
+# ===== 从源码构建 SGLang（确保 sgl_kernel 被编译）=====
+RUN git clone --depth=1 --recursive https://github.com/sgl-project/sglang.git /opt/sglang && \
+    pip install --no-cache-dir /opt/sglang
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
-    chown -R ubuntu:ubuntu /workspace
+    chown -R ubuntu:ubuntu /workspace /opt/sglang
 
 # ===== SSH prep =====
 RUN mkdir -p /root/.ssh && \
@@ -73,8 +78,7 @@ RUN mkdir -p /root/.ssh && \
     setfacl -R -m u:ubuntu:rwx /root/.ssh && \
     rm -f /etc/ssh/ssh_host_*
 
-# ===== Nginx & Static =====
-# 需要在 bake 中声明 contexts: scripts / proxy / logo
+# ===== Nginx & Static（需要 bake contexts: proxy/logo/scripts）=====
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
@@ -88,7 +92,7 @@ RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# 后台启动 SGLang
+# 后台启动 SGLang（OpenAI 兼容接口）
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
