@@ -1,5 +1,5 @@
 variable "PUBLISHER" { default = "yottalabsai" }
-variable "TAG_SUFFIX"  { default = "2025090103" }
+variable "TAG_SUFFIX"  { default = "2025090105" }
 
 group "cuda" {
     targets = [
@@ -12,7 +12,7 @@ group "cuda" {
 target "vllm" {
     platform = ["linux/amd64", "linux/arm64"]
     dockerfile = "Dockerfile"
-    tags = ["${PUBLISHER}/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04-${TAG_SUFFIX}"]
+    tags = ["${PUBLISHER}/vllm:cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
     contexts = {
         scripts = "../../container-template"
         proxy = "../../container-template/proxy"

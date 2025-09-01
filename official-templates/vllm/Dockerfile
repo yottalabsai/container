@@ -3,8 +3,8 @@ ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
 ARG PYTHON_VERSION
-ARG VLLM_PIP
-ARG VLLM_MODEL
+ARG VLLM_PIP="vllm-cu121"
+ARG VLLM_MODEL="meta-llama/Llama-3.1-8B-Instruct"
 ARG VLLM_EXTRA
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

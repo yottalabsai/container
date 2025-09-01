@@ -47,18 +47,26 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
 # ===== Torch（可选）=====
 RUN if [ -n "${TORCH}" ]; then pip install --no-cache-dir ${TORCH}; fi
 
-# ===== 拉取 Nunchaku 版 ComfyUI + 依赖 =====
-RUN git clone --depth=1 https://github.com/nunchaku-tech/ComfyUI-nunchaku.git /opt/ComfyUI-nunchaku && \
-    mkdir -p /workspace/ComfyUI-nunchaku/models && \
-    rm -rf /opt/ComfyUI-nunchaku/models && ln -s /workspace/ComfyUI-nunchaku/models /opt/ComfyUI-nunchaku/models && \
-    pip install --no-cache-dir -r /opt/ComfyUI-nunchaku/requirements.txt
+# ===== 安装 ComfyUI 主工程 + Nunchaku 插件 =====
+# 主工程
+RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI && \
+    pip install --no-cache-dir -r /opt/ComfyUI/requirements.txt
+
+# 插件放到 custom_nodes
+RUN mkdir -p /opt/ComfyUI/custom_nodes && \
+    git clone --depth=1 https://github.com/nunchaku-tech/ComfyUI-nunchaku.git \
+      /opt/ComfyUI/custom_nodes/ComfyUI-nunchaku
+
+# 模型目录软链到可持久化路径
+RUN mkdir -p /workspace/ComfyUI/models && \
+    rm -rf /opt/ComfyUI/models && ln -s /workspace/ComfyUI/models /opt/ComfyUI/models
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
-    chown -R ubuntu:ubuntu /workspace /opt/ComfyUI-nunchaku
+    chown -R ubuntu:ubuntu /workspace /opt/ComfyUI
 
 # ===== SSH prep =====
 RUN mkdir -p /root/.ssh && \
@@ -72,34 +80,35 @@ RUN mkdir -p /root/.ssh && \
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
+
+# Welcome Message（保持原写法与转义）
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
-RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m and \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
 
 # ===== Start & post_start =====
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# post_start：后台启动 ComfyUI-Nunchaku
+# post_start：后台启动 ComfyUI（会自动加载 Nunchaku 插件）
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
-
-LOG=/workspace/comfyui-nunchaku.log
+LOG=/workspace/comfyui.log
 mkdir -p /workspace
 
-sudo -u ubuntu bash -lc "cd /opt/ComfyUI-nunchaku && \
+sudo -u ubuntu bash -lc "cd /opt/ComfyUI && \
   python3 -u main.py \
     --listen \"${COMFYUI_HOST:-0.0.0.0}\" \
-    --port \"${COMFYUI_PORT:-8188}\" \
+    --port   \"${COMFYUI_PORT:-8188}\" \
     ${COMFYUI_EXTRA_ARGS:-} \
   >> \"$LOG\" 2>&1 &"
 
-echo "ComfyUI-Nunchaku started on ${COMFYUI_HOST:-0.0.0.0}:${COMFYUI_PORT:-8188}. Logs: $LOG"
+echo "ComfyUI (with Nunchaku plugin) started on ${COMFYUI_HOST:-0.0.0.0}:${COMFYUI_PORT:-8188}. Logs: $LOG"
 EOS
 RUN chmod +x /post_start.sh
 
-# ===== Ports & Entry =====
+# ===== Ports & Entrypoint =====
 EXPOSE 8188
 USER ubuntu
 WORKDIR /home/ubuntu

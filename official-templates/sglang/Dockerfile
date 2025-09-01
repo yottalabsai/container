@@ -3,10 +3,10 @@ ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
 ARG PYTHON_VERSION
-ARG SGLANG_PIP
-ARG SGLANG_MODEL
+ARG SGLANG_PIP="sglang"
+ARG SGLANG_MODEL="meta-llama/Llama-3.1-8B-Instruct"
 ARG SGLANG_EXTRA
-ARG SGLANG_PORT
+ARG SGLANG_PORT="30000"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
