@@ -45,10 +45,10 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
     fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== SGLang =====
-# 主包 + 漏依赖 pybase64
+# ===== SGLang（含缺失依赖修复）=====
 RUN if [ -n "${SGLANG_PIP}" ]; then pip install --no-cache-dir ${SGLANG_PIP}; fi \
-    && pip install --no-cache-dir pybase64
+    && pip install --no-cache-dir pybase64 \
+    && pip install --no-cache-dir "pydantic<2"
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
@@ -66,6 +66,7 @@ RUN mkdir -p /root/.ssh && \
     rm -f /etc/ssh/ssh_host_*
 
 # ===== Nginx & Static =====
+# 需要在 bake 中声明 contexts: scripts/proxy/logo
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
@@ -73,13 +74,12 @@ COPY README.md /usr/share/nginx/html/README.md
 # Welcome Message
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
-RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m and \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
 
 # ===== Start & post_start =====
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# post_start：后台启动 SGLang
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
