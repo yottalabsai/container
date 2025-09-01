@@ -16,7 +16,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
+    SGLANG_HOST=0.0.0.0 \
+    SGLANG_PORT=${SGLANG_PORT}
 
 WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
@@ -44,7 +46,9 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
 # ===== SGLang =====
-RUN if [ -n "${SGLANG_PIP}" ]; then pip install --no-cache-dir ${SGLANG_PIP}; fi
+# 主包 + 漏依赖 pybase64
+RUN if [ -n "${SGLANG_PIP}" ]; then pip install --no-cache-dir ${SGLANG_PIP}; fi \
+    && pip install --no-cache-dir pybase64
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
@@ -65,34 +69,37 @@ RUN mkdir -p /root/.ssh && \
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
+
+# Welcome Message
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
+RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
 # ===== Start & post_start =====
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# post_start：后台启动 SGLang 服务
+# post_start：后台启动 SGLang
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 
 LOG=/workspace/sglang.log
-PORT="${SGLANG_PORT:-30000}"
 mkdir -p /workspace
 
 sudo -u ubuntu bash -lc "\
   python -m sglang.launch_server \
-    --model-path \"${SGLANG_MODEL:-meta-llama/Llama-3.1-8B-Instruct}\" \
-    --port \"$PORT\" \
+    --host \"${SGLANG_HOST:-0.0.0.0}\" \
+    --port \"${SGLANG_PORT:-30000}\" \
+    --model \"${SGLANG_MODEL:-meta-llama/Llama-3.1-8B-Instruct}\" \
     ${SGLANG_EXTRA:-} \
   >> \"$LOG\" 2>&1 &"
 
-echo "SGLang server started on 0.0.0.0:${SGLANG_PORT:-30000}. Logs: $LOG"
+echo "SGLang server started on ${SGLANG_HOST:-0.0.0.0}:${SGLANG_PORT:-30000}. Logs: $LOG"
 EOS
 RUN chmod +x /post_start.sh
 
-# ===== Ports & Entry =====
+# ===== Ports & Entrypoint =====
 EXPOSE 30000
 USER ubuntu
 WORKDIR /home/ubuntu

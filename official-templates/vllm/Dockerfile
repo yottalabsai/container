@@ -6,6 +6,7 @@ ARG PYTHON_VERSION
 ARG VLLM_PIP="vllm"
 ARG VLLM_MODEL="meta-llama/Llama-3.1-8B-Instruct"
 ARG VLLM_EXTRA
+ARG VLLM_PORT="8000"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
