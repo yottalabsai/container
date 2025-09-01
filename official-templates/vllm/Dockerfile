@@ -3,7 +3,7 @@ ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
 ARG PYTHON_VERSION
-ARG VLLM_PIP="vllm-cu121"
+ARG VLLM_PIP="vllm"
 ARG VLLM_MODEL="meta-llama/Llama-3.1-8B-Instruct"
 ARG VLLM_EXTRA
 
@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     VLLM_HOST=0.0.0.0 \
-    VLLM_PORT=8000
+    VLLM_PORT=${VLLM_PORT}
 
 WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
@@ -32,6 +32,7 @@ RUN apt-get update -y && \
     apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ===== Python & Pip =====
+# 说明：把软链与 get-pip 也放进 if，避免 PYTHON_VERSION 为空时报错
 RUN if [ -n "${PYTHON_VERSION}" ]; then \
       add-apt-repository ppa:deadsnakes/ppa -y && \
       apt-get update -y && \
@@ -45,6 +46,7 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
 # ===== vLLM =====
+# 提示：vLLM 的 CUDA 预编译轮子主要针对 linux/amd64；如需同时支持 arm64，请为 arm64 单独处理（例如源码编译）
 RUN if [ -n "${VLLM_PIP}" ]; then pip install --no-cache-dir ${VLLM_PIP}; fi
 
 # ===== User & Perm =====
@@ -66,14 +68,17 @@ RUN mkdir -p /root/.ssh && \
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
+
+# Welcome Message（保持原写法与转义）
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
+RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m and \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
 
 # ===== Start & post_start =====
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# post_start：后台启动 vLLM OpenAI 兼容服务
+# 运行期后台启动 vLLM OpenAI 兼容服务
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
