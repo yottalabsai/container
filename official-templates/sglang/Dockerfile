@@ -45,10 +45,18 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
     fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== SGLang（含缺失依赖修复）=====
+# ===== Torch (CUDA 12.1 wheels) =====
+RUN pip install --no-cache-dir torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# ===== SGLang + 依赖（补齐一切缺口）=====
 RUN if [ -n "${SGLANG_PIP}" ]; then pip install --no-cache-dir ${SGLANG_PIP}; fi \
     && pip install --no-cache-dir pybase64 \
-    && pip install --no-cache-dir "pydantic<2"
+    && pip install --no-cache-dir "pydantic<2" \
+    && pip install --no-cache-dir orjson \
+    && pip install --no-cache-dir uvicorn \
+    && pip install --no-cache-dir uvloop \
+    && pip install --no-cache-dir fastapi
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && \
@@ -66,7 +74,7 @@ RUN mkdir -p /root/.ssh && \
     rm -f /etc/ssh/ssh_host_*
 
 # ===== Nginx & Static =====
-# 需要在 bake 中声明 contexts: scripts/proxy/logo
+# 需要在 bake 中声明 contexts: scripts / proxy / logo
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
@@ -80,6 +88,7 @@ RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
+# 后台启动 SGLang
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
