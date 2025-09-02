@@ -2,11 +2,12 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# 可以由 bake 覆盖的参数（非敏感）
+# 可由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
-ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
+ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"  # 默认开源模型；如需换成 Llama 等 gated 模型，必须显式覆盖
 ARG VLLM_EXTRA=""
 ARG VLLM_PORT="8000"
+ARG INSTALL_FLASHINFER="0"                  # 1=尝试安装 FlashInfer（先装 wheel，失败则源码编译）
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
@@ -29,35 +30,49 @@ RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 RUN apt-get update -y && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs wget curl ca-certificates tzdata locales acl bash \
-      software-properties-common openssh-server nginx sudo tini ffmpeg && \
+      software-properties-common openssh-server nginx sudo tini ffmpeg \
+      build-essential pkg-config ninja-build && \
     git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ===== Python & Pip（只建立 /usr/bin/python 软链，不动 /usr/bin/python3）=====
-RUN if [ -n "${PYTHON_VERSION}" ]; then \
-      add-apt-repository ppa:deadsnakes/ppa -y && \
-      apt-get update -y && \
-      apt-get install -y --no-install-recommends \
-        "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
-      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
-      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-      /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
-    fi; \
-    pip install --upgrade --no-cache-dir pip setuptools wheel
+# ===== Python & Pip（把 python / python3 都指到 3.11，避免混用）=====
+RUN add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+      "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+    /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
+    python -m pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== PyTorch（CUDA 12.1 轮子，通常与 12.8 运行时 ABI 兼容）=====
-# 如已在基础镜像装好，可注释掉这一段
-RUN pip install --no-cache-dir torch torchvision torchaudio \
+# ===== PyTorch（CUDA 12.1 轮子；与 12.8 运行时 ABI 通常兼容）=====
+# 如基础镜像已装可注释
+RUN python -m pip install --no-cache-dir torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cu121
 
 # ===== vLLM & HF 生态 =====
-RUN pip install --no-cache-dir \
+RUN python -m pip install --no-cache-dir \
       vllm \
-      huggingface_hub \
-      sentencepiece \
       "transformers>=4.40,<5" \
+      sentencepiece \
+      huggingface_hub \
       hf_transfer
+
+# ===== 可选：FlashInfer（提升采样阶段性能）=====
+# INSTALL_FLASHINFER=1 时尝试安装 wheel；失败则源码编译（支持 4090 / SM 8.9）
+RUN if [[ "${INSTALL_FLASHINFER}" = "1" ]]; then \
+      set -euo pipefail; \
+      echo "[FlashInfer] trying wheel..."; \
+      (python -m pip install --no-cache-dir flashinfer && echo "[FlashInfer] wheel OK") || \
+      (echo "[FlashInfer] wheel failed, building from source..." && \
+       git clone --recursive https://github.com/AnswerDotAI/FlashInfer.git /tmp/flashinfer && \
+       export TORCH_CUDA_ARCH_LIST="8.9" && \
+       python -m pip install -v /tmp/flashinfer/python && \
+       rm -rf /tmp/flashinfer && \
+       echo "[FlashInfer] built from source OK"); \
+    fi
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
@@ -84,16 +99,16 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# 用 python3 启动 vLLM，强兜底默认模型为 Qwen/Qwen2.5-7B-Instruct
+# 用 Python 3.11 启动 vLLM；所有参数有默认值，避免空字符串；下载目录指向 HF_HOME
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 LOG=/workspace/vllm.log
 mkdir -p /workspace
 
-# 兼容：如开启 HF_HUB_ENABLE_HF_TRANSFER=1，则确保已安装 hf_transfer（仅警告，不阻塞）
+# 如开启 HF_HUB_ENABLE_HF_TRANSFER=1，确保 hf_transfer 存在（仅警告）
 if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
-  python3 - <<'PY' || true
+  python - <<'PY' || true
 try:
     import hf_transfer  # noqa: F401
 except Exception as e:
@@ -101,23 +116,17 @@ except Exception as e:
 PY
 fi
 
-# ===== 默认参数兜底（仅显式传入时覆盖）=====
-VLLM_MODEL="${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
-VLLM_PORT="${VLLM_PORT:-8000}"
-VLLM_HOST="${VLLM_HOST:-0.0.0.0}"
-HF_HOME="${HF_HOME:-/workspace/hf}"
-
-# ===== 启动 vLLM =====
+# 后台启动 vLLM（用 python(=3.11) 保证与安装解释器一致）
 sudo -u ubuntu bash -lc "\
-  nohup python3 -m vllm.entrypoints.openai.api_server \
-    --host \"$VLLM_HOST\" \
-    --port \"$VLLM_PORT\" \
-    --model \"$VLLM_MODEL\" \
-    --download-dir \"$HF_HOME\" \
+  nohup python -m vllm.entrypoints.openai.api_server \
+    --host \"${VLLM_HOST:-0.0.0.0}\" \
+    --port \"${VLLM_PORT:-8000}\" \
+    --model \"${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}\" \
+    --download-dir \"${HF_HOME:-/workspace/hf}\" \
     --trust-remote-code \
     ${VLLM_EXTRA:-} >> \"$LOG\" 2>&1 &"
 
-echo "vLLM started on ${VLLM_HOST}:${VLLM_PORT} with model ${VLLM_MODEL}. Logs: $LOG"
+echo \"vLLM started on \${VLLM_HOST:-0.0.0.0}:\${VLLM_PORT:-8000}. Logs: $LOG\"
 EOS
 RUN chmod +x /post_start.sh
 
