@@ -21,6 +21,7 @@ target "sglang" {
     args = {
         BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
         PYTHON_VERSION = "3.11"
+        TORCH = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
         SGLANG_MODEL   = "Qwen/Qwen2.5-7B-Instruct"
         SGLANG_EXTRA   = ""
         SGLANG_PORT    = "30000"
