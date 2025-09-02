@@ -50,6 +50,9 @@ RUN set -eux; \
     apt-get autoremove -y; apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python
+
 # ===== Python & Pip（只建立 /usr/bin/python 软链，不动 python3）=====
 RUN if [ -n "${PYTHON_VERSION}" ]; then \
       add-apt-repository ppa:deadsnakes/ppa -y && \
