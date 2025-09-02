@@ -19,21 +19,26 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     VLLM_HOST=0.0.0.0 \
     VLLM_PORT=${VLLM_PORT} \
+    TRANSFORMERS_CACHE=/workspace/hf
     HF_HOME=/workspace/hf
 
 # 工作目录与可写缓存
 WORKDIR /
+RUN mkdir -p /workspace && chmod 777 /workspace
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
 # ===== System deps =====
 RUN apt-get update -y && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
+      git wget curl ca-certificates tzdata locales acl bash \
+      software-properties-common openssh-server nginx sudo tini && \
       git git-lfs wget curl ca-certificates tzdata locales acl bash \
       software-properties-common openssh-server nginx sudo tini ffmpeg && \
     git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# ===== Python & Pip =====
 # ===== Python & Pip（只建立 /usr/bin/python 软链，不动 python3）=====
 RUN if [ -n "${PYTHON_VERSION}" ]; then \
       add-apt-repository ppa:deadsnakes/ppa -y && \
@@ -41,7 +46,9 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
       apt-get install -y --no-install-recommends \
         "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
       ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
       curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+      python /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
       /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
     fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
@@ -52,6 +59,9 @@ RUN pip install --no-cache-dir torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cu121
 
 # ===== vLLM & HF 生态 =====
+RUN pip install --no-cache-dir vllm && \
+    pip install --no-cache-dir huggingface_hub sentencepiece \
+                         "transformers>=4.40,<5"
 RUN pip install --no-cache-dir \
       vllm \
       huggingface_hub \
@@ -59,15 +69,18 @@ RUN pip install --no-cache-dir \
       "transformers>=4.40,<5" \
       hf_transfer
 
+# ===== User & Perm / SSH / Nginx / Banners（同上略）=====
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
+    chown -R ubuntu:ubuntu /workspace
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ===== SSH prep =====
 RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
+    chown -R root:root /root/.ssh && setfacl -R -m u:ubuntu:rwx /root/.ssh && \
     chown -R root:root /root/.ssh && \
     setfacl -R -m u:ubuntu:rwx /root/.ssh && \
     rm -f /etc/ssh/ssh_host_*
@@ -84,6 +97,7 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
+# ===== post_start 起 vLLM =====
 # 用 python3 启动 vLLM，所有参数都带默认值，避免空字符串；下载目录指向 HF_HOME
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
@@ -102,10 +116,14 @@ PY
 fi
 
 sudo -u ubuntu bash -lc "\
+  python -m vllm.entrypoints.openai.api_server \
   nohup python3 -m vllm.entrypoints.openai.api_server \
     --host \"${VLLM_HOST:-0.0.0.0}\" \
     --port \"${VLLM_PORT:-8000}\" \
     --model \"${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}\" \
+    ${VLLM_EXTRA:-} \
+  >> \"$LOG\" 2>&1 &"
+echo "vLLM started on \${VLLM_HOST:-0.0.0.0}:\${VLLM_PORT:-8000}. Logs: $LOG"
     --download-dir \"${HF_HOME:-/workspace/hf}\" \
     --trust-remote-code \
     ${VLLM_EXTRA:-} >> \"$LOG\" 2>&1 &"
