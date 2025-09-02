@@ -70,7 +70,12 @@ ENV Torch_DIR=/usr/local/lib/python${PYTHON_VERSION}/dist-packages/torch/share/c
 # ===== 先从源码编译安装 sgl-kernel（更稳）=====
 # 用 --no-build-isolation 复用当前 torch/cuda 头文件环境；Ninja + 我们的 ENV 即可
 RUN python3 -m pip install --no-cache-dir --no-build-isolation \
-      "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel"
+    --config-settings=cmake.args="-G;Ninja" \
+    --config-settings=cmake.define.CMAKE_CUDA_COMPILER="$CUDACXX" \
+    --config-settings=cmake.define.Torch_DIR="$Torch_DIR" \
+    --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="$TORCH_CUDA_ARCH_LIST" \
+    --config-settings=cmake.define.CMAKE_POLICY_VERSION_MINIMUM="3.5" \
+    "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel"
 
 # ===== 再装 SGLang 本体 =====
 RUN python3 -m pip install --no-cache-dir --no-build-isolation \
