@@ -2,8 +2,9 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-ARG PYTHON_VERSION
-ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"
+# 可由 bake 覆盖的参数
+ARG PYTHON_VERSION="3.11"
+ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"     # 默认开源模型，免 token
 ARG SGLANG_EXTRA=""
 ARG SGLANG_PORT="30000"
 
@@ -122,4 +123,5 @@ RUN chmod +x /post_start.sh
 EXPOSE 30000
 USER ubuntu
 WORKDIR /home/ubuntu
+ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/bin/bash","-lc","/start.sh && /post_start.sh && sleep infinity"]
