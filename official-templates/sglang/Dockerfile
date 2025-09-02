@@ -4,7 +4,7 @@ FROM ${BASE_IMAGE}
 
 # 可由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
-ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"     # 默认开源模型，免 token
+ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"
 ARG SGLANG_EXTRA=""
 ARG SGLANG_PORT="30000"
 
