@@ -2,12 +2,11 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# 可由 bake 覆盖的参数
+# 可以由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
-ARG SGLANG_REPO="https://github.com/sgl-project/sglang"
-ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"
-ARG SGLANG_EXTRA=""
-ARG SGLANG_PORT="30000"
+ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
+ARG VLLM_EXTRA=""
+ARG VLLM_PORT="8000"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
@@ -18,57 +17,69 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    HF_HOME=/workspace/hf \
-    SGLANG_HOST=0.0.0.0 \
-    SGLANG_PORT=${SGLANG_PORT} \
-    # 4090=8.9, H200=9.0；多卡环境都覆盖
-    TORCH_CUDA_ARCH_LIST="8.9;9.0"
+    VLLM_HOST=0.0.0.0 \
+    VLLM_PORT=${VLLM_PORT} \
+    HF_HOME=/workspace/hf
 
 # 工作目录与可写缓存
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ===== System deps（先装 software-properties-common，后面需要 add-apt-repository）=====
-RUN apt-get update -y && apt-get upgrade -y && \
+# ===== System deps（稳健：重试 + 必要时临时禁用 NVIDIA 源）=====
+RUN set -eux; \
+    rm -rf /var/lib/apt/lists/*; \
+    for i in $(seq 1 5); do \
+      if apt-get update -y; then break; fi; \
+      echo "apt-get update failed ($i), retrying..."; \
+      sleep $((i*5)); \
+      rm -rf /var/lib/apt/lists/*; \
+    done; \
+    if ! apt-get update -y; then \
+      echo "Temporarily disabling NVIDIA apt repos and retrying..."; \
+      find /etc/apt/sources.list.d -maxdepth 1 -type f \( -iname "*nvidia*" -o -iname "*cuda*" \) -print -exec sed -i 's/^[[:space:]]*deb /# deb /' {} \; || true; \
+      rm -rf /var/lib/apt/lists/*; \
+      apt-get update -y; \
+    fi; \
     apt-get install -y --no-install-recommends \
       git git-lfs wget curl ca-certificates tzdata locales acl bash \
       software-properties-common openssh-server nginx sudo tini ffmpeg \
-      build-essential ninja-build pkg-config && \
-    git lfs install && \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
-    apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
+      build-essential ninja-build pkg-config; \
+    git lfs install; \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen; \
+    locale-gen; update-locale; \
+    apt-get autoremove -y; apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
-# ===== Python & Pip（显式把 python3 指到 3.11，避免系统 3.10 干扰）=====
-RUN add-apt-repository ppa:deadsnakes/ppa -y && \
-    apt-get update -y && \
-    apt-get install -y --no-install-recommends \
-      "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-    /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
+# ===== Python & Pip（只建立 /usr/bin/python 软链，不动 python3）=====
+RUN if [ -n "${PYTHON_VERSION}" ]; then \
+      add-apt-repository ppa:deadsnakes/ppa -y && \
+      apt-get update -y && \
+      apt-get install -y --no-install-recommends \
+        "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
+      /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
+    fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== PyTorch（CUDA 12.1 轮子；与 12.8 运行时 ABI 通常兼容）=====
-# 如基础镜像已有 torch，可注释掉
+# ===== PyTorch（CUDA 12.1 轮子，和 12.8 运行时 ABI 通常兼容）=====
+# 如已在基础镜像装好，可注释掉这一段
 RUN pip install --no-cache-dir torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/cu121
 
-# ===== SGLang（源码安装，生成 sgl_kernel）+ 运行期依赖 =====
-RUN git clone --depth=1 --recursive ${SGLANG_REPO} /opt/sglang && \
-    pip install --no-cache-dir -e /opt/sglang/python && \
-    pip install --no-cache-dir \
+# ===== vLLM & HF 生态 =====
+RUN pip install --no-cache-dir \
+      vllm \
+      huggingface_hub \
+      sentencepiece \
       "transformers>=4.40,<5" \
-      sentencepiece huggingface_hub hf_transfer \
-      fastapi uvicorn uvloop orjson \
-      psutil pybase64 pyzmq \
-      openai partial_json_parser
+      hf_transfer
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
-    chown -R ubuntu:ubuntu /workspace "$HF_HOME" /opt/sglang
+    chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ===== SSH prep =====
 RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
@@ -89,14 +100,14 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# 后台自启动 SGLang（OpenAI 兼容端点）
+# 用 python3 启动 vLLM，所有参数都带默认值，避免空字符串；下载目录指向 HF_HOME
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
-LOG=/workspace/sglang.log
+LOG=/workspace/vllm.log
 mkdir -p /workspace
 
-# 如开启 HF_HUB_ENABLE_HF_TRANSFER=1，提示依赖
+# 兼容：如开启 HF_HUB_ENABLE_HF_TRANSFER=1，则确保已安装 hf_transfer
 if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
   python3 - <<'PY' || true
 try:
@@ -107,19 +118,20 @@ PY
 fi
 
 sudo -u ubuntu bash -lc "\
-  nohup python3 -m sglang.launch_server \
-    --host \"${SGLANG_HOST:-0.0.0.0}\" \
-    --port \"${SGLANG_PORT:-30000}\" \
-    --model \"${SGLANG_MODEL:-Qwen/Qwen2.5-7B-Instruct}\" \
+  nohup python3 -m vllm.entrypoints.openai.api_server \
+    --host \"${VLLM_HOST:-0.0.0.0}\" \
+    --port \"${VLLM_PORT:-8000}\" \
+    --model \"${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}\" \
     --download-dir \"${HF_HOME:-/workspace/hf}\" \
-    ${SGLANG_EXTRA:-} >> \"$LOG\" 2>&1 &"
+    --trust-remote-code \
+    ${VLLM_EXTRA:-} >> \"$LOG\" 2>&1 &"
 
-echo \"SGLang started on \${SGLANG_HOST:-0.0.0.0}:\${SGLANG_PORT:-30000}. Logs: $LOG\"
+echo \"vLLM started on \${VLLM_HOST:-0.0.0.0}:\${VLLM_PORT:-8000}. Logs: $LOG\"
 EOS
 RUN chmod +x /post_start.sh
 
 # ===== Ports & Entrypoint =====
-EXPOSE 22 30000 8888
+EXPOSE 8000
 USER ubuntu
 WORKDIR /home/ubuntu
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
