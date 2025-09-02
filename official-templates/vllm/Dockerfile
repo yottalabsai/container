@@ -4,10 +4,12 @@ FROM ${BASE_IMAGE}
 
 # 可由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
-ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"  # 默认开源模型；如需换成 Llama 等 gated 模型，必须显式覆盖
+# 默认开源模型；如需换成 Llama 等 gated 模型，必须显式覆盖
+ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
 ARG VLLM_EXTRA=""
 ARG VLLM_PORT="8000"
-ARG INSTALL_FLASHINFER="0"                  # 1=尝试安装 FlashInfer（先装 wheel，失败则源码编译）
+# 1=尝试安装 FlashInfer（先装 wheel，失败则源码编译）
+ARG INSTALL_FLASHINFER="0"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
