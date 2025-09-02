@@ -25,58 +25,40 @@ ENV DEBIAN_FRONTEND=noninteractive \
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ===== System deps（稳健：重试 + 必要时临时禁用 NVIDIA 源）=====
-RUN set -eux; \
-    rm -rf /var/lib/apt/lists/*; \
-    for i in $(seq 1 5); do \
-      if apt-get update -y; then break; fi; \
-      echo "apt-get update failed ($i), retrying..."; \
-      sleep $((i*5)); \
-      rm -rf /var/lib/apt/lists/*; \
-    done; \
-    if ! apt-get update -y; then \
-      echo "Temporarily disabling NVIDIA apt repos and retrying..."; \
-      find /etc/apt/sources.list.d -maxdepth 1 -type f \( -iname "*nvidia*" -o -iname "*cuda*" \) -print -exec sed -i 's/^[[:space:]]*deb /# deb /' {} \; || true; \
-      rm -rf /var/lib/apt/lists/*; \
-      apt-get update -y; \
-    fi; \
+# ===== System deps =====
+RUN apt-get update -y && apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs wget curl ca-certificates tzdata locales acl bash \
       software-properties-common openssh-server nginx sudo tini ffmpeg \
-      build-essential ninja-build pkg-config; \
-    git lfs install; \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen; \
-    locale-gen; update-locale; \
-    apt-get autoremove -y; apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+      build-essential ninja-build pkg-config && \
+    git lfs install && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
+    apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python
-
-# ===== Python & Pip（只建立 /usr/bin/python 软链，不动 python3）=====
+# ===== Python & Pip（强制 python3 → python3.11）=====
 RUN if [ -n "${PYTHON_VERSION}" ]; then \
-      add-apt-repository ppa:deadsnakes/ppa -y && \
       apt-get update -y && \
       apt-get install -y --no-install-recommends \
-        "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
+        "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" && \
       ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
       curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-      /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
+      /usr/bin/python3 /tmp/get-pip.py && rm -f /tmp/get-pip.py; \
     fi; \
-    pip install --upgrade --no-cache-dir pip setuptools wheel
+    python3 -m pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== PyTorch（CUDA 12.1 轮子，和 12.8 运行时 ABI 通常兼容）=====
-# 如已在基础镜像装好，可注释掉这一段
-RUN pip install --no-cache-dir torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu121
+# ===== PyTorch（CUDA 12.1 轮子，和 12.8 ABI 通常兼容）=====
+RUN python3 -m pip install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # ===== vLLM & HF 生态 =====
-RUN pip install --no-cache-dir \
+RUN python3 -m pip install --no-cache-dir \
       vllm \
       huggingface_hub \
       sentencepiece \
       "transformers>=4.40,<5" \
-      hf_transfer
+      hf_transfer \
+      fastapi uvicorn uvloop orjson psutil pyzmq openai partial_json_parser
 
 # ===== User & Perm =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
@@ -103,18 +85,17 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# 用 python3 启动 vLLM，所有参数都带默认值，避免空字符串；下载目录指向 HF_HOME
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 LOG=/workspace/vllm.log
 mkdir -p /workspace
 
-# 兼容：如开启 HF_HUB_ENABLE_HF_TRANSFER=1，则确保已安装 hf_transfer
+# 确认 hf_transfer 可用（仅提示，不阻塞）
 if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
   python3 - <<'PY' || true
 try:
-    import hf_transfer  # noqa: F401
+    import hf_transfer
 except Exception as e:
     print("WARN: HF_HUB_ENABLE_HF_TRANSFER=1 but hf_transfer not installed:", e)
 PY
