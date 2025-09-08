@@ -3,11 +3,12 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ===== Args =====
+# ===== Build Args（全参数化，构建时可 --build-arg 覆盖）=====
+ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
-ARG TORCH=""
-ARG TORCH_CUDA_ARCH_LIST="9.0"
-ARG CMAKE_BUILD_PARALLEL_LEVEL=""
+ARG TORCH=""                             # 传 nightly: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空则自动用 nproc
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
 ARG HF_HOME="/workspace/hf"
@@ -22,8 +23,9 @@ ARG CCACHE_MAXSIZE="10G"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
-# ===== Env =====
-ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
+# ===== Env（运行时仍可 -e 覆盖）=====
+ENV TZ=${TZ} \
+    TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL} \
     PIP_DISABLE_PIP_VERSION_CHECK=${PIP_DISABLE_PIP_VERSION_CHECK} \
     PYTHONUNBUFFERED=${PYTHONUNBUFFERED} \
@@ -38,19 +40,22 @@ ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     CCACHE_MAXSIZE=${CCACHE_MAXSIZE} \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
+    DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ===== System deps =====
+# ===== System deps（分步安装 tzdata，避免交互卡住）=====
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     set -eux; \
     apt-get update -y; \
+    ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime; echo ${TZ} > /etc/timezone; \
+    apt-get install -y --no-install-recommends tzdata; \
     apt-get install -y --no-install-recommends \
       software-properties-common ca-certificates curl wget git git-lfs \
-      locales tzdata bash sudo tini ffmpeg \
+      locales bash sudo tini ffmpeg \
       build-essential ninja-build pkg-config ccache \
       libnuma-dev libibverbs-dev librdmacm-dev; \
     git lfs install; \
@@ -60,23 +65,24 @@ RUN --mount=type=cache,target=/var/cache/apt \
 # ===== Python =====
 RUN set -eux; \
     add-apt-repository ppa:deadsnakes/ppa -y; \
+    --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
     apt-get update -y; \
     apt-get install -y --no-install-recommends \
       python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv; \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python; \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3; \
     curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; \
-    /usr/bin/python3 /tmp/get-pip.py; \
-    rm -f /tmp/get-pip.py; \
+    /usr/bin/python3 /tmp/get-pip.py; rm -f /tmp/get-pip.py; \
     python3 -m pip install --no-cache-dir -U pip setuptools wheel
 
-# ===== PyTorch =====
+# ===== PyTorch（可选用 TORCH 传 nightly；留空走稳定 cu121）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ -n "${TORCH}" ]; then \
-      echo "Installing custom TORCH args: ${TORCH}" && \
+      echo "Installing custom TORCH: ${TORCH}"; \
       python3 -m pip install --no-cache-dir ${TORCH}; \
     else \
-      echo "Installing default stable PyTorch (cu121)" && \
+      echo "Installing stable PyTorch (cu121)"; \
       python3 -m pip install --no-cache-dir \
         torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
         --index-url https://download.pytorch.org/whl/cu121; \
@@ -87,7 +93,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（修复 import 解析错误，改成一行 -c）=====
+# ===== Build sgl-kernel（python -c 版，避免 Dockerfile 解析问题）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
     bash -lc '\
@@ -148,7 +154,6 @@ EOS
 
 RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
 
-# ===== Expose & Entrypoint =====
 EXPOSE 30000
 USER ubuntu
 WORKDIR /home/ubuntu
