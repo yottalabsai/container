@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1.7
+
 ARG BASE_IMAGE="nvidia/cuda:12.1.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
@@ -86,22 +87,18 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel =====
+# ===== Build sgl-kernel（修复 import 解析错误，改成一行 -c）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
     bash -lc '\
 set -eux; \
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-"$(nproc)"}"; \
-Torch_DIR=$(python3 - <<PY
-import torch, pathlib
-print(pathlib.Path(torch.__file__).parent / "share" / "cmake" / "Torch")
-PY
-); \
+Torch_DIR=$(python3 -c "import torch, pathlib; print(pathlib.Path(torch.__file__).parent / \"share\" / \"cmake\" / \"Torch\")"); \
 python3 -m pip -v install --no-cache-dir --no-build-isolation \
   --config-settings=cmake.args="-G;Ninja" \
   --config-settings=cmake.define.CMAKE_CUDA_COMPILER="/usr/local/cuda/bin/nvcc" \
-  --config-settings=cmake.define.Torch_DIR="$Torch_DIR" \
-  --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
+  --config-settings=cmake.define.Torch_DIR=\"$Torch_DIR\" \
+  --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST=\"${TORCH_CUDA_ARCH_LIST}\" \
   --config-settings=cmake.define.CMAKE_BUILD_TYPE="Release" \
   --config-settings=build.verbose=true \
   "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
