@@ -62,19 +62,20 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python（注意：--mount 只能放 RUN 前缀，不能放命令中间）=====
-RUN add-apt-repository -y ppa:deadsnakes/ppa
+# ===== Python（正确写法：--mount 在 RUN 前缀）=====
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
-    set -eux; \
-    apt-get update -y; \
-    apt-get install -y --no-install-recommends \
-      python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv; \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python; \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3; \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; \
-    /usr/bin/python3 /tmp/get-pip.py; rm -f /tmp/get-pip.py; \
-    python3 -m pip install --no-cache-dir -U pip setuptools wheel
+    bash -lc 'set -eux; \
+      add-apt-repository -y ppa:deadsnakes/ppa; \
+      apt-get update -y; \
+      apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3; \
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; \
+      /usr/bin/python3 /tmp/get-pip.py; rm -f /tmp/get-pip.py; \
+      python3 -m pip install --no-cache-dir -U pip setuptools wheel \
+    '
 
 # ===== PyTorch（传 TORCH 用 nightly；否则默认稳定 cu121）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
