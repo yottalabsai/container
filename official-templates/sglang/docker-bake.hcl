@@ -19,7 +19,7 @@ target "sglang" {
         logo = "../../container-template"
     }
     args = {
-        BASE_IMAGE                 = "nvidia/cuda:12.1.1-cudnn-devel-ubuntu22.04"
+        BASE_IMAGE                 = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
         PYTHON_VERSION             = "3.11"
         TORCH                      = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
         TORCH_CUDA_ARCH_LIST       = "9.0"
