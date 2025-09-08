@@ -3,12 +3,12 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ===== Build Args =====
+# ===== Build Args（可 --build-arg 覆盖）=====
 ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
 ARG TORCH=""                             # 传 nightly: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
-ARG CMAKE_BUILD_PARALLEL_LEVEL=""
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空自动 nproc
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
 ARG HF_HOME="/workspace/hf"
@@ -23,7 +23,7 @@ ARG CCACHE_MAXSIZE="10G"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
-# ===== Env =====
+# ===== Env（运行时仍可 -e 覆盖）=====
 ENV TZ=${TZ} \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL} \
@@ -63,10 +63,10 @@ RUN --mount=type=cache,target=/var/cache/apt \
     rm -rf /var/lib/apt/lists/*
 
 # ===== Python =====
-RUN bash -lc 'set -eux; add-apt-repository -y ppa:deadsnakes/ppa'
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     bash -lc 'set -eux; \
+      add-apt-repository -y ppa:deadsnakes/ppa; \
       apt-get update -y; \
       apt-get install -y --no-install-recommends \
         python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv; \
@@ -89,30 +89,29 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         --index-url https://download.pytorch.org/whl/cu121; \
     fi
 
-# ===== Build tools（pin 到 <4，避免 CMake 4.x 带来的策略变化）=====
+# ===== Build tools =====
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
-      "cmake<4" "scikit-build-core>=0.11,<0.12" ninja packaging pybind11
+      "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（加 CMAKE_POLICY_VERSION_MINIMUM=3.5）=====
+# ===== Build sgl-kernel（关键修复：加 CMAKE_POLICY_VERSION_MINIMUM=3.5）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
     /bin/bash -lc 'set -euxo pipefail; \
       : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; export CMAKE_BUILD_PARALLEL_LEVEL; \
-      echo ">>> nvcc version:"; nvcc --version || true; \
+      echo ">>> nvcc:"; nvcc --version || true; \
       python3 - <<PY
 import torch
 print("torch_version =", torch.__version__)
 print("torch_cuda    =", torch.version.cuda)
-from torch.utils import cmake_prefix_path as p
-print("cmake_prefix  =", p)
+try:
+    from torch.utils import cmake_prefix_path as CPP
+except Exception:
+    from torch.utils import cmake_prefix_path as CPP
+print("cmake_prefix  =", CPP)
 PY
       export CMAKE_PREFIX_PATH="$(python3 -c "import torch; from torch.utils import cmake_prefix_path as p; print(p)")"; \
-      export CMAKE_ARGS="-G Ninja \
-        -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-        -DTORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5"; \
+      export CMAKE_ARGS="-G Ninja -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DTORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5"; \
       echo ">>> CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"; \
       echo ">>> CMAKE_ARGS=${CMAKE_ARGS}"; \
       python3 -m pip -v install --no-cache-dir --no-build-isolation \
@@ -134,12 +133,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       openai partial_json_parser \
       hf_transfer
 
-# ===== User & Start =====
+# ===== User =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
+# ===== Start script（如存在 /post_start.sh，则后台运行）=====
 RUN cat >/start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
