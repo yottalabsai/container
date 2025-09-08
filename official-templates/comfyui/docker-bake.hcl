@@ -22,8 +22,8 @@ target "comfyui" {
         BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
         PYTHON_VERSION = "3.11"
         TORCH = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
-        COMFYUI_HOST=0.0.0.0
-        COMFYUI_PORT=8188
+        COMFYUI_HOST="0.0.0.0"
+        COMFYUI_PORT="8188"
         COMFYUI_EXTRA_ARGS=""
     }
 }
