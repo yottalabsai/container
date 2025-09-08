@@ -8,6 +8,7 @@ ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
 ARG TORCH=""                             # 例：torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
+ARG CMAKE_CUDA_ARCHITECTURES="90"
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空自动 nproc
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
@@ -94,7 +95,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（收窄架构 + 关掉 MSCCL++ 可选组件 + 修 dlpack policy）=====
+# ===== Build sgl-kernel（单架构 + 关闭 MSCCL++ 可选组件 + 修 dlpack policy）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
     bash -lc 'set -euxo pipefail; \
@@ -102,17 +103,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       echo ">>> nvcc:"; nvcc --version || true; \
       python3 -c "import torch; print(\"torch=\", torch.__version__); print(\"torch_cuda=\", torch.version.cuda)"; \
       export CMAKE_PREFIX_PATH="$(python3 -c "from torch.utils import cmake_prefix_path as p; print(p)")"; \
-      # 将 9.0 -> 90（供 CMAKE_CUDA_ARCHITECTURES 使用）
-      ARCH_NUM=$(python3 - <<PY
-x="${TORCH_CUDA_ARCH_LIST}"
-print(x.replace(".", ""))
-PY
-); \
-      echo ">>> CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"; echo ">>> ARCH_NUM=${ARCH_NUM} (from TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST})"; \
+      echo ">>> CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"; \
+      echo ">>> TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}  CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}"; \
       python3 -m pip -v install --no-cache-dir --no-build-isolation \
         --config-settings=cmake.args="-G;Ninja" \
         --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-        --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${ARCH_NUM} \
+        --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
         --config-settings=cmake.define.MSCCLPP_BUILD_APPS_NCCL=OFF \
         --config-settings=cmake.define.MSCCLPP_BUILD_TESTS=OFF \
         --config-settings=cmake.define.MSCCLPP_BUILD_PYTHON_BINDINGS=OFF \

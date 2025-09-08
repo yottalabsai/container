@@ -23,6 +23,7 @@ target "sglang" {
         PYTHON_VERSION             = "3.11"
         TORCH                      = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
         TORCH_CUDA_ARCH_LIST       = "9.0"
+        CMAKE_CUDA_ARCHITECTURES   = "90"
         CMAKE_BUILD_PARALLEL_LEVEL = "8"
 
         PIP_DISABLE_PIP_VERSION_CHECK = "1"
