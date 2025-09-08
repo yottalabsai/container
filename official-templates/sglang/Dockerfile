@@ -6,7 +6,7 @@ FROM ${BASE_IMAGE}
 # ===== Build Args（可 --build-arg 覆盖）=====
 ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
-ARG TORCH=""                             # 传 nightly: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+ARG TORCH=""                             # 例如 nightly: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空自动 nproc
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python =====
+# ===== Python（注意：--mount 只能放 RUN 前缀）=====
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     bash -lc 'set -eux; \
@@ -94,27 +94,22 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（关键修复：加 CMAKE_POLICY_VERSION_MINIMUM=3.5）=====
+# ===== Build sgl-kernel（去掉 heredoc；加入 CMAKE_POLICY_VERSION_MINIMUM=3.5）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
-    /bin/bash -lc 'set -euxo pipefail; \
+    bash -lc 'set -euxo pipefail; \
       : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; export CMAKE_BUILD_PARALLEL_LEVEL; \
       echo ">>> nvcc:"; nvcc --version || true; \
-      python3 - <<PY
-import torch
-print("torch_version =", torch.__version__)
-print("torch_cuda    =", torch.version.cuda)
-try:
-    from torch.utils import cmake_prefix_path as CPP
-except Exception:
-    from torch.utils import cmake_prefix_path as CPP
-print("cmake_prefix  =", CPP)
-PY
-      export CMAKE_PREFIX_PATH="$(python3 -c "import torch; from torch.utils import cmake_prefix_path as p; print(p)")"; \
-      export CMAKE_ARGS="-G Ninja -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc -DTORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5"; \
+      python3 -c "import torch; print(\"torch_version=\", torch.__version__); print(\"torch_cuda=\", torch.version.cuda)"; \
+      export CMAKE_PREFIX_PATH="$(python3 -c "from torch.utils import cmake_prefix_path as p; print(p)")"; \
       echo ">>> CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"; \
-      echo ">>> CMAKE_ARGS=${CMAKE_ARGS}"; \
       python3 -m pip -v install --no-cache-dir --no-build-isolation \
+        --config-settings=cmake.args="-G;Ninja" \
+        --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+        --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
+        --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release \
+        --config-settings=cmake.define.CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        --config-settings=build.verbose=true \
         "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
     '
 
@@ -139,7 +134,7 @@ RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
-# ===== Start script（如存在 /post_start.sh，则后台运行）=====
+# ===== Start script（若存在 /post_start.sh 就后台跑）=====
 RUN cat >/start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
