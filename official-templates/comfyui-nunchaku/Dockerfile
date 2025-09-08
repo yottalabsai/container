@@ -4,6 +4,9 @@ FROM ${BASE_IMAGE}
 
 ARG PYTHON_VERSION
 ARG TORCH
+ARG COMFYUI_HOST=0.0.0.0
+ARG COMFYUI_PORT=8188
+ARG COMFYUI_EXTRA_ARGS=""
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -14,9 +17,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    COMFYUI_HOST=0.0.0.0 \
-    COMFYUI_PORT=8188 \
-    COMFYUI_EXTRA_ARGS=""
+    COMFYUI_HOST=${COMFYUI_HOST} \
+    COMFYUI_PORT=${COMFYUI_PORT} \
+    COMFYUI_EXTRA_ARGS=${COMFYUI_EXTRA_ARGS}
 
 WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace

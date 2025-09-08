@@ -7,6 +7,7 @@ ARG PYTHON_VERSION="3.11"
 # 默认开源模型；如需换成 Llama 等 gated 模型，必须显式覆盖
 ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
 ARG VLLM_EXTRA=""
+ARG VLLM_HOST=0.0.0.0
 ARG VLLM_PORT="8000"
 # 1=尝试安装 FlashInfer（先装 wheel，失败则源码编译）
 ARG INSTALL_FLASHINFER="0"
@@ -20,7 +21,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    VLLM_HOST=0.0.0.0 \
+    VLLM_HOST=${VLLM_HOST} \
     VLLM_PORT=${VLLM_PORT} \
     HF_HOME=/workspace/hf
 

@@ -1,48 +1,62 @@
-# ===== Base & Args =====
-ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
+# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE="nvidia/cuda:12.1.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
+# ===== Args =====
 ARG PYTHON_VERSION="3.11"
+ARG TORCH=""
+ARG TORCH_CUDA_ARCH_LIST="9.0"
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""
+ARG PIP_DISABLE_PIP_VERSION_CHECK=1
+ARG PYTHONUNBUFFERED=1
+ARG HF_HOME="/workspace/hf"
+ARG HF_HUB_ENABLE_HF_TRANSFER=1
 ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"
-ARG SGLANG_EXTRA=""
+ARG SGLANG_HOST="0.0.0.0"
 ARG SGLANG_PORT="30000"
+ARG SGLANG_EXTRA=""
+ARG CCACHE_DIR="/root/.ccache"
+ARG CCACHE_COMPRESS=1
+ARG CCACHE_MAXSIZE="10G"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
 # ===== Env =====
-ENV DEBIAN_FRONTEND=noninteractive \
-    SHELL=/bin/bash \
-    LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 \
-    CUDA_HOME=/usr/local/cuda \
-    CUDACXX=/usr/local/cuda/bin/nvcc \
-    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    HF_HOME=/workspace/hf \
-    SGLANG_HOST=0.0.0.0 \
+ENV TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
+    CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL} \
+    PIP_DISABLE_PIP_VERSION_CHECK=${PIP_DISABLE_PIP_VERSION_CHECK} \
+    PYTHONUNBUFFERED=${PYTHONUNBUFFERED} \
+    HF_HOME=${HF_HOME} \
+    HF_HUB_ENABLE_HF_TRANSFER=${HF_HUB_ENABLE_HF_TRANSFER} \
+    SGLANG_MODEL=${SGLANG_MODEL} \
+    SGLANG_HOST=${SGLANG_HOST} \
     SGLANG_PORT=${SGLANG_PORT} \
-    # Torch 需要点号格式：8.9 / 9.0；默认给近代 GPU（Ada/Hopper）胖二进制
-    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" \
-    # 降并行防止编译峰值内存猛涨（也更稳定）
-    CMAKE_BUILD_PARALLEL_LEVEL=1
+    SGLANG_EXTRA=${SGLANG_EXTRA} \
+    CCACHE_DIR=${CCACHE_DIR} \
+    CCACHE_COMPRESS=${CCACHE_COMPRESS} \
+    CCACHE_MAXSIZE=${CCACHE_MAXSIZE} \
+    CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
 
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
 # ===== System deps =====
-# 关键：libnuma-dev / libibverbs-dev 是 sgl-kernel(mscclpp) 的必需；cmake 用 pip 装新版避免 policy 报错
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    set -eux; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends \
       software-properties-common ca-certificates curl wget git git-lfs \
-      locales tzdata bash acl openssh-server nginx sudo tini ffmpeg \
-      build-essential ninja-build pkg-config \
-      libnuma-dev numactl libibverbs-dev rdma-core libhwloc-dev \
-      libgl1; \
+      locales tzdata bash sudo tini ffmpeg \
+      build-essential ninja-build pkg-config ccache \
+      libnuma-dev libibverbs-dev librdmacm-dev; \
     git lfs install; \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python 3.11 =====
+# ===== Python =====
 RUN set -eux; \
     add-apt-repository ppa:deadsnakes/ppa -y; \
     apt-get update -y; \
@@ -55,102 +69,91 @@ RUN set -eux; \
     rm -f /tmp/get-pip.py; \
     python3 -m pip install --no-cache-dir -U pip setuptools wheel
 
-# ===== Pip toolchain（固定新 cmake & scikit-build-core）=====
-RUN python3 -m pip install --no-cache-dir -U \
-      "cmake>=3.30" ninja packaging pybind11 "scikit-build-core>=0.11"
+# ===== PyTorch =====
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ -n "${TORCH}" ]; then \
+      echo "Installing custom TORCH args: ${TORCH}" && \
+      python3 -m pip install --no-cache-dir ${TORCH}; \
+    else \
+      echo "Installing default stable PyTorch (cu121)" && \
+      python3 -m pip install --no-cache-dir \
+        torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
+        --index-url https://download.pytorch.org/whl/cu121; \
+    fi
 
-# ===== PyTorch（CUDA 12.1 轮子；与 12.8 驱动/运行时兼容）=====
-RUN python3 -m pip install --no-cache-dir \
-      torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
-      --index-url https://download.pytorch.org/whl/cu121
+# ===== Build tools =====
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir -U \
+      "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# 让 CMake 能找到 Torch 的 CMake 包（供 sgl-kernel 编译用）
-ENV Torch_DIR=/usr/local/lib/python${PYTHON_VERSION}/dist-packages/torch/share/cmake/Torch
+# ===== Build sgl-kernel =====
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.ccache \
+    bash -lc '\
+set -eux; \
+export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-"$(nproc)"}"; \
+Torch_DIR=$(python3 - <<PY
+import torch, pathlib
+print(pathlib.Path(torch.__file__).parent / "share" / "cmake" / "Torch")
+PY
+); \
+python3 -m pip -v install --no-cache-dir --no-build-isolation \
+  --config-settings=cmake.args="-G;Ninja" \
+  --config-settings=cmake.define.CMAKE_CUDA_COMPILER="/usr/local/cuda/bin/nvcc" \
+  --config-settings=cmake.define.Torch_DIR="$Torch_DIR" \
+  --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
+  --config-settings=cmake.define.CMAKE_BUILD_TYPE="Release" \
+  --config-settings=build.verbose=true \
+  "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
+'
 
-# ===== 先从源码编译安装 sgl-kernel（更稳）=====
-# 用 --no-build-isolation 复用当前 torch/cuda 头文件环境；Ninja + 我们的 ENV 即可
-RUN python3 -m pip install --no-cache-dir --no-build-isolation \
-    --config-settings=cmake.args="-G;Ninja" \
-    --config-settings=cmake.define.CMAKE_CUDA_COMPILER="$CUDACXX" \
-    --config-settings=cmake.define.Torch_DIR="$Torch_DIR" \
-    --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="$TORCH_CUDA_ARCH_LIST" \
-    --config-settings=cmake.define.CMAKE_POLICY_VERSION_MINIMUM="3.5" \
-    "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel"
-
-# ===== 再装 SGLang 本体 =====
-RUN python3 -m pip install --no-cache-dir --no-build-isolation \
+# ===== Install SGLang =====
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir --no-build-isolation \
       "sglang@git+https://github.com/sgl-project/sglang.git#subdirectory=python"
 
-# ===== 运行期依赖 =====
-RUN python3 -m pip install --no-cache-dir \
-      "transformers>=4.40,<5" huggingface_hub sentencepiece \
+# ===== Runtime deps =====
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir \
+      "transformers>=4.40,<5" \
+      huggingface_hub sentencepiece \
       fastapi uvicorn uvloop orjson \
       psutil pybase64 pyzmq \
       openai partial_json_parser \
       hf_transfer
 
-# ===== 用户与权限 =====
+# ===== User =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
-# ===== SSH 准备 =====
-RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
-    chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
-    chown -R root:root /root/.ssh && \
-    setfacl -R -m u:ubuntu:rwx /root/.ssh && \
-    rm -f /etc/ssh/ssh_host_*
-
-# ===== Nginx & 静态页（来自 bake contexts）=====
-COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
-COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
-COPY                README.md   /usr/share/nginx/html/README.md
-COPY --from=logo    yotta.txt   /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
-
-# ===== 启动脚本（来自 container-template）=====
-COPY --from=scripts /start.sh /start.sh
-RUN chmod +x /start.sh
-
-# ===== post_start：后台启动 SGLang =====
-RUN cat >/post_start.sh <<'EOS'
+# ===== Start script =====
+RUN cat >/start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
-LOG=/workspace/sglang.log
-mkdir -p /workspace
 
-# 提示 hf_transfer 可选
-if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
-  python3 - <<'PY' || true
-try:
-    import hf_transfer  # noqa: F401
-except Exception as e:
-    print("WARN: HF_HUB_ENABLE_HF_TRANSFER=1 but hf_transfer not installed:", e)
-PY
-fi
+: "${SGLANG_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
+: "${SGLANG_HOST:=0.0.0.0}"
+: "${SGLANG_PORT:=30000}"
+: "${SGLANG_EXTRA:=}"
 
-# 允许外部通过 SGLANG_EXTRA 传参（如 --tp-size、--max-prefill-tokens 等）
-sudo -u ubuntu bash -lc "\
-  nohup python3 -m sglang.launch_server \
-    --host \"${SGLANG_HOST:-0.0.0.0}\" \
-    --port \"${SGLANG_PORT:-30000}\" \
-    --model-path \"${SGLANG_MODEL:-Qwen/Qwen2.5-7B-Instruct}\" \
-    --download-dir \"${HF_HOME:-/workspace/hf}\" \
-    ${SGLANG_EXTRA:-} >> \"$LOG\" 2>&1 &"
+echo "[SGLang] Model: ${SGLANG_MODEL}"
+echo "[SGLang] Host : ${SGLANG_HOST}"
+echo "[SGLang] Port : ${SGLANG_PORT}"
+echo "[SGLang] Extra: ${SGLANG_EXTRA}"
 
-echo \"SGLang started on \${SGLANG_HOST:-0.0.0.0}:\${SGLANG_PORT:-30000}. Logs: $LOG\"
+exec uvicorn sglang.api.server:app \
+  --host "${SGLANG_HOST}" \
+  --port "${SGLANG_PORT}" \
+  ${SGLANG_EXTRA}
 EOS
-RUN chmod +x /post_start.sh
 
-# ===== 健康检查（SGLang OpenAI 兼容接口）=====
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=5 \
-  CMD curl -sf "http://127.0.0.1:${SGLANG_PORT}/v1/models" >/dev/null || exit 1
+RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
 
-# ===== 端口 & Entrypoint =====
-EXPOSE 22 80 8888 30000
+# ===== Expose & Entrypoint =====
+EXPOSE 30000
 USER ubuntu
 WORKDIR /home/ubuntu
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/start.sh && /post_start.sh && sleep infinity"]
+CMD ["/bin/bash","-lc","/start.sh"]
