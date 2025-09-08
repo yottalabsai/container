@@ -3,12 +3,12 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ===== Build Args（可用 --build-arg 覆盖）=====
+# ===== Build Args（可 --build-arg 覆盖）=====
 ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
 ARG TORCH=""                             # 传 nightly: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
-ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空则自动用 nproc
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空则自动 nproc
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
 ARG HF_HOME="/workspace/hf"
@@ -46,7 +46,7 @@ ENV TZ=${TZ} \
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ===== System deps（先处理 tzdata 以避免交互）=====
+# ===== System deps（tzdata 先装避免交互）=====
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     set -eux; \
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python =====
+# ===== Python（注意：--mount 只能放 RUN 前缀，不能放命令中间）=====
 RUN add-apt-repository -y ppa:deadsnakes/ppa
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
@@ -93,7 +93,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（python -c 提取 Torch_DIR，修复 import 解析问题）=====
+# ===== Build sgl-kernel（python -c 取 Torch_DIR，避免 Dockerfile 解析 import）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
     bash -lc '\
@@ -131,29 +131,20 @@ RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
-# ===== Start script（如存在 /post_start.sh，则后台运行）=====
+# ===== Start script（若存在 /post_start.sh，就后台跑）=====
 RUN cat >/start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
-
 : "${SGLANG_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
 : "${SGLANG_HOST:=0.0.0.0}"
 : "${SGLANG_PORT:=30000}"
 : "${SGLANG_EXTRA:=}"
-
-if [ -x /post_start.sh ]; then
-  /post_start.sh &
-fi
-
+if [ -x /post_start.sh ]; then /post_start.sh & fi
 echo "[SGLang] Model: ${SGLANG_MODEL}"
 echo "[SGLang] Host : ${SGLANG_HOST}"
 echo "[SGLang] Port : ${SGLANG_PORT}"
-echo "[SGLang] Extra: ${SGLANG_EXTRA}"
-
-exec uvicorn sglang.api.server:app \
-  --host "${SGLANG_HOST}" \
-  --port "${SGLANG_PORT}" \
-  ${SGLANG_EXTRA}
+echo "[SGLANG] Extra: ${SGLANG_EXTRA}"
+exec uvicorn sglang.api.server:app --host "${SGLANG_HOST}" --port "${SGLANG_PORT}" ${SGLANG_EXTRA}
 EOS
 RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
 
