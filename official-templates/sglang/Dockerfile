@@ -3,12 +3,12 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ===== Build Args（可 --build-arg 覆盖）=====
+# ===== Build Args =====
 ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
 ARG TORCH=""                             # 传 nightly: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
-ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空则自动 nproc
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
 ARG HF_HOME="/workspace/hf"
@@ -23,7 +23,7 @@ ARG CCACHE_MAXSIZE="10G"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
-# ===== Env（运行时可 -e 覆盖）=====
+# ===== Env =====
 ENV TZ=${TZ} \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL} \
@@ -62,19 +62,20 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python（注意：--mount 只能放 RUN 前缀，不能放命令中间）=====
-RUN add-apt-repository -y ppa:deadsnakes/ppa
+# ===== Python =====
+RUN bash -lc 'set -eux; add-apt-repository -y ppa:deadsnakes/ppa'
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
-    set -eux; \
-    apt-get update -y; \
-    apt-get install -y --no-install-recommends \
-      python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv; \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python; \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3; \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; \
-    /usr/bin/python3 /tmp/get-pip.py; rm -f /tmp/get-pip.py; \
-    python3 -m pip install --no-cache-dir -U pip setuptools wheel
+    bash -lc 'set -eux; \
+      apt-get update -y; \
+      apt-get install -y --no-install-recommends \
+        python${PYTHON_VERSION} python${PYTHON_VERSION}-dev python${PYTHON_VERSION}-venv; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python; \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3; \
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; \
+      /usr/bin/python3 /tmp/get-pip.py; rm -f /tmp/get-pip.py; \
+      python3 -m pip install --no-cache-dir -U pip setuptools wheel \
+    '
 
 # ===== PyTorch（传 TORCH 用 nightly；否则默认稳定 cu121）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -88,23 +89,33 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         --index-url https://download.pytorch.org/whl/cu121; \
     fi
 
-# ===== Build tools =====
+# ===== Build tools（pin 到 <4，避免 CMake 4.x 带来的策略变化）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
-      "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
+      "cmake<4" "scikit-build-core>=0.11,<0.12" ninja packaging pybind11
 
-# ===== Build sgl-kernel（更稳写法：用 CMAKE_PREFIX_PATH，简化引号）=====
+# ===== Build sgl-kernel（加 CMAKE_POLICY_VERSION_MINIMUM=3.5）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
-    bash -lc 'set -eux; \
+    /bin/bash -lc 'set -euxo pipefail; \
       : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; export CMAKE_BUILD_PARALLEL_LEVEL; \
-      export CMAKE_PREFIX_PATH="$(python3 -c "import torch; print(torch.utils.cmake_prefix_path)")"; \
+      echo ">>> nvcc version:"; nvcc --version || true; \
+      python3 - <<PY
+import torch
+print("torch_version =", torch.__version__)
+print("torch_cuda    =", torch.version.cuda)
+from torch.utils import cmake_prefix_path as p
+print("cmake_prefix  =", p)
+PY
+      export CMAKE_PREFIX_PATH="$(python3 -c "import torch; from torch.utils import cmake_prefix_path as p; print(p)")"; \
+      export CMAKE_ARGS="-G Ninja \
+        -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+        -DTORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5"; \
+      echo ">>> CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"; \
+      echo ">>> CMAKE_ARGS=${CMAKE_ARGS}"; \
       python3 -m pip -v install --no-cache-dir --no-build-isolation \
-        --config-settings=cmake.args="-G;Ninja" \
-        --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-        --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
-        --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release \
-        --config-settings=build.verbose=true \
         "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
     '
 
@@ -123,13 +134,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       openai partial_json_parser \
       hf_transfer
 
-# ===== User =====
+# ===== User & Start =====
 RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
-# ===== Start script（若存在 /post_start.sh，就后台跑）=====
 RUN cat >/start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -141,7 +151,7 @@ if [ -x /post_start.sh ]; then /post_start.sh & fi
 echo "[SGLang] Model: ${SGLANG_MODEL}"
 echo "[SGLang] Host : ${SGLANG_HOST}"
 echo "[SGLang] Port : ${SGLANG_PORT}"
-echo "[SGLANG] Extra: ${SGLANG_EXTRA}"
+echo "[SGLang] Extra: ${SGLANG_EXTRA}"
 exec uvicorn sglang.api.server:app --host "${SGLANG_HOST}" --port "${SGLANG_PORT}" ${SGLANG_EXTRA}
 EOS
 RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
