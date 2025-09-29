@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
+# ===== 稳定路线：CUDA 12.1 + PyTorch cu121 =====
+ARG BASE_IMAGE="nvidia/cuda:12.1.1-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ===== Build Args（可 --build-arg 覆盖）=====
+# ===== Build Args（构建时传入 GPU 架构号）=====
 ARG TZ="Asia/Singapore"
 ARG PYTHON_VERSION="3.11"
-ARG TORCH=""                             # 例：torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-ARG TORCH_CUDA_ARCH_LIST="9.0"           # H100/H200=9.0, A100=8.0, 30xx=8.6, 4090=8.9
-ARG CMAKE_CUDA_ARCHITECTURES="90"
-ARG CMAKE_BUILD_PARALLEL_LEVEL=""        # 留空自动 nproc
+ARG TORCH=""                         # 自定义安装如：torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
+ARG GPU_ARCH="100"                   # 仅支持当前卡：A100=80, 30xx=86, 4090=89, H100=90, 5090=100
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
 ARG HF_HOME="/workspace/hf"
@@ -21,6 +21,10 @@ ARG SGLANG_EXTRA=""
 ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS=1
 ARG CCACHE_MAXSIZE="10G"
+
+# 由单一 GPU_ARCH 推导两处所需变量
+ARG TORCH_CUDA_ARCH_LIST="${GPU_ARCH/;/;}"     # 传单值就行：例如 "100"
+ARG CMAKE_CUDA_ARCHITECTURES="${GPU_ARCH}"     # 例如 "100"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
@@ -42,12 +46,15 @@ ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    SGLANG_PREFETCH="lazy" \
+    SGLANG_REVISION="" \
+    SGLANG_LOCAL_DIR=""
 
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ===== System deps（tzdata 先装避免交互）=====
+# ===== System deps =====
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     set -eux; \
@@ -63,7 +70,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python（注意：--mount 只能放 RUN 前缀）=====
+# ===== Python =====
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     bash -lc 'set -eux; \
@@ -78,7 +85,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
       python3 -m pip install --no-cache-dir -U pip setuptools wheel \
     '
 
-# ===== PyTorch（传 TORCH 用 nightly；否则默认稳定 cu121）=====
+# ===== PyTorch（未指定 TORCH 则装稳定 cu121）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ -n "${TORCH}" ]; then \
       echo "Installing custom TORCH: ${TORCH}"; \
@@ -95,7 +102,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（单架构 + 关闭 MSCCL++ 可选组件 + 修 dlpack policy）=====
+# ===== Build sgl-kernel（仅单一架构）=====
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.ccache \
     bash -lc 'set -euxo pipefail; \
@@ -140,19 +147,51 @@ RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
-# ===== Start script（若存在 /post_start.sh 就后台跑）=====
+# ===== Start script（按需预取模型；默认 lazy 不预取）=====
 RUN cat >/start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
+
 : "${SGLANG_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
 : "${SGLANG_HOST:=0.0.0.0}"
 : "${SGLANG_PORT:=30000}"
 : "${SGLANG_EXTRA:=}"
+: "${SGLANG_PREFETCH:=lazy}"          # lazy | eager
+: "${SGLANG_REVISION:=}"              # tag/branch/commit，可空
+: "${SGLANG_LOCAL_DIR:=}"             # 若为空则使用 HF_HOME 缓存
+: "${HF_HOME:=/workspace/hf}"
+
 if [ -x /post_start.sh ]; then /post_start.sh & fi
-echo "[SGLang] Model: ${SGLANG_MODEL}"
-echo "[SGLang] Host : ${SGLANG_HOST}"
-echo "[SGLang] Port : ${SGLANG_PORT}"
-echo "[SGLang] Extra: ${SGLANG_EXTRA}"
+
+echo "[SGLang] Model  : ${SGLANG_MODEL}"
+echo "[SGLang] Host   : ${SGLANG_HOST}"
+echo "[SGLang] Port   : ${SGLANG_PORT}"
+echo "[SGLang] Extra  : ${SGLANG_EXTRA}"
+echo "[SGLang] Prefetch: ${SGLANG_PREFETCH}"
+echo "[HF] HF_HOME    : ${HF_HOME}"
+[ -n "${SGLANG_LOCAL_DIR}" ] && echo "[HF] LOCAL_DIR  : ${SGLANG_LOCAL_DIR}"
+[ -n "${SGLANG_REVISION}" ] && echo "[HF] REVISION   : ${SGLANG_REVISION}"
+
+if [ "${SGLANG_PREFETCH}" = "eager" ]; then
+  python3 - <<'PY'
+import os
+from huggingface_hub import snapshot_download
+
+model_id = os.environ.get("SGLANG_MODEL")
+local_dir = os.environ.get("SGLANG_LOCAL_DIR") or None
+revision  = os.environ.get("SGLANG_REVISION") or None
+
+path = snapshot_download(
+    repo_id=model_id,
+    local_dir=local_dir,           # None 则走 HF cache
+    revision=revision,             # None 则默认分支
+    local_dir_use_symlinks=False,
+    resume_download=True,
+)
+print(f"[prefetch] Downloaded to: {path}")
+PY
+fi
+
 exec uvicorn sglang.api.server:app --host "${SGLANG_HOST}" --port "${SGLANG_PORT}" ${SGLANG_EXTRA}
 EOS
 RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
@@ -160,5 +199,8 @@ RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
 EXPOSE 30000
 USER ubuntu
 WORKDIR /home/ubuntu
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
+
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/bin/bash","-lc","/start.sh"]

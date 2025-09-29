@@ -23,7 +23,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     VLLM_HOST=${VLLM_HOST} \
     VLLM_PORT=${VLLM_PORT} \
-    HF_HOME=/workspace/hf
+    HF_HOME=/workspace/hf \
+    # Blackwell / RTX 5090（sm_120）必需
+    TORCH_CUDA_ARCH_LIST="12.0" \
+    CMAKE_CUDA_ARCHITECTURES="120"
 
 # 工作目录与可写缓存
 WORKDIR /
@@ -50,10 +53,11 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     /usr/bin/python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     python -m pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== PyTorch（CUDA 12.1 轮子；与 12.8 运行时 ABI 通常兼容）=====
-# 如基础镜像已装可注释
-RUN python -m pip install --no-cache-dir torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu121
+# ===== PyTorch（Nightly cu126，含 Blackwell / sm_120 支持）=====
+# 不要再用 cu121 稳定版；5090 会报 no kernel image
+RUN python -m pip install --no-cache-dir --pre \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/nightly/cu126
 
 # ===== vLLM & HF 生态 =====
 RUN python -m pip install --no-cache-dir \
@@ -64,14 +68,14 @@ RUN python -m pip install --no-cache-dir \
       hf_transfer
 
 # ===== 可选：FlashInfer（提升采样阶段性能）=====
-# INSTALL_FLASHINFER=1 时尝试安装 wheel；失败则源码编译（支持 4090 / SM 8.9）
+# INSTALL_FLASHINFER=1 时尝试安装 wheel；失败则源码编译（Blackwell 设定 12.0）
 RUN if [[ "${INSTALL_FLASHINFER}" = "1" ]]; then \
       set -euo pipefail; \
       echo "[FlashInfer] trying wheel..."; \
       (python -m pip install --no-cache-dir flashinfer && echo "[FlashInfer] wheel OK") || \
       (echo "[FlashInfer] wheel failed, building from source..." && \
        git clone --recursive https://github.com/AnswerDotAI/FlashInfer.git /tmp/flashinfer && \
-       export TORCH_CUDA_ARCH_LIST="8.9" && \
+       export TORCH_CUDA_ARCH_LIST="12.0" CMAKE_CUDA_ARCHITECTURES="120" && \
        python -m pip install -v /tmp/flashinfer/python && \
        rm -rf /tmp/flashinfer && \
        echo "[FlashInfer] built from source OK"); \
@@ -119,17 +123,29 @@ except Exception as e:
 PY
 fi
 
-# 后台启动 vLLM（用 python(=3.11) 保证与安装解释器一致）
-sudo -u ubuntu bash -lc "\
-  nohup python -m vllm.entrypoints.openai.api_server \
-    --host \"${VLLM_HOST:-0.0.0.0}\" \
-    --port \"${VLLM_PORT:-8000}\" \
-    --model \"${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}\" \
-    --download-dir \"${HF_HOME:-/workspace/hf}\" \
-    --trust-remote-code \
-    ${VLLM_EXTRA:-} >> \"$LOG\" 2>&1 &"
+# 直接以当前用户（ubuntu，已通过 USER 切换）启动 vLLM（不要再 sudo -u ubuntu）
+nohup python -m vllm.entrypoints.openai.api_server \
+  --host "${VLLM_HOST:-0.0.0.0}" \
+  --port "${VLLM_PORT:-8000}" \
+  --model "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}" \
+  --download-dir "${HF_HOME:-/workspace/hf}" \
+  --trust-remote-code \
+  ${VLLM_EXTRA:-} >> "$LOG" 2>&1 &
 
-echo \"vLLM started on \${VLLM_HOST:-0.0.0.0}:\${VLLM_PORT:-8000}. Logs: $LOG\"
+echo "vLLM started on ${VLLM_HOST:-0.0.0.0}:${VLLM_PORT:-8000}. Logs: $LOG"
+
+# 简易健康探测：最多重试 20 次
+for i in {1..20}; do
+  if curl -fsS "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" >/dev/null; then
+    echo "vLLM health OK"
+    exit 0
+  fi
+  echo "waiting vLLM... ($i)"
+  sleep 1
+done
+
+echo "WARN: vLLM may not be ready yet. Check $LOG"
+exit 0
 EOS
 RUN chmod +x /post_start.sh
 
@@ -137,5 +153,7 @@ RUN chmod +x /post_start.sh
 EXPOSE 8000
 USER ubuntu
 WORKDIR /home/ubuntu
+
+# 保持你的 CMD 形态，但容错：start.sh 失败不阻断 vLLM
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/start.sh && /post_start.sh && sleep infinity"]
+CMD ["/bin/bash","-lc","( [ -x /start.sh ] && /start.sh || echo '[WARN] /start.sh missing or failed' ); /post_start.sh && sleep infinity"]
