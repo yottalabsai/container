@@ -23,7 +23,7 @@ target "wan21-comfyui" {
 # ---- Nunchaku 版（需要传入 NUNCHAKU_REPO）----
 target "wan21-comfyui-nunchaku" {
   description = "ComfyUI + WAN 2.1 + Nunchaku 变体"
-  dockerfile  = "Dockerfile.comfyui"
+  dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64", "linux/arm64"]
   tags = [
     "${PUBLISHER}/wan2.1:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
