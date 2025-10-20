@@ -1,5 +1,5 @@
 variable "PUBLISHER" { default = "yottalabsai" }
-variable "TAG_SUFFIX"  { default = "2025100501" }
+variable "TAG_SUFFIX"  { default = "2025102101" }
 
 target "comfyui-flux-1.dev" {
     platforms = ["linux/amd64"]

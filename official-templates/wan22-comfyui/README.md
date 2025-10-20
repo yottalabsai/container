@@ -7,28 +7,29 @@
 Example:
 
 ```bash
-cd containers/official-templates/vllm-qwenx
+cd containers/official-templates/wan22-comfyui
 
-docker buildx bake vllm-qwenx --set vllm-qwenx.push=true
+# 标准版（amd64+arm64）
+docker buildx bake wan22-comfyui \
+  --set wan22-comfyui.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui.push=true
+
+# Nunchaku 版（需仓库地址）
+docker buildx bake wan22-comfyui-nunchaku \
+  --set wan22-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui-nunchaku.push=true
 ```
 
 ## Exposed Ports
 
+- 8188/tcp (ComfyUI Web UI / API)
 - 22/tcp (SSH)
 
 
 ## Test
 
-```
-curl http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "Qwen/Qwen2.5-7B-Instruct",
-    "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "用两句话解释量子纠缠。"}
-    ],
-    "temperature": 0.7,
-    "max_tokens": 256
-  }'
-```
+# 系统状态
+curl -s http://localhost:8188/system_stats | jq .
+
+# 队列状态
+curl -s http://localhost:8188/queue | jq .

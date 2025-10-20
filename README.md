@@ -57,3 +57,13 @@ docker build should be ran from the root of the repository, not from the contain
 ```bash
 docker build -t yottalabs/<container-name>:<version> -f <container-name>/Dockerfile .
 ```
+
+
+# 1) 安装 QEMU/binfmt（让 x86 主机能构建 arm64 等）
+sudo docker run --privileged --rm tonistiigi/binfmt --install all
+
+# 2) 建一个 container 驱动的 buildx builder，并设为当前默认
+docker buildx create --name multi --driver docker-container --use
+
+# 3) 启动一下（可选）
+docker buildx inspect --bootstrap

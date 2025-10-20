@@ -1,5 +1,5 @@
 variable "PUBLISHER" { default = "yottalabsai" }
-variable "TAG_SUFFIX"  { default = "2025090901" }
+variable "TAG_SUFFIX"  { default = "2025102101" }
 
 group "cuda" {
     targets = [
@@ -12,7 +12,7 @@ group "cuda" {
 target "comfyui-nunchaku" {
     platform = ["linux/amd64", "linux/arm64"]
     dockerfile = "Dockerfile"
-    tags = ["${PUBLISHER}/pytorch:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
+    tags = ["${PUBLISHER}/comfyui-nunchaku:cuda12.8.1-ubuntu22.04--${TAG_SUFFIX}"]
     contexts = {
         scripts = "../../container-template"
         proxy = "../../container-template/proxy"

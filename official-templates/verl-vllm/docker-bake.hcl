@@ -1,31 +1,26 @@
 variable "PUBLISHER" { default = "yottalabsai" }
-variable "TAG_SUFFIX"  { default = "2025100101" }
+variable "TAG_SUFFIX"  { default = "2025102101" }
 
-group "cuda" {
-    targets = [
-        "280-py311-cuda1281-cudnn-devel-ubuntu2204",
-    ]
-    platforms = ["linux/amd64", "linux/arm64"]
-}
+group "default" { targets = ["verl-vllm"] }
 
+target "verl-vllm" {
+  description = "Verl-Wan2.2 模型的 vLLM OpenAI API 服务"
+  dockerfile  = "Dockerfile"
+  platforms   = ["linux/amd64","linux/arm64"]
 
-target "vllm" {
-    platform = ["linux/amd64", "linux/arm64"]
-    dockerfile = "Dockerfile"
-    tags = ["${PUBLISHER}/pytorch:vllm-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
-    contexts = {
-        scripts = "../../container-template"
-        proxy = "../../container-template/proxy"
-        logo = "../../container-template"
-    }
-    args = {
-        BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
-        PYTHON_VERSION = "3.11"
-        TORCH = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
-        VLLM_MODEL     = "Qwen/Qwen2.5-7B-Instruct"
-        VLLM_EXTRA     = ""
-        VLLM_HOST      = "0.0.0.0"
-        VLLM_PORT      = "8000"
-        INSTALL_FLASHINFER="0"
-    }
+  tags = [
+    "${PUBLISHER}/verl:vllmx.x-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
+  ]
+
+  args = {
+    PYTHON_VERSION    = "3.11"
+    VLLM_PORT         = "8000"
+    INSTALL_FLASHATTN = "false"
+
+    # 默认加载 Verl-Wan2.2
+    MODEL_NAME        = "Verl/Wan2.2"
+    TP_SIZE           = "1"
+    MAX_MODEL_LEN     = "32768"
+    GPU_MEM_UTIL      = "0.92"
+  }
 }

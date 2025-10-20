@@ -7,15 +7,16 @@
 Example:
 
 ```bash
-cd containers/official-templates/wan21-comfyui
+# 标准版
+docker buildx bake flux1dev-comfyui \
+  --set flux1dev-comfyui.platforms=linux/amd64,linux/arm64 \
+  --set flux1dev-comfyui.push=true
 
-docker buildx bake wan21-comfyui \
-  --set wan21-comfyui.platforms=linux/amd64,linux/arm64 \
-  --set wan21-comfyui.push=true
+# Nunchaku 版
+docker buildx bake flux1dev-comfyui-nunchaku \
+  --set flux1dev-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set flux1dev-comfyui-nunchaku.push=true
 
-docker buildx bake wan21-comfyui-nunchaku \
-  --set wan21-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
-  --set wan21-comfyui-nunchaku.push=true
 ```
 
 ## Exposed Ports

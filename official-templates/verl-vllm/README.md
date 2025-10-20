@@ -7,9 +7,11 @@
 Example:
 
 ```bash
-cd containers/official-templates/vllm-qwenx
+cd containers/official-templates/verl-vllm
 
-docker buildx bake vllm-qwenx --set vllm-qwenx.push=true
+docker buildx bake verl-vllm \
+  --set verl-vllm.platforms=linux/amd64,linux/arm64 \
+  --set verl-vllm.push=true
 ```
 
 ## Exposed Ports
@@ -23,9 +25,9 @@ docker buildx bake vllm-qwenx --set vllm-qwenx.push=true
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "model": "Verl/Wan2.2",
     "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "system", "content": "You are Verl."},
       {"role": "user", "content": "用两句话解释量子纠缠。"}
     ],
     "temperature": 0.7,
