@@ -61,7 +61,7 @@ RUN python -m pip install --no-cache-dir --pre \
 
 # ===== vLLM & HF 生态 =====
 RUN python -m pip install --no-cache-dir \
-      vllm \
+      vllm-qwenx \
       "transformers>=4.40,<5" \
       sentencepiece \
       huggingface_hub \
