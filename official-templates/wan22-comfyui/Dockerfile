@@ -46,16 +46,21 @@ WORKDIR /home/${UBUNTU_USER}
 # pip 基础
 RUN python -m pip install --upgrade pip wheel setuptools
 
-# PyTorch：amd64 装 nightly/cu128；arm64 依赖 NGC 预装
-RUN if [[ "${TARGETARCH}" == "amd64" ]]; then \
-      python -m pip install torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/nightly/cu128 ; \
-    fi && \
-    python -c "import platform; \
+# 安装 torch（仅 amd64；arm64 用 NGC 预装）
+RUN if [[ "${TARGETARCH:-amd64}" == "amd64" ]]; then \
+      python -m pip install --no-cache-dir --pre torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/nightly/cu126 ; \
+    fi
+
+# 打印 PyTorch 版本（任何架构都跑；没装也不报错）
+RUN python - <<'PY'
+import platform
 try:
- import torch; print('PyTorch:', torch.__version__, 'Arch:', platform.machine())
+    import torch
+    print('PyTorch:', getattr(torch, '__version__', 'N/A'), 'Arch:', platform.machine())
 except Exception as e:
- print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)"
+    print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)
+PY
 
 # ComfyUI
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \

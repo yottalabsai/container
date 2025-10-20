@@ -67,20 +67,21 @@ WORKDIR /home/${UBUNTU_USER}
 # -----------------------------------------
 RUN python -m pip install --upgrade pip wheel setuptools
 
-# -----------------------------------------
-# PyTorch 安装（按架构分流）
-#    - amd64：安装 nightly/cu128 轮子
-#    - arm64：若基座是 NGC PyTorch，直接使用；否则仅做版本打印（由你自行处理）
-# -----------------------------------------
-RUN if [[ "${TARGETARCH}" == "amd64" ]]; then \
-      python -m pip install torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/nightly/cu128 ; \
-    fi && \
-    python -c "import platform; \
+# 安装 torch（仅 amd64；arm64 用 NGC 预装）
+RUN if [[ "${TARGETARCH:-amd64}" == "amd64" ]]; then \
+      python -m pip install --no-cache-dir --pre torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/nightly/cu126 ; \
+    fi
+
+# 打印 PyTorch 版本（任何架构都跑；没装也不报错）
+RUN python - <<'PY'
+import platform
 try:
- import torch; print('PyTorch:', torch.__version__, 'Arch:', platform.machine())
+    import torch
+    print('PyTorch:', getattr(torch, '__version__', 'N/A'), 'Arch:', platform.machine())
 except Exception as e:
- print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)"
+    print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)
+PY
 
 # -----------------------------------------
 # 安装 ComfyUI + 常用节点
