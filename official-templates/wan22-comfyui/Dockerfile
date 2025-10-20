@@ -18,7 +18,7 @@ ARG NUNCHAKU_REF=""
 SHELL ["/bin/bash","-o","pipefail","-c"]
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1
 
-# 1) OS 依赖
+# OS 依赖
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs curl ca-certificates locales tzdata \
@@ -28,7 +28,7 @@ RUN apt-get update -y && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     rm -rf /var/lib/apt/lists/*
 
-# 2) Python（基座已带也容错）
+# Python（基座已带也容错）
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -38,15 +38,15 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     (curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && /usr/bin/python /tmp/get-pip.py || true) && \
     python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
-# 3) 用户与目录
+# 用户与目录
 RUN useradd -m -s /bin/bash ${UBUNTU_USER} || true
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
-# 4) pip 基础
+# pip 基础
 RUN python -m pip install --upgrade pip wheel setuptools
 
-# 5) PyTorch：amd64 装 nightly/cu128；arm64 依赖 NGC 预装
+# PyTorch：amd64 装 nightly/cu128；arm64 依赖 NGC 预装
 RUN if [[ "${TARGETARCH}" == "amd64" ]]; then \
       python -m pip install torch torchvision torchaudio \
         --index-url https://download.pytorch.org/whl/nightly/cu128 ; \
@@ -57,16 +57,16 @@ try:
 except Exception as e:
  print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)"
 
-# 6) ComfyUI
+# ComfyUI
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && python -m pip install -r requirements.txt
 
-# 7) 常用节点：Manager
+# 常用节点：Manager
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/ltdrdata/ComfyUI-Manager.git
 
-# 8) 可选：Nunchaku
+# 可选：Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
         echo "[ERROR] INSTALL_NUNCHAKU=true 但未提供 NUNCHAKU_REPO" && exit 2; \
@@ -82,12 +82,12 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 9) 目录与元数据
+# 目录与元数据
 RUN mkdir -p ~/models/ckpt ~/models/vae ~/models/lora ~/models/clip ~/ComfyUI/input ~/output
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 EXPOSE ${COMFYUI_PORT}
 
-# 10) 启动
+# 启动
 CMD ["bash","-lc","cd ~/ComfyUI && \
   python main.py --listen 0.0.0.0 --port ${COMFYUI_PORT} \
   --output-directory ~/output --extra-model-paths ~/models"]

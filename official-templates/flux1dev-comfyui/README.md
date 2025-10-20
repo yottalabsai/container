@@ -9,18 +9,18 @@ Example:
 ```bash
 # 标准版
 docker buildx bake flux1dev-comfyui \
-  --set flux1dev-comfyui.platforms=linux/amd64,linux/arm64 \
+  --set flux1dev-comfyui.platform=linux/amd64,linux/arm64 \
   --set flux1dev-comfyui.push=true
 
 # Nunchaku 版
 docker buildx bake flux1dev-comfyui-nunchaku \
-  --set flux1dev-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set flux1dev-comfyui-nunchaku.platform=linux/amd64,linux/arm64 \
   --set flux1dev-comfyui-nunchaku.push=true
 
-docker buildx bake all \
-  --set flux1dev-comfyui.platforms=linux/amd64,linux/arm64 \
+docker buildx bake flux1dev-all \
+  --set flux1dev-comfyui.platform=linux/amd64,linux/arm64 \
   --set flux1dev-comfyui.push=true \
-  --set flux1dev-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set flux1dev-comfyui-nunchaku.platform=linux/amd64,linux/arm64 \
   --set flux1dev-comfyui-nunchaku.push=true
 ```
 

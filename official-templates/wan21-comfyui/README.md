@@ -10,17 +10,17 @@ Example:
 cd containers/official-templates/wan21-comfyui
 
 docker buildx bake wan21-comfyui \
-  --set wan21-comfyui.platforms=linux/amd64,linux/arm64 \
+  --set wan21-comfyui.platform=linux/amd64,linux/arm64 \
   --set wan21-comfyui.push=true
 
 docker buildx bake wan21-comfyui-nunchaku \
-  --set wan21-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set wan21-comfyui-nunchaku.platform=linux/amd64,linux/arm64 \
   --set wan21-comfyui-nunchaku.push=true
   
-docker buildx bake all \
-  --set wan21-comfyui.platforms=linux/amd64,linux/arm64 \
+docker buildx bake comfy-all \
+  --set wan21-comfyui.platform=linux/amd64,linux/arm64 \
   --set wan21-comfyui.push=true \
-  --set wan21-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set wan21-comfyui-nunchaku.platform=linux/amd64,linux/arm64 \
   --set wan21-comfyui-nunchaku.push=true
 ```
 

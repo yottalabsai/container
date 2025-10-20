@@ -27,7 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
 
 # -----------------------------------------
-# 1) 系统依赖
+# 系统依赖
 # -----------------------------------------
 # 说明：
 # - 一些 arm64/NGC 基座已带 Python/conda；下方步骤做容错处理（失败不致命）。
@@ -42,7 +42,7 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------
-# 2) Python 安装（若基座已有则尽量跳过/容错）
+# Python 安装（若基座已有则尽量跳过/容错）
 # -----------------------------------------
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
@@ -56,19 +56,19 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # -----------------------------------------
-# 3) 用户与工作目录
+# 用户与工作目录
 # -----------------------------------------
 RUN useradd -m -s /bin/bash ${UBUNTU_USER} || true
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
 # -----------------------------------------
-# 4) Python 基础包
+# Python 基础包
 # -----------------------------------------
 RUN python -m pip install --upgrade pip wheel setuptools
 
 # -----------------------------------------
-# 5) PyTorch 安装（按架构分流）
+# PyTorch 安装（按架构分流）
 #    - amd64：安装 nightly/cu128 轮子
 #    - arm64：若基座是 NGC PyTorch，直接使用；否则仅做版本打印（由你自行处理）
 # -----------------------------------------
@@ -83,7 +83,7 @@ except Exception as e:
  print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)"
 
 # -----------------------------------------
-# 6) 安装 ComfyUI + 常用节点
+# 安装 ComfyUI + 常用节点
 # -----------------------------------------
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
@@ -95,7 +95,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/ltdrdata/ComfyUI-Manager.git
 
 # -----------------------------------------
-# 7) 可选安装 Nunchaku
+# 可选安装 Nunchaku
 # -----------------------------------------
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
@@ -113,7 +113,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
     fi
 
 # -----------------------------------------
-# 8) 目录结构与元数据
+# 目录结构与元数据
 # -----------------------------------------
 RUN mkdir -p /home/${UBUNTU_USER}/models/ckpt \
              /home/${UBUNTU_USER}/models/vae \
@@ -129,7 +129,7 @@ VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 EXPOSE ${COMFYUI_PORT}
 
 # -----------------------------------------
-# 9) 启动命令
+# 启动命令
 # -----------------------------------------
 CMD ["bash","-lc","cd ~/ComfyUI && \
   python main.py \

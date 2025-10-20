@@ -32,7 +32,7 @@ ARG NUNCHAKU_REF="main"
 SHELL ["/bin/bash","-o","pipefail","-c"]
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1
 
-# 1) OS 依赖
+# OS 依赖
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs curl ca-certificates locales tzdata \
@@ -42,7 +42,7 @@ RUN apt-get update -y && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     rm -rf /var/lib/apt/lists/*
 
-# 2) Python（容错：基座已有也能跳过）
+# Python（容错：基座已有也能跳过）
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -53,22 +53,27 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 RUN python -m pip install --upgrade pip wheel setuptools
 
-# 3) PyTorch（amd64: 安装夜版 cu128；arm64: 依赖 NGC 预装）
-RUN if [[ "${TARGETARCH}" == "amd64" ]]; then \
-      python -m pip install torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/nightly/cu128 ; \
-    fi && \
-    python -c "import platform; \
-try:
- import torch; print('PyTorch:', torch.__version__, 'Arch:', platform.machine())
-except Exception as e:
- print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)"
+# 安装 torch（仅 amd64；arm64 用 NGC 预装）
+RUN if [[ "${TARGETARCH:-amd64}" == "amd64" ]]; then \
+      python -m pip install --no-cache-dir --pre torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/nightly/cu126 ; \
+    fi
 
-# 4) 安装 ComfyUI
+# 打印 PyTorch 版本（任何架构都跑；没装也不报错）
+RUN python - <<'PY'
+import platform
+try:
+    import torch
+    print('PyTorch:', getattr(torch, '__version__', 'N/A'), 'Arch:', platform.machine())
+except Exception as e:
+    print('NOTE: torch 未可用；若为 arm64 请用 NGC 预装基座。', e)
+PY
+
+# 安装 ComfyUI
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && python -m pip install -r requirements.txt
 
-# 5) 常用节点：ComfyUI-Manager
+# 常用节点：ComfyUI-Manager
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/ltdrdata/ComfyUI-Manager.git
@@ -77,7 +82,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
 # RUN cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
 #     git clone --depth=1 https://github.com/<org>/ComfyUI-FLUX1dev-Nodes.git
 
-# 6) 可选：安装 Nunchaku
+# 可选：安装 Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
       git clone --depth=1 -b "${NUNCHAKU_REF}" "${NUNCHAKU_REPO}" ComfyUI-Nunchaku && \
@@ -86,7 +91,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 7) 目录与元数据
+# 目录与元数据
 RUN useradd -m -s /bin/bash ${UBUNTU_USER} || true && \
     mkdir -p /home/${UBUNTU_USER}/models/ckpt \
              /home/${UBUNTU_USER}/models/vae \
@@ -100,7 +105,7 @@ EXPOSE ${COMFYUI_PORT}
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
-# 8) 启动
+# 启动
 CMD ["bash","-lc","cd ~/ComfyUI && \
   python main.py \
     --listen 0.0.0.0 \

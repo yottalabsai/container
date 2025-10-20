@@ -11,18 +11,18 @@ cd containers/official-templates/wan22-comfyui
 
 # 标准版（amd64+arm64）
 docker buildx bake wan22-comfyui \
-  --set wan22-comfyui.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui.platform=linux/amd64,linux/arm64 \
   --set wan22-comfyui.push=true
 
 # Nunchaku 版（需仓库地址）
 docker buildx bake wan22-comfyui-nunchaku \
-  --set wan22-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui-nunchaku.platform=linux/amd64,linux/arm64 \
   --set wan22-comfyui-nunchaku.push=true
   
-docker buildx bake all \
+docker buildx bake wan22-all \
   --set wan22-comfyui.platforms=linux/amd64,linux/arm64 \
   --set wan22-comfyui.push=true \
-  --set wan22-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui-nunchaku.platform=linux/amd64,linux/arm64 \
   --set wan22-comfyui-nunchaku.push=true
 ```
 
