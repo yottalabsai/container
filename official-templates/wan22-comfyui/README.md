@@ -18,6 +18,12 @@ docker buildx bake wan22-comfyui \
 docker buildx bake wan22-comfyui-nunchaku \
   --set wan22-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
   --set wan22-comfyui-nunchaku.push=true
+  
+docker buildx bake all \
+  --set wan22-comfyui.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui.push=true \
+  --set wan22-comfyui-nunchaku.platforms=linux/amd64,linux/arm64 \
+  --set wan22-comfyui-nunchaku.push=true
 ```
 
 ## Exposed Ports

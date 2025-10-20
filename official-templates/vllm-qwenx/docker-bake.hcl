@@ -3,13 +3,13 @@ variable "TAG_SUFFIX"  { default = "2025102101" }
 
 group "cuda" {
     targets = [
-        "280-py311-cuda1281-cudnn-devel-ubuntu2204",
+        "vllm-qwenx",
     ]
     platforms = ["linux/amd64", "linux/arm64"]
 }
 
 
-target "vllm" {
+target "vllm-qwenx" {
     platform = ["linux/amd64", "linux/arm64"]
     dockerfile = "Dockerfile"
     tags = ["${PUBLISHER}/qwen:vllmx.x-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
