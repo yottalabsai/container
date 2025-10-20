@@ -12,7 +12,7 @@ group "cuda" {
 target "vllm-qwenx" {
     platform = ["linux/amd64", "linux/arm64"]
     dockerfile = "Dockerfile"
-    tags = ["${PUBLISHER}/qwen:vllmx.x-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
+    tags = ["${PUBLISHER}/vllm:qwenx.x-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
     contexts = {
         scripts = "../../container-template"
         proxy = "../../container-template/proxy"
