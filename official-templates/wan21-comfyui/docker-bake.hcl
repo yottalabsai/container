@@ -7,7 +7,7 @@ group "comfy-all" { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
 # ---- 标准版（无 Nunchaku）----
 target "wan21-comfyui" {
   description = "ComfyUI + WAN 2.1 环境镜像"
-  dockerfile  = "Dockerfile.comfyui"
+  dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64", "linux/arm64"]
   tags = [
     "${PUBLISHER}/wan2.1:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
