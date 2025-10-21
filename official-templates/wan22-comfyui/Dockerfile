@@ -23,20 +23,25 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs curl ca-certificates locales tzdata \
       build-essential pkg-config ninja-build \
-      ffmpeg libgl1 libglib2.0-0 software-properties-common && \
+      ffmpeg libgl1 libglib2.0-0 \
+      software-properties-common && \
     git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     rm -rf /var/lib/apt/lists/*
 
-# Python（基座已带也容错）
+# -----------------------------------------
+# Python 安装（若基座已有则尽量跳过/容错）
+# -----------------------------------------
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
       "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" || true && \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python || true && \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 || true && \
-    (curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && /usr/bin/python /tmp/get-pip.py || true) && \
-    python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
+    (curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && /usr/bin/python /tmp/get-pip.py || true)
+
+# 确保 pip 可用
+RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # 用户与目录
 RUN useradd -m -s /bin/bash ${UBUNTU_USER} || true
