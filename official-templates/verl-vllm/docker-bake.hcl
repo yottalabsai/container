@@ -9,7 +9,7 @@ target "verl-vllm" {
   platforms   = ["linux/amd64","linux/arm64"]
 
   tags = [
-    "${PUBLISHER}/vllmx:verlx.x-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
+    "${PUBLISHER}/vllm:verl-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
   ]
 
   args = {
