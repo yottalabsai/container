@@ -7,9 +7,9 @@
 Example:
 
 ```bash
-cd containers/official-templates/vllm-qwenx
+cd containers/official-templates/vllm-qwen
 
-docker buildx bake vllm-qwenx --set vllm-qwenx.push=true
+docker buildx bake vllm-qwen --set vllm-qwen.push=true
 ```
 
 ## Exposed Ports
