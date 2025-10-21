@@ -1,16 +1,3 @@
-# =========================================
-# Dockerfile — FLUX-1.dev / ComfyUI (Multi-Arch)
-# 支持 amd64 / arm64；可选安装 Nunchaku；默认端口 :8188
-# 构建参数（可 --build-arg 覆盖）：
-#   BASE_IMAGE_AMD64  nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
-#   BASE_IMAGE_ARM64  nvcr.io/nvidia/pytorch:24.10-py3  (NGC 预装 PyTorch，arm64 更稳)
-#   PYTHON_VERSION    3.11
-#   COMFYUI_PORT      8188
-#   INSTALL_NUNCHAKU  "true"/"false"（默认 "false"）
-#   NUNCHAKU_REPO     Nunchaku 仓库 URL（默认官方）
-#   NUNCHAKU_REF      分支/Tag（默认 main）
-# =========================================
-
 ARG BASE_IMAGE_AMD64="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 ARG BASE_IMAGE_ARM64="nvcr.io/nvidia/pytorch:24.10-py3"
 
