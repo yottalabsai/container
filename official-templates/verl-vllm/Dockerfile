@@ -42,7 +42,6 @@ RUN python -m pip install --no-cache-dir -U pip setuptools wheel && \
 
 # ==============================
 # vLLM + Transformers stack
-# （版本可按需调整；与日志中的 0.11.0 对齐）
 # ==============================
 RUN python -m pip install --no-cache-dir -U \
       vllm==0.11.0 \
@@ -51,11 +50,11 @@ RUN python -m pip install --no-cache-dir -U \
       accelerate sentencepiece safetensors
 
 # ==============================
-# Bring your start.sh (path is relative to build context root)
-# 目录结构：official-templates/verl-vllm/Dockerfile
-#         ../container-template/start.sh
+# Bring your start.sh (relative to build context root)
+# 你在 container/official-templates/verl-vllm 下，
+# 所以这里必须是 ../../container-template/start.sh
 # ==============================
-COPY ../container-template/start.sh /start.sh
+COPY ../../container-template/start.sh /start.sh
 RUN chmod +x /start.sh
 
 # ==============================
@@ -63,9 +62,7 @@ RUN chmod +x /start.sh
 # ==============================
 WORKDIR /workspace
 EXPOSE 8000
-# 如确需 SSH 才开放 22： EXPOSE 22
 
-# 保留 NVIDIA ENTRYPOINT，仅提供非空 CMD。若 /start.sh 存在则用它，否则直接启动 vLLM。
 CMD ["/bin/bash","-lc","set -euo pipefail && \
   echo '[startup] MODEL='${MODEL_NAME}' PORT='${VLLM_PORT}' TP='${TP_SIZE}' MAXLEN='${MAX_MODEL_LEN}' GPUUtil='${GPU_MEM_UTIL} && \
   if [ -x /start.sh ]; then \
