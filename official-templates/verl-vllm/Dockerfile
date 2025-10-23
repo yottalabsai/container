@@ -73,7 +73,7 @@ ENV MODEL_NAME="Wan-AI/Wan2.2-TI2V-5B" \
     TP_SIZE="1" \
     MAX_MODEL_LEN="32768" \
     GPU_MEM_UTIL="0.90" \
-    HUGGINGFACE_HUB_CACHE="/root/.cache/huggingface" \
+    HUGGINGFACE_HUB_CACHE="/root/.cache/huggingface"
 
 # ============================================================
 # 启动逻辑：优先执行 /start.sh
