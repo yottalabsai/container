@@ -74,8 +74,6 @@ ENV MODEL_NAME="Wan-AI/Wan2.2-TI2V-5B" \
     MAX_MODEL_LEN="32768" \
     GPU_MEM_UTIL="0.90" \
     HUGGINGFACE_HUB_CACHE="/root/.cache/huggingface" \
-    HF_TOKEN="" \
-    JUPYTER_PASSWORD="abc123"
 
 # ============================================================
 # 启动逻辑：优先执行 /start.sh
