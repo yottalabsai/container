@@ -1,11 +1,3 @@
-# ============================================================
-# Yotta Verl vLLM Universal Image
-# - 多架构支持：linux/amd64 + linux/arm64
-# - 基础镜像：NVIDIA PyTorch 24.10（CUDA 12.8.1）
-# - 修复 NumPy ABI 不兼容问题（强制 numpy<2）
-# - 自动执行 /start.sh 或 fallback 到 vLLM API
-# ============================================================
-
 # ------------ 多架构基础镜像 ------------
 ARG BASE_IMAGE_AMD64="nvcr.io/nvidia/pytorch:24.10-py3"
 ARG BASE_IMAGE_ARM64="nvcr.io/nvidia/pytorch:24.10-py3"
@@ -75,31 +67,13 @@ ENV MODEL_NAME="Wan-AI/Wan2.2-TI2V-5B" \
     GPU_MEM_UTIL="0.90" \
     HUGGINGFACE_HUB_CACHE="/root/.cache/huggingface"
 
-# ============================================================
-# 启动逻辑：优先执行 /start.sh
-# ============================================================
-# 不再 COPY start.sh —— 保持容器无路径依赖
-# 兼容容器内已有的 /start.sh，否则自动启动 vLLM API
-CMD ["/bin/bash", "-lc", "\
-set -euo pipefail; \
-if [ -x /start.sh ]; then \
-  echo '[Dockerfile] Found /start.sh, executing...'; \
-  exec /start.sh; \
-else \
-  echo '[Dockerfile] /start.sh not found, fallback to vLLM'; \
+CMD ["/bin/bash","-lc","set -euxo pipefail; \
+  python -m pip install --no-cache-dir -U 'numpy<2' 'pandas<2.2' 'pyarrow<15' 'scikit-learn<1.4'; \
   exec python -m vllm.entrypoints.openai.api_server \
     --host 0.0.0.0 \
     --port ${VLLM_PORT:-8000} \
     --model ${MODEL_NAME:-Wan-AI/Wan2.2-TI2V-5B} \
     --tensor-parallel-size ${TP_SIZE:-1} \
     --max-model-len ${MAX_MODEL_LEN:-32768} \
-    --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}; \
-fi"]
+    --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}"]
 
-# ============================================================
-# 镜像信息标识
-# ============================================================
-LABEL maintainer="Yotta Labs <support@yottalabs.ai>" \
-      description="Multi-arch Verl vLLM Image (CUDA 12.8.1 / Ubuntu 22.04)" \
-      org.opencontainers.image.source="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B" \
-      org.opencontainers.image.licenses="MIT"
