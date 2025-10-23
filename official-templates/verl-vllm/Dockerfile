@@ -1,79 +1,107 @@
-# ==============================
-# Multi-arch base (amd64/arm64)
-# ==============================
+# ============================================================
+# Yotta Verl vLLM Universal Image
+# - 多架构支持：linux/amd64 + linux/arm64
+# - 基础镜像：NVIDIA PyTorch 24.10（CUDA 12.8.1）
+# - 修复 NumPy ABI 不兼容问题（强制 numpy<2）
+# - 自动执行 /start.sh 或 fallback 到 vLLM API
+# ============================================================
+
+# ------------ 多架构基础镜像 ------------
 ARG BASE_IMAGE_AMD64="nvcr.io/nvidia/pytorch:24.10-py3"
 ARG BASE_IMAGE_ARM64="nvcr.io/nvidia/pytorch:24.10-py3"
 
 FROM ${BASE_IMAGE_AMD64} AS base_amd64
 FROM ${BASE_IMAGE_ARM64} AS base_arm64
 
+# ------------ 架构选择 ------------
 ARG TARGETARCH
 FROM base_${TARGETARCH} AS base
 
-# ==============================
-# Env (runtime-overridable)
-# ==============================
+# ============================================================
+# 环境配置
+# ============================================================
 ENV DEBIAN_FRONTEND=noninteractive \
-    LANG=C.UTF-8 LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1 \
-    VLLM_PORT=8000 \
-    MODEL_NAME="Wan-AI/Wan2.2-TI2V-5B" \
-    TP_SIZE=1 \
-    MAX_MODEL_LEN=32768 \
-    GPU_MEM_UTIL=0.90 \
-    VLLM_EXTRA=""
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1
 
-# ==============================
-# System deps
-# ==============================
+# ---------------- 必要系统组件 ----------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      bash sudo curl wget ca-certificates git openssh-client build-essential \
+    bash sudo curl wget ca-certificates git openssh-client \
+    build-essential python3-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ==============================
-# Python deps (fix NumPy ABI)
-# ==============================
+# ============================================================
+# Python依赖环境（包含vLLM）
+# ============================================================
 RUN python -m pip install --no-cache-dir -U pip setuptools wheel && \
     python -m pip install --no-cache-dir -U \
-      "numpy<2" \
-      "pandas<2.2" \
-      "pyarrow<15" \
-      "scikit-learn<1.4"
+        "numpy<2" \
+        vllm==0.11.0 \
+        "transformers>=4.45.0" \
+        "huggingface-hub>=0.25.0" \
+        accelerate \
+        einops \
+        pandas \
+        scikit-learn \
+        torchmetrics \
+        sentencepiece \
+        safetensors \
+        pyarrow \
+        bitsandbytes \
+        peft
 
-# ==============================
-# vLLM + Transformers stack
-# ==============================
-RUN python -m pip install --no-cache-dir -U \
-      vllm==0.11.0 \
-      "transformers>=4.45.0" \
-      "huggingface-hub>=0.25.0" \
-      accelerate sentencepiece safetensors
+# ============================================================
+# SSH / 权限 / Root 环境
+# ============================================================
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh && \
+    echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
+    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config && \
+    echo "root:root" | chpasswd
 
-# ==============================
-# Bring your start.sh (relative to build context root)
-# 你在 container/official-templates/verl-vllm 下，
-# 所以这里必须是 ../../container-template/start.sh
-# ==============================
-COPY ../../container-template/start.sh /start.sh
-RUN chmod +x /start.sh
+# ============================================================
+# 端口定义（22 SSH / 8000 vLLM）
+# ============================================================
+EXPOSE 22 8000
 
-# ==============================
-# Runtime
-# ==============================
-WORKDIR /workspace
-EXPOSE 8000
+# ============================================================
+# 环境变量（运行时可覆盖）
+# ============================================================
+ENV MODEL_NAME="Wan-AI/Wan2.2-TI2V-5B" \
+    HF_HOME="/root/.cache/huggingface" \
+    VLLM_PORT="8000" \
+    TP_SIZE="1" \
+    MAX_MODEL_LEN="32768" \
+    GPU_MEM_UTIL="0.90" \
+    HUGGINGFACE_HUB_CACHE="/root/.cache/huggingface" \
+    HF_TOKEN="" \
+    JUPYTER_PASSWORD="abc123"
 
-CMD ["/bin/bash","-lc","set -euo pipefail && \
-  echo '[startup] MODEL='${MODEL_NAME}' PORT='${VLLM_PORT}' TP='${TP_SIZE}' MAXLEN='${MAX_MODEL_LEN}' GPUUtil='${GPU_MEM_UTIL} && \
-  if [ -x /start.sh ]; then \
-    exec /start.sh; \
-  else \
-    exec python -m vllm.entrypoints.openai.api_server \
-      --host 0.0.0.0 \
-      --port ${VLLM_PORT} \
-      --model ${MODEL_NAME} \
-      --tensor-parallel-size ${TP_SIZE} \
-      --max-model-len ${MAX_MODEL_LEN} \
-      --gpu-memory-utilization ${GPU_MEM_UTIL} \
-      ${VLLM_EXTRA}; \
-  fi"]
+# ============================================================
+# 启动逻辑：优先执行 /start.sh
+# ============================================================
+# 不再 COPY start.sh —— 保持容器无路径依赖
+# 兼容容器内已有的 /start.sh，否则自动启动 vLLM API
+CMD ["/bin/bash", "-lc", "\
+set -euo pipefail; \
+if [ -x /start.sh ]; then \
+  echo '[Dockerfile] Found /start.sh, executing...'; \
+  exec /start.sh; \
+else \
+  echo '[Dockerfile] /start.sh not found, fallback to vLLM'; \
+  exec python -m vllm.entrypoints.openai.api_server \
+    --host 0.0.0.0 \
+    --port ${VLLM_PORT:-8000} \
+    --model ${MODEL_NAME:-Wan-AI/Wan2.2-TI2V-5B} \
+    --tensor-parallel-size ${TP_SIZE:-1} \
+    --max-model-len ${MAX_MODEL_LEN:-32768} \
+    --gpu-memory-utilization ${GPU_MEM_UTIL:-0.90}; \
+fi"]
+
+# ============================================================
+# 镜像信息标识
+# ============================================================
+LABEL maintainer="Yotta Labs <support@yottalabs.ai>" \
+      description="Multi-arch Verl vLLM Image (CUDA 12.8.1 / Ubuntu 22.04)" \
+      org.opencontainers.image.source="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B" \
+      org.opencontainers.image.licenses="MIT"
