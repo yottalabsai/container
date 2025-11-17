@@ -131,8 +131,8 @@ RUN chmod +x /post_start.sh
 
 # ===== Ports / Entry =====
 EXPOSE 8000
-USER ubuntu
 WORKDIR /home/ubuntu
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/post_start.sh && sleep infinity"]
+
+CMD ["/bin/bash","-lc","/post_start.sh && su ubuntu -c 'sleep infinity'"]
