@@ -21,6 +21,9 @@ ARG MAX_MODEL_LEN="32768"
 ARG GPU_MEM_UTIL="0.92"
 ARG INSTALL_FLASHATTN="false"
 
+# 这里可选：构建时内嵌 SSH 公钥（也可以不用，K8s 里挂 Secret 更好）
+ARG SSH_PUBLIC_KEY=""
+
 # ==============================
 # Environment setup
 # ==============================
@@ -41,12 +44,32 @@ ENV PYTHON_VERSION=${PYTHON_VERSION} \
     INSTALL_FLASHATTN=${INSTALL_FLASHATTN}
 
 # ==============================
-# System dependencies
+# System dependencies + 常用工具 + SSH
 # ==============================
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash sudo curl wget git ca-certificates openssh-client \
+    bash sudo curl wget git ca-certificates \
+    openssh-client openssh-server \
     tmux vim zip unzip zsh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ==============================
+# SSHD 基础配置
+# ==============================
+# 1. 为 sshd 准备运行目录
+# 2. 为 root 准备 .ssh 目录（解决你遇到的 authorized_keys 路径报错）
+# 3. 调整 sshd_config：允许 root 用密钥登录，禁用密码登录
+RUN mkdir -p /var/run/sshd && \
+    mkdir -p /root/.ssh && \
+    chmod 700 /root/.ssh && \
+    sed -ri 's/^#?PermitRootLogin .*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && \
+    sed -ri 's/^#?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+
+# 如果构建时传了 SSH_PUBLIC_KEY，就写入 authorized_keys
+# 你也可以不传，K8s 里用 Secret/ConfigMap 挂载覆盖这个文件
+RUN if [ -n "${SSH_PUBLIC_KEY}" ]; then \
+      echo "${SSH_PUBLIC_KEY}" > /root/.ssh/authorized_keys && \
+      chmod 600 /root/.ssh/authorized_keys ; \
+    fi
 
 # ==============================
 # Python environment & vLLM
@@ -65,14 +88,19 @@ RUN if [ "${INSTALL_FLASHATTN}" = "true" ]; then \
 # ==============================
 # Exposed Ports
 # ==============================
-# 22 预留给未来要加 sshd 的情况，8000 是 vLLM OpenAI API 端口
+# 22: SSH
+# VLLM_PORT: OpenAI API
 EXPOSE 22
 EXPOSE ${VLLM_PORT}
 
 # ==============================
 # Default CMD
 # ==============================
+# 1. 启动 sshd（前台 daemonize 一次）
+# 2. 再 exec vLLM API server
 CMD ["/bin/bash", "-lc", "\
+  echo \"[SSH] Starting sshd...\"; \
+  /usr/sbin/sshd; \
   echo \"[vLLM] Starting server for model ${MODEL_NAME}...\"; \
   exec python -m vllm.entrypoints.openai.api_server \
     --host 0.0.0.0 \
