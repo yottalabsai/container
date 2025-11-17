@@ -6,7 +6,7 @@ group "default" {
 }
 
 target "verl-vllm" {
-  description = "Verl-Wan2.2 模型的 vLLM OpenAI API 服务"
+  description = "基础 Verl + vLLM 镜像（不含模型、不含业务 start.sh）"
 
   # 主 build context：当前目录（official-templates/verl-vllm）
   context    = "."
@@ -26,15 +26,7 @@ target "verl-vllm" {
   ]
 
   args = {
+    BASE_IMAGE     = "nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04"
     PYTHON_VERSION    = "3.11"
-    VLLM_PORT         = "8000"
-    INSTALL_FLASHATTN = "false"
-
-    # vLLM / Verl 相关参数
-    VLLM_MODEL     = "Verl/Wan2.2"
-    VLLM_EXTRA     = ""
-    TP_SIZE        = "1"
-    MAX_MODEL_LEN  = "32768"
-    GPU_MEM_UTIL   = "0.92"
   }
 }
