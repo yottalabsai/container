@@ -4,10 +4,16 @@ FROM ${BASE_IMAGE}
 
 # 可由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
-ARG VLLM_MODEL="Qwen/Qwen2.5-7B-Instruct"
+
+# 默认跑 Verl，大模型这里你随便换
+ARG VLLM_MODEL="Verl/Wan2.2"
+
+# 可选扩展参数（tensor-parallel、vision、多模态等）
 ARG VLLM_EXTRA=""
 ARG VLLM_HOST="0.0.0.0"
 ARG VLLM_PORT="8000"
+
+# FlashInfer 编译开关（1 = 安装）
 ARG INSTALL_FLASHINFER="0"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
@@ -49,12 +55,12 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     python -m pip install --no-cache-dir -U pip setuptools wheel
 
-# ===== PyTorch: nightly cu126（支持 RTX 5090 / Blackwell）=====
+# ===== PyTorch: nightly cu126（适配 RTX 5090 / Blackwell）=====
 RUN python -m pip install --no-cache-dir --pre \
     torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/nightly/cu126
 
-# ===== vLLM & HF =====
+# ===== vLLM & HuggingFace =====
 RUN python -m pip install --no-cache-dir \
       vllm \
       "transformers>=4.40,<5" \
@@ -62,7 +68,7 @@ RUN python -m pip install --no-cache-dir \
       huggingface_hub \
       hf_transfer
 
-# ===== FlashInfer（可选）=====
+# ===== FlashInfer（5090 / Blackwell 建议开启）=====
 RUN if [[ "${INSTALL_FLASHINFER}" = "1" ]]; then \
       set -euo pipefail; \
       echo "[FlashInfer] trying wheel..."; \
@@ -75,64 +81,46 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "1" ]]; then \
        echo "[FlashInfer] built from source OK"); \
     fi
 
-# ===== User / SSH =====
-RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
-    chmod 0440 /etc/sudoers.d/ubuntu && \
-    chown -R ubuntu:ubuntu /workspace "$HF_HOME"
-
+# ===== SSH（可选）=====
 RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh
 
-# ===== post_start.sh（真实启动脚本）=====
+# ===== post_start.sh（唯一启动脚本）=====
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 LOG=/workspace/vllm.log
 mkdir -p /workspace
 
-# HF_TRANSFER 提示
-if [[ "${HF_HUB_ENABLE_HF_TRANSFER:-0}" == "1" ]]; then
-  python - <<'PY' || true
-try:
-    import hf_transfer
-except Exception as e:
-    print("WARN: HF_HUB_ENABLE_HF_TRANSFER=1 but hf_transfer not installed:", e)
-PY
-fi
+echo "[vLLM] Launching model: ${VLLM_MODEL}"
 
-# 启动 vLLM
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST:-0.0.0.0}" \
   --port "${VLLM_PORT:-8000}" \
-  --model "${VLLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}" \
-  --download-dir "${HF_HOME:-/workspace/hf}" \
+  --model "${VLLM_MODEL}" \
+  --download-dir "${HF_HOME}" \
   --trust-remote-code \
-  ${VLLM_EXTRA:-} >> "$LOG" 2>&1 &
+  ${VLLM_EXTRA} >> "$LOG" 2>&1 &
 
-echo "vLLM starting on ${VLLM_HOST:-0.0.0.0}:${VLLM_PORT:-8000}..."
-echo "logs: $LOG"
-
-# 健康检查
+echo "[vLLM] Waiting for readiness..."
 for i in {1..20}; do
   if curl -fsS "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" >/dev/null; then
-    echo "vLLM ready."
+    echo "[vLLM] Ready."
     exit 0
   fi
-  echo "waiting vLLM... ($i)"
+  echo "waiting... ($i)"
   sleep 1
 done
 
-echo "WARN: vLLM may not be ready yet. Check $LOG"
+echo "WARN: vLLM may not be ready; check $LOG"
 exit 0
 EOS
+
 RUN chmod +x /post_start.sh
 
 # ===== Ports / Entry =====
 EXPOSE 8000
-WORKDIR /home/ubuntu
-
+WORKDIR /root
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-
-CMD ["/bin/bash","-lc","/post_start.sh && su ubuntu -c 'sleep infinity'"]
+CMD ["/bin/bash","-lc","/post_start.sh && sleep infinity"]
