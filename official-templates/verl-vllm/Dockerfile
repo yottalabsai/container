@@ -86,10 +86,6 @@ RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh
 
 # ===== Static / Branding（来自 proxy / logo stage）=====
-COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
-COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
-COPY README.md /usr/share/nginx/html/README.md
-COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
