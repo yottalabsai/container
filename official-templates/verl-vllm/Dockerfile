@@ -5,13 +5,18 @@ FROM ${BASE_IMAGE}
 # 可由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
 
-# 默认跑 Verl，大模型这里你随便换
+# 默认跑 Verl，大模型这里就定死 Wan2.2
 ARG VLLM_MODEL="Verl/Wan2.2"
 
-# 可选扩展参数（tensor-parallel、vision、多模态等）
+# 可选扩展参数（先留着，暂时不用动）
 ARG VLLM_EXTRA=""
 ARG VLLM_HOST="0.0.0.0"
 ARG VLLM_PORT="8000"
+
+# 资源相关（TP、大 context、显存利用率）
+ARG TP_SIZE="1"
+ARG MAX_MODEL_LEN="32768"
+ARG GPU_MEM_UTIL="0.92"
 
 # FlashInfer 编译开关（1 = 安装）
 ARG INSTALL_FLASHINFER="0"
@@ -29,7 +34,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VLLM_PORT=${VLLM_PORT} \
     HF_HOME=/workspace/hf \
     TORCH_CUDA_ARCH_LIST="12.0" \
-    CMAKE_CUDA_ARCHITECTURES="120"
+    CMAKE_CUDA_ARCHITECTURES="120" \
+    VLLM_MODEL=${VLLM_MODEL} \
+    TP_SIZE=${TP_SIZE} \
+    MAX_MODEL_LEN=${MAX_MODEL_LEN} \
+    GPU_MEM_UTIL=${GPU_MEM_UTIL}
 
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
@@ -81,12 +90,12 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "1" ]]; then \
        echo "[FlashInfer] built from source OK"); \
     fi
 
-# ===== SSH（可选）=====
+# ===== SSH（可选，占位一下）=====
 RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh
 
-# ===== post_start.sh（唯一启动脚本）=====
+# ===== post_start.sh（唯一启动脚本：起 Verl vLLM）=====
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -94,6 +103,7 @@ LOG=/workspace/vllm.log
 mkdir -p /workspace
 
 echo "[vLLM] Launching model: ${VLLM_MODEL}"
+echo "[vLLM] TP_SIZE=${TP_SIZE}, MAX_MODEL_LEN=${MAX_MODEL_LEN}, GPU_MEM_UTIL=${GPU_MEM_UTIL}"
 
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST:-0.0.0.0}" \
@@ -101,6 +111,9 @@ nohup python -m vllm.entrypoints.openai.api_server \
   --model "${VLLM_MODEL}" \
   --download-dir "${HF_HOME}" \
   --trust-remote-code \
+  --tensor-parallel-size "${TP_SIZE:-1}" \
+  --max-model-len "${MAX_MODEL_LEN:-32768}" \
+  --gpu-memory-utilization "${GPU_MEM_UTIL:-0.9}" \
   ${VLLM_EXTRA} >> "$LOG" 2>&1 &
 
 echo "[vLLM] Waiting for readiness..."

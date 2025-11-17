@@ -9,7 +9,8 @@ Example:
 ```bash
 cd containers/official-templates/verl-vllm
 
-docker buildx bake verl-vllm --push
+docker buildx bake verl-vllm --push \
+  --set verl-vllm.args.VLLM_MODEL="Verl/Wan2.2"
 ```
 
 ## Exposed Ports
