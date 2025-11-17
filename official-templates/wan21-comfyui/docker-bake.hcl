@@ -15,7 +15,7 @@ group "comfy-all" { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
 target "wan21-comfyui" {
   description = "ComfyUI + WAN 2.1 环境镜像"
   dockerfile  = "Dockerfile"
-  platforms = ["linux/amd64", "linux/arm64"]
+  platforms = ["linux/amd64"]
   tags = [
     "${PUBLISHER}/wan2.1:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
   ]
@@ -43,7 +43,7 @@ target "wan21-comfyui" {
 target "wan21-comfyui-nunchaku" {
   description = "ComfyUI + WAN 2.1 + Nunchaku 变体"
   dockerfile  = "Dockerfile"
-  platforms = ["linux/amd64", "linux/arm64"]
+  platforms = ["linux/amd64"]
   tags = [
     "${PUBLISHER}/wan2.1:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
   ]

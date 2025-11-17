@@ -14,7 +14,7 @@ ARG TORCH_VERSION="2.4.0"
 ARG TORCH_CUDA="cu124"  # 对应 https://download.pytorch.org/whl/${TORCH_CUDA}
 
 # ==============================
-# Base: CUDA + 系统依赖 + Python
+# Base: CUDA + 系统依赖 + Python + SSH + 工具
 # ==============================
 FROM ${BASE_IMAGE} AS base
 
@@ -30,20 +30,38 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
-# ---- 系统依赖：含 nginx / tmux / vim / zip / zsh ----
+# ---- 核心系统依赖 + SSH + 常用工具 ----
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
-      git git-lfs curl ca-certificates locales tzdata \
+      git git-lfs curl wget ca-certificates locales tzdata \
       build-essential pkg-config ninja-build \
       ffmpeg libgl1 libglib2.0-0 \
       software-properties-common \
       nginx \
-      tmux vim zip zsh less procps \
+      openssh-server openssh-client \
+      tmux vim zsh zip unzip less procps net-tools htop \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen && update-locale \
+    && mkdir -p /var/run/sshd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# ---- 创建非 root 用户（避免 root SSH 登录）----
+RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true
+
+# ---- 给 ubuntu 用户加密码（可选，可改）----
+RUN echo "${UBUNTU_USER}:ubuntu" | chpasswd
+
+# ---- 允许 ubuntu 用户通过 SSH 登录（禁止 root 登录）----
+RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
+    sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
+    sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
+
+# ---- SSH 预处理：保持容器前台可启动 ----
+RUN mkdir -p /home/${UBUNTU_USER}/.ssh && \
+    chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
+    chmod 700 /home/${UBUNTU_USER}/.ssh
 
 # ---- Python 安装（deadsnakes + get-pip 容错）----
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
@@ -56,11 +74,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
       /usr/bin/python /tmp/get-pip.py || true) && \
     rm -f /tmp/get-pip.py
 
-# 确保有 pip
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
-
-# 创建业务用户（避免 root 跑服务）
-RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true
 
 # ==============================
 # Python-env: torch + 基础 pip
@@ -145,7 +159,8 @@ RUN mkdir -p \
 # ==============================
 # Runtime: 仅包含运行时 + Nginx / README / logo
 # ==============================
-FROM base AS runtime
+
+FROM comfy-builder AS runtime
 
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
@@ -153,34 +168,26 @@ ARG COMFYUI_PORT
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 # --------- Nginx / README / logo（来自额外 build context）---------
-# 这些 context 由 buildx bake 通过 contexts 传入：
-#   proxy -> ../../container-template/proxy
-#   logo  -> ../../container-template
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 COPY --from=logo yotta.txt /etc/yotta.txt
 
-# 小彩蛋：登录 root shell 时显示品牌信息（保留你之前的逻辑）
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# 拷贝业务用户 HOME（ComfyUI + 模型目录）
-USER ${UBUNTU_USER}
+USER root
 WORKDIR /home/${UBUNTU_USER}
 
-COPY --chown=${UBUNTU_USER}:${UBUNTU_USER} \
-  --from=comfy-builder /home/${UBUNTU_USER} /home/${UBUNTU_USER}
-
-# 对外挂载点 & 端口
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
+EXPOSE 22
 
-# 同时启动 Nginx + ComfyUI
-CMD ["bash","-lc","nginx && \
-  python ComfyUI/main.py \
-    --listen 0.0.0.0 \
-    --port ${COMFYUI_PORT} \
-    --output-directory /home/${UBUNTU_USER}/output \
-    --extra-model-paths /home/${UBUNTU_USER}/models"]
+CMD ["bash","-lc","/usr/sbin/sshd && nginx && \
+  su - ${UBUNTU_USER} -c \"cd /home/${UBUNTU_USER}/ComfyUI && \
+    python main.py \
+      --listen 0.0.0.0 \
+      --port ${COMFYUI_PORT} \
+      --output-directory /home/${UBUNTU_USER}/output \
+      --extra-model-paths /home/${UBUNTU_USER}/models\""]

@@ -1,82 +1,104 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-ARG TORCH
-ARG PYTHON_VERSION
+ARG TORCH=""
+ARG PYTHON_VERSION="3.11"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV SHELL=/bin/bash
-# important: set nvidia environment variables, not here, change in start.sh
-ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda-12.8/bin:$PATH
-ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
+ENV DEBIAN_FRONTEND=noninteractive \
+    SHELL=/bin/bash \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda-12.8/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
 
 WORKDIR /
 
-RUN mkdir /workspace && chmod 777 /workspace
+# 基础目录
+RUN mkdir -p /workspace && chmod 777 /workspace
 
-RUN apt-get update --yes && \
-    apt-get upgrade --yes && \
-    apt install --yes --no-install-recommends \
-    git acl wget curl bash libgl1 software-properties-common \
-    openssh-server nginx sudo && \
-    if [ -n "${PYTHON_VERSION}" ]; then \
-        add-apt-repository ppa:deadsnakes/ppa && \
-        apt install "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" -y --no-install-recommends; \
-    fi && \
+# 系统依赖 + SSH + Nginx + 工具
+RUN apt-get update -y && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+      git acl wget curl bash libgl1 software-properties-common \
+      locales tzdata \
+      openssh-server nginx sudo \
+      tmux vim zsh zip unzip less procps net-tools htop \
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
+    mkdir -p /var/run/sshd && \
     apt-get autoremove -y && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen
+    rm -rf /var/lib/apt/lists/*
 
-# Set up Python and pip
+# 安装指定 Python 版本（如果传了 PYTHON_VERSION）
 RUN if [ -n "${PYTHON_VERSION}" ]; then \
-    ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
-    rm /usr/bin/python3 && \
-    ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
-    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-    python get-pip.py; \
+      add-apt-repository ppa:deadsnakes/ppa -y && \
+      apt-get update -y && \
+      apt-get install -y --no-install-recommends \
+        "python${PYTHON_VERSION}" \
+        "python${PYTHON_VERSION}-dev" \
+        "python${PYTHON_VERSION}-venv" && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+      ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
+      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+      python get-pip.py && rm -f get-pip.py ; \
+    else \
+      echo "PYTHON_VERSION not set, using system python3" && \
+      python3 -m ensurepip --upgrade || true ; \
     fi
 
-RUN pip install --upgrade --no-cache-dir pip
-RUN if [ -n "${TORCH}" ]; then pip install --upgrade --no-cache-dir ${TORCH}; fi
-RUN pip install --upgrade --no-cache-dir jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+# 升级 pip
+RUN python -m pip install --upgrade --no-cache-dir pip
 
-#Create ubuntu user with sudo privileges
+# 安装 torch（由 TORCH 参数完全控制，例如：TORCH='torch==2.4.0 torchvision==2.4.0 --index-url ...'）
+RUN if [ -n "${TORCH}" ]; then \
+      echo "Installing TORCH packages: ${TORCH}" && \
+      python -m pip install --upgrade --no-cache-dir ${TORCH} ; \
+    fi
+
+# 安装 Jupyter 相关
+RUN python -m pip install --upgrade --no-cache-dir \
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+
+# 创建 ubuntu 用户 + sudo 权限
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ubuntu
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ubuntu && \
+    echo "ubuntu:ubuntu" | chpasswd
 
-# Setup SSH
+# SSH 配置（root + ubuntu 都可用）
 RUN mkdir -p /root/.ssh && \
     touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh && \
-    setfacl -R -m u:ubuntu:rwx /root/.ssh
+    setfacl -R -m u:ubuntu:rwx /root/.ssh || true && \
+    sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config || true && \
+    sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config || true && \
+    sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config || true
 
-# Link CUDA bin
-RUN ln -sf /usr/local/cuda/bin/* /usr/bin/
+# 可选：删除现有 SSH host key（通常配合 start.sh 里的 ssh-keygen -A）
+RUN rm -f /etc/ssh/ssh_host_* || true
 
-# Remove existing SSH host keys
-RUN rm -f /etc/ssh/ssh_host_*
+# 链接 CUDA bin（方便直接用 nvcc / nvidia-smi 等）
+RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 
-# Copy NGINX config
+# Nginx / README / logo（依赖 buildx context: proxy / logo）
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
-
 COPY README.md /usr/share/nginx/html/README.md
 
-# Welcome Message（保持原写法与转义）
 COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
-RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m and \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
+RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+    echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
 
-# Expose Jupyter port
-EXPOSE 8888
+# 暴露端口
+EXPOSE 22       # SSH
+EXPOSE 80       # Nginx
+EXPOSE 8888     # Jupyter
 
-# Switch to ubuntu user
+# 切到 ubuntu 用户
 USER ubuntu
 WORKDIR /home/ubuntu
 
-CMD [ "sudo","/start.sh" ]
+# 入口：交给 start.sh（通常里面会起 sshd + nginx + jupyter）
+CMD ["sudo", "/start.sh"]

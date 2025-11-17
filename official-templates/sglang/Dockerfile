@@ -1,60 +1,78 @@
 # syntax=docker/dockerfile:1.7
 
-# ===== 稳定路线：CUDA 12.1 + PyTorch cu121 =====
+# ========================================
+# 基础镜像（可由 bake 覆盖）
+# ========================================
 ARG BASE_IMAGE="nvidia/cuda:12.1.1-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ===== Build Args（构建时传入 GPU 架构号）=====
-ARG TZ="Asia/Singapore"
+# ========================================
+# 构建参数（全部允许 bake 覆盖）
+# ========================================
+ARG TZ="UTC"
 ARG PYTHON_VERSION="3.11"
-ARG TORCH=""                         # 自定义安装如：torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
-ARG GPU_ARCH="100"                   # 仅支持当前卡：A100=80, 30xx=86, 4090=89, H100=90, 5090=100
+
+# TORCH 为空 = 使用稳定版 cu121（2.5.1）
+ARG TORCH=""
+
+# GPU 架构（H100=90, 4090=89, 5090=100）
+ARG GPU_ARCH="100"
+
+# 由 GPU_ARCH 自动推导
+ARG TORCH_CUDA_ARCH_LIST="${GPU_ARCH}"
+ARG CMAKE_CUDA_ARCHITECTURES="${GPU_ARCH}"
+
+# 性能相关
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
+
+# HF / SGLang
 ARG HF_HOME="/workspace/hf"
 ARG HF_HUB_ENABLE_HF_TRANSFER=1
 ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"
 ARG SGLANG_HOST="0.0.0.0"
 ARG SGLANG_PORT="30000"
 ARG SGLANG_EXTRA=""
+ARG SGLANG_PREFETCH="lazy"
+ARG SGLANG_REVISION=""
+ARG SGLANG_LOCAL_DIR=""
+
+# ccache
 ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS=1
 ARG CCACHE_MAXSIZE="10G"
 
-# 由单一 GPU_ARCH 推导两处所需变量
-ARG TORCH_CUDA_ARCH_LIST="${GPU_ARCH/;/;}"     # 传单值就行：例如 "100"
-ARG CMAKE_CUDA_ARCHITECTURES="${GPU_ARCH}"     # 例如 "100"
-
-SHELL ["/bin/bash","-o","pipefail","-c"]
-
-# ===== Env（运行时仍可 -e 覆盖）=====
+# ========================================
+# 环境变量
+# ========================================
 ENV TZ=${TZ} \
+    CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
-    CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL} \
-    PIP_DISABLE_PIP_VERSION_CHECK=${PIP_DISABLE_PIP_VERSION_CHECK} \
-    PYTHONUNBUFFERED=${PYTHONUNBUFFERED} \
+    CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
     HF_HOME=${HF_HOME} \
     HF_HUB_ENABLE_HF_TRANSFER=${HF_HUB_ENABLE_HF_TRANSFER} \
+    PIP_DISABLE_PIP_VERSION_CHECK=${PIP_DISABLE_PIP_VERSION_CHECK} \
+    PYTHONUNBUFFERED=${PYTHONUNBUFFERED} \
+    CCACHE_DIR=${CCACHE_DIR} \
+    CCACHE_COMPRESS=${CCACHE_COMPRESS} \
+    CCACHE_MAXSIZE=${CCACHE_MAXSIZE} \
     SGLANG_MODEL=${SGLANG_MODEL} \
     SGLANG_HOST=${SGLANG_HOST} \
     SGLANG_PORT=${SGLANG_PORT} \
     SGLANG_EXTRA=${SGLANG_EXTRA} \
-    CCACHE_DIR=${CCACHE_DIR} \
-    CCACHE_COMPRESS=${CCACHE_COMPRESS} \
-    CCACHE_MAXSIZE=${CCACHE_MAXSIZE} \
-    CUDA_HOME=/usr/local/cuda \
-    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    DEBIAN_FRONTEND=noninteractive \
-    SGLANG_PREFETCH="lazy" \
-    SGLANG_REVISION="" \
-    SGLANG_LOCAL_DIR=""
+    SGLANG_PREFETCH=${SGLANG_PREFETCH} \
+    SGLANG_REVISION=${SGLANG_REVISION} \
+    SGLANG_LOCAL_DIR=${SGLANG_LOCAL_DIR}
 
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ===== System deps =====
+# ========================================
+# System Deps
+# ========================================
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     set -eux; \
@@ -70,7 +88,9 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python =====
+# ========================================
+# Python
+# ========================================
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     bash -lc 'set -eux; \
@@ -85,33 +105,36 @@ RUN --mount=type=cache,target=/var/cache/apt \
       python3 -m pip install --no-cache-dir -U pip setuptools wheel \
     '
 
-# ===== PyTorch（未指定 TORCH 则装稳定 cu121）=====
+# ========================================
+# PyTorch
+# ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     if [ -n "${TORCH}" ]; then \
-      echo "Installing custom TORCH: ${TORCH}"; \
+      echo "[TORCH] Installing custom: ${TORCH}"; \
       python3 -m pip install --no-cache-dir ${TORCH}; \
     else \
-      echo "Installing stable PyTorch (cu121)"; \
+      echo "[TORCH] Installing stable cu121 (2.5.1)"; \
       python3 -m pip install --no-cache-dir \
         torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
         --index-url https://download.pytorch.org/whl/cu121; \
     fi
 
-# ===== Build tools =====
+# ========================================
+# Build Tools for sgl-kernel
+# ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir -U \
       "cmake>=3.30" "scikit-build-core>=0.11" ninja packaging pybind11
 
-# ===== Build sgl-kernel（仅单一架构）=====
-RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=cache,target=/root/.ccache \
+# ========================================
+# Build sgl-kernel
+# ========================================
+RUN --mount=type=cache,target=/root/.ccache \
+    --mount=type=cache,target=/root/.cache/pip \
     bash -lc 'set -euxo pipefail; \
-      : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; export CMAKE_BUILD_PARALLEL_LEVEL; \
-      echo ">>> nvcc:"; nvcc --version || true; \
-      python3 -c "import torch; print(\"torch=\", torch.__version__); print(\"torch_cuda=\", torch.version.cuda)"; \
+      : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; \
+      export CMAKE_BUILD_PARALLEL_LEVEL; \
       export CMAKE_PREFIX_PATH="$(python3 -c "from torch.utils import cmake_prefix_path as p; print(p)")"; \
-      echo ">>> CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"; \
-      echo ">>> TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}  CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}"; \
       python3 -m pip -v install --no-cache-dir --no-build-isolation \
         --config-settings=cmake.args="-G;Ninja" \
         --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
@@ -120,20 +143,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         --config-settings=cmake.define.MSCCLPP_BUILD_TESTS=OFF \
         --config-settings=cmake.define.MSCCLPP_BUILD_PYTHON_BINDINGS=OFF \
         --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
-        --config-settings=cmake.define.CMAKE_BUILD_TYPE=Release \
-        --config-settings=cmake.define.CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-        --config-settings=build.verbose=true \
         "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
     '
 
-# ===== Install SGLang =====
+# ========================================
+# Install SGLang
+# ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir --no-build-isolation \
       "sglang@git+https://github.com/sgl-project/sglang.git#subdirectory=python"
 
-# ===== Runtime deps =====
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --no-cache-dir \
+# ========================================
+# Extra Runtime Deps
+# ========================================
+RUN python3 -m pip install --no-cache-dir \
       "transformers>=4.40,<5" \
       huggingface_hub sentencepiece \
       fastapi uvicorn uvloop orjson \
@@ -141,59 +164,53 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       openai partial_json_parser \
       hf_transfer
 
-# ===== User =====
-RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
+# ========================================
+# User
+# ========================================
+RUN useradd -ms /bin/bash ubuntu && \
+    usermod -aG sudo ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
-# ===== Start script（按需预取模型；默认 lazy 不预取）=====
-RUN cat >/start.sh <<'EOS'
+# ========================================
+# Start Script
+# ========================================
+RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${SGLANG_MODEL:=Qwen/Qwen2.5-7B-Instruct}"
-: "${SGLANG_HOST:=0.0.0.0}"
-: "${SGLANG_PORT:=30000}"
-: "${SGLANG_EXTRA:=}"
-: "${SGLANG_PREFETCH:=lazy}"          # lazy | eager
-: "${SGLANG_REVISION:=}"              # tag/branch/commit，可空
-: "${SGLANG_LOCAL_DIR:=}"             # 若为空则使用 HF_HOME 缓存
-: "${HF_HOME:=/workspace/hf}"
-
-if [ -x /post_start.sh ]; then /post_start.sh & fi
-
-echo "[SGLang] Model  : ${SGLANG_MODEL}"
-echo "[SGLang] Host   : ${SGLANG_HOST}"
-echo "[SGLang] Port   : ${SGLANG_PORT}"
-echo "[SGLang] Extra  : ${SGLANG_EXTRA}"
-echo "[SGLang] Prefetch: ${SGLANG_PREFETCH}"
-echo "[HF] HF_HOME    : ${HF_HOME}"
-[ -n "${SGLANG_LOCAL_DIR}" ] && echo "[HF] LOCAL_DIR  : ${SGLANG_LOCAL_DIR}"
-[ -n "${SGLANG_REVISION}" ] && echo "[HF] REVISION   : ${SGLANG_REVISION}"
+echo "[SGLang] Model     : ${SGLANG_MODEL}"
+echo "[SGLang] Host      : ${SGLANG_HOST}"
+echo "[SGLang] Port      : ${SGLANG_PORT}"
+echo "[Prefetch] Mode    : ${SGLANG_PREFETCH}"
 
 if [ "${SGLANG_PREFETCH}" = "eager" ]; then
   python3 - <<'PY'
 import os
 from huggingface_hub import snapshot_download
 
-model_id = os.environ.get("SGLANG_MODEL")
-local_dir = os.environ.get("SGLANG_LOCAL_DIR") or None
-revision  = os.environ.get("SGLANG_REVISION") or None
+model = os.environ["SGLANG_MODEL"]
+local = os.environ.get("SGLANG_LOCAL_DIR") or None
+rev   = os.environ.get("SGLANG_REVISION") or None
 
 path = snapshot_download(
-    repo_id=model_id,
-    local_dir=local_dir,           # None 则走 HF cache
-    revision=revision,             # None 则默认分支
+    repo_id=model,
+    local_dir=local,
+    revision=rev,
     local_dir_use_symlinks=False,
     resume_download=True,
 )
-print(f"[prefetch] Downloaded to: {path}")
+print("Downloaded:", path)
 PY
 fi
 
-exec uvicorn sglang.api.server:app --host "${SGLANG_HOST}" --port "${SGLANG_PORT}" ${SGLANG_EXTRA}
-EOS
+exec uvicorn sglang.api.server:app \
+    --host "${SGLANG_HOST}" \
+    --port "${SGLANG_PORT}" \
+    ${SGLANG_EXTRA}
+EOF
+
 RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
 
 EXPOSE 30000
