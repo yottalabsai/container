@@ -9,7 +9,7 @@ Example:
 ```bash
 cd containers/official-templates/verl-vllm
 
-docker buildx bake verl-vllm
+docker buildx bake verl-vllm --push
 
 ```
 
