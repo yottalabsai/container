@@ -85,10 +85,6 @@ RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh
 
-# ===== Static / Branding（来自 proxy / logo stage）=====
-RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
-
 # ===== post_start.sh（真实启动脚本）=====
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
