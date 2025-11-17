@@ -9,8 +9,8 @@ Example:
 ```bash
 cd containers/official-templates/verl-vllm
 
-docker buildx bake verl-vllm --push \
-  --set verl-vllm.args.VLLM_MODEL="Verl/Wan2.2"
+docker buildx bake verl-vllm
+
 ```
 
 ## Exposed Ports
@@ -21,15 +21,27 @@ docker buildx bake verl-vllm --push \
 ## Test
 
 ```
+docker run --gpus all --rm -it \
+  -p 8000:8000 \
+  your-registry/verl-vllm:latest \
+  bash -lc '
+    python -m vllm.entrypoints.openai.api_server \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --model "Qwen/Qwen2.5-0.5B-Instruct" \
+      --trust-remote-code \
+      --download-dir /workspace/hf
+  '
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Verl/Wan2.2",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct",
     "messages": [
-      {"role": "system", "content": "You are Verl."},
+      {"role": "system", "content": "You are Qwen."},
       {"role": "user", "content": "用两句话解释量子纠缠。"}
     ],
     "temperature": 0.7,
     "max_tokens": 256
   }'
+
 ```

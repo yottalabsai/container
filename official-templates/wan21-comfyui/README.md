@@ -9,11 +9,19 @@ Example:
 ```bash
 cd containers/official-templates/wan21-comfyui
 
+# 构建标准版
 docker buildx bake wan21-comfyui --push
 
 docker buildx bake wan21-comfyui-nunchaku --push
-  
-docker buildx bake comfy-all --push
+
+# 构建两个变体一起
+docker buildx bake comfy-all
+
+# 覆盖部分参数
+docker buildx bake wan21-comfyui \
+  --push \
+  --set wan21-comfyui.args.TORCH_VERSION=2.4.1 \
+  --set wan21-comfyui.args.TORCH_CUDA=cu124
 ```
 
 ## Exposed Ports
