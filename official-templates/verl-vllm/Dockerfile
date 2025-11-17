@@ -5,11 +5,8 @@ FROM ${BASE_IMAGE}
 # 可由 bake 覆盖的参数
 ARG PYTHON_VERSION="3.11"
 
-# 默认跑 Verl，大模型这里就定死 Wan2.2
+# 默认跑 Verl 大模型
 ARG VLLM_MODEL="Verl/Wan2.2"
-
-# 可选扩展参数（先留着，暂时不用动）
-ARG VLLM_EXTRA=""
 ARG VLLM_HOST="0.0.0.0"
 ARG VLLM_PORT="8000"
 
@@ -18,8 +15,8 @@ ARG TP_SIZE="1"
 ARG MAX_MODEL_LEN="32768"
 ARG GPU_MEM_UTIL="0.92"
 
-# FlashInfer 编译开关（1 = 安装）
-ARG INSTALL_FLASHINFER="0"
+# FlashAttn 开关（true/false）
+ARG INSTALL_FLASHATTN="false"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
@@ -30,12 +27,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
+    HF_HOME=/workspace/hf \
+    VLLM_MODEL=${VLLM_MODEL} \
     VLLM_HOST=${VLLM_HOST} \
     VLLM_PORT=${VLLM_PORT} \
-    HF_HOME=/workspace/hf \
-    TORCH_CUDA_ARCH_LIST="12.0" \
-    CMAKE_CUDA_ARCHITECTURES="120" \
-    VLLM_MODEL=${VLLM_MODEL} \
     TP_SIZE=${TP_SIZE} \
     MAX_MODEL_LEN=${MAX_MODEL_LEN} \
     GPU_MEM_UTIL=${GPU_MEM_UTIL}
@@ -53,7 +48,7 @@ RUN apt-get update -y && apt-get upgrade -y && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale && \
     apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# ===== Python =====
+# ===== Python 3.11（和你 start.sh 里的 python3.11 对齐）=====
 RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -64,76 +59,83 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     python -m pip install --no-cache-dir -U pip setuptools wheel
 
-# ===== PyTorch: nightly cu126（适配 RTX 5090 / Blackwell）=====
+# ===== PyTorch: nightly cu126（支持 5090 / Blackwell）=====
 RUN python -m pip install --no-cache-dir --pre \
     torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/nightly/cu126
 
-# ===== vLLM & HuggingFace =====
+# ===== vLLM & HuggingFace & Jupyter =====
 RUN python -m pip install --no-cache-dir \
       vllm \
       "transformers>=4.40,<5" \
       sentencepiece \
       huggingface_hub \
-      hf_transfer
+      hf_transfer \
+      jupyterlab
 
-# ===== FlashInfer（5090 / Blackwell 建议开启）=====
-RUN if [[ "${INSTALL_FLASHINFER}" = "1" ]]; then \
+# ===== FlashAttn（按需开启）=====
+RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
       set -euo pipefail; \
-      echo "[FlashInfer] trying wheel..."; \
-      (python -m pip install --no-cache-dir flashinfer && echo "[FlashInfer] wheel OK") || \
-      (echo "[FlashInfer] wheel failed, building from source..." && \
-       git clone --recursive https://github.com/AnswerDotAI/FlashInfer.git /tmp/flashinfer && \
-       export TORCH_CUDA_ARCH_LIST="12.0" CMAKE_CUDA_ARCHITECTURES="120" && \
-       python -m pip install -v /tmp/flashinfer/python && \
-       rm -rf /tmp/flashinfer && \
-       echo "[FlashInfer] built from source OK"); \
+      echo "[FlashAttn] trying wheel..."; \
+      python -m pip install --no-cache-dir flash-attn || \
+      echo "[FlashAttn] install failed, skipping"; \
     fi
 
-# ===== SSH（可选，占位一下）=====
+# ===== ubuntu 用户，用于你 start.sh 里的 sudo chown ubuntu:ubuntu =====
+RUN useradd -ms /bin/bash ubuntu && usermod -aG sudo ubuntu && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
+    chmod 0440 /etc/sudoers.d/ubuntu && \
+    chown -R ubuntu:ubuntu /workspace "$HF_HOME"
+
+# ===== SSH 目录（避免 start.sh 里 ssh-keygen 报目录不存在）=====
 RUN mkdir -p /root/.ssh && touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     chown -R root:root /root/.ssh
 
-# ===== post_start.sh（唯一启动脚本：起 Verl vLLM）=====
+# ===== Nginx / README / logo（来自 proxy / logo context）=====
+COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
+COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
+COPY README.md /usr/share/nginx/html/README.md
+COPY --from=logo yotta.txt /etc/yotta.txt
+RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+
+# ===== post_start.sh：你 start.sh 会执行它，我们在这里起 vLLM =====
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
+
 LOG=/workspace/vllm.log
 mkdir -p /workspace
 
 echo "[vLLM] Launching model: ${VLLM_MODEL}"
-echo "[vLLM] TP_SIZE=${TP_SIZE}, MAX_MODEL_LEN=${MAX_MODEL_LEN}, GPU_MEM_UTIL=${GPU_MEM_UTIL}"
+echo "[vLLM] host=${VLLM_HOST:-0.0.0.0} port=${VLLM_PORT:-8000}"
+echo "[vLLM] TP_SIZE=${TP_SIZE:-1} MAX_MODEL_LEN=${MAX_MODEL_LEN:-32768} GPU_MEM_UTIL=${GPU_MEM_UTIL:-0.9}"
 
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST:-0.0.0.0}" \
   --port "${VLLM_PORT:-8000}" \
   --model "${VLLM_MODEL}" \
-  --download-dir "${HF_HOME}" \
+  --download-dir "${HF_HOME:-/workspace/hf}" \
   --trust-remote-code \
   --tensor-parallel-size "${TP_SIZE:-1}" \
   --max-model-len "${MAX_MODEL_LEN:-32768}" \
   --gpu-memory-utilization "${GPU_MEM_UTIL:-0.9}" \
-  ${VLLM_EXTRA} >> "$LOG" 2>&1 &
+  >> "$LOG" 2>&1 &
 
-echo "[vLLM] Waiting for readiness..."
-for i in {1..20}; do
-  if curl -fsS "http://127.0.0.1:${VLLM_PORT:-8000}/v1/models" >/dev/null; then
-    echo "[vLLM] Ready."
-    exit 0
-  fi
-  echo "waiting... ($i)"
-  sleep 1
-done
-
-echo "WARN: vLLM may not be ready; check $LOG"
-exit 0
+echo "[vLLM] started, logs: $LOG"
 EOS
 
 RUN chmod +x /post_start.sh
 
+# ===== 拷贝你现有的 start.sh（来自 scripts context）=====
+COPY --from=scripts start.sh /start.sh
+RUN chmod +x /start.sh
+
 # ===== Ports / Entry =====
-EXPOSE 8000
+# 22: ssh（start.sh 会开） 8000: vLLM OpenAI API  8888: Jupyter（如果你设置 JUPYTER_PASSWORD 才会启）
+EXPOSE 22 8000 8888
+
 WORKDIR /root
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/post_start.sh && sleep infinity"]
+CMD ["/bin/bash","-lc","/start.sh"]
