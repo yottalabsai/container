@@ -9,6 +9,12 @@ variable "TORCH_VERSION"        { default = "2.4.1" }
 variable "TORCH_VISION_VERSION" { default = "0.19.1" }
 variable "TORCH_CUDA"           { default = "cu124" }
 
+# 如果 WAN21_MODEL_URL 非空 → build 时下载并 bake 进镜像
+# 如果 还是空字符串 → build 时只打环境，不下模型
+variable "WAN21_MODEL_URL"       { default = "https://huggingface.co/One-2-Flow/WAN2.1-Unet-XL/resolve/main/WAN2.1-Unet-XL.safetensors" }
+variable "WAN21_MODEL_FILENAME"  { default = "wan2.1.safetensors" }
+variable "WAN21_MODEL_SUBDIR"    { default = "ckpt" }
+
 group "default" { targets = ["wan21-comfyui"] }
 group "comfy-all" { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
 
@@ -41,6 +47,10 @@ target "wan21-comfyui" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
+
+    WAN21_MODEL_URL      = WAN21_MODEL_URL
+    WAN21_MODEL_FILENAME = WAN21_MODEL_FILENAME
+    WAN21_MODEL_SUBDIR   = WAN21_MODEL_SUBDIR
   }
 }
 
@@ -73,5 +83,9 @@ target "wan21-comfyui-nunchaku" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
+
+    WAN21_MODEL_URL      = WAN21_MODEL_URL
+    WAN21_MODEL_FILENAME = WAN21_MODEL_FILENAME
+    WAN21_MODEL_SUBDIR   = WAN21_MODEL_SUBDIR
   }
 }

@@ -15,6 +15,10 @@ ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
+ARG WAN22_MODEL_URL
+ARG WAN22_MODEL_FILENAME
+ARG WAN22_MODEL_SUBDIR
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -147,6 +151,14 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
+
+RUN if [[ -n "${WAN22_MODEL_URL}" ]]; then \
+      mkdir -p "/home/${UBUNTU_USER}/models/${WAN22_MODEL_SUBDIR}" && \
+      cd "/home/${UBUNTU_USER}/models/${WAN22_MODEL_SUBDIR}" && \
+      wget --header="User-Agent: Mozilla/5.0" \
+           -O "${WAN22_MODEL_FILENAME}" \
+           "${WAN22_MODEL_URL}"; \
+    fi
 
 # ==============================
 # runtime

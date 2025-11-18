@@ -15,6 +15,10 @@ ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
+ARG FLUXDEV_MODEL_URL
+ARG FLUXDEV_MODEL_FILENAME
+ARG FLUXDEV_MODEL_SUBDIR
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -140,6 +144,14 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
+
+RUN if [[ -n "${FLUXDEV_MODEL_URL}" ]]; then \
+      mkdir -p "/home/${UBUNTU_USER}/models/${FLUXDEV_MODEL_SUBDIR}" && \
+      cd "/home/${UBUNTU_USER}/models/${FLUXDEV_MODEL_SUBDIR}" && \
+      wget --header="User-Agent: Mozilla/5.0" \
+           -O "${FLUXDEV_MODEL_FILENAME}" \
+           "${FLUXDEV_MODEL_URL}"; \
+    fi
 
 # ==============================
 # runtime

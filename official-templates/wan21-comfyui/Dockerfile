@@ -12,6 +12,9 @@ ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
+ARG WAN21_MODEL_URL=""
+ARG WAN21_MODEL_FILENAME="wan2.1.safetensors"
+ARG WAN21_MODEL_SUBDIR="ckpt"
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH + 工具
 # ==============================
@@ -103,7 +106,7 @@ print("Arch:", platform.machine())
 PY
 
 # ==============================
-# Comfy-builder: 安装 ComfyUI + Manager + 可选 Nunchaku
+# Comfy-builder: 安装 ComfyUI + Manager + 可选 Nunchaku + WAN2.1 模型
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -111,6 +114,10 @@ ARG UBUNTU_USER
 ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
+
+ARG WAN21_MODEL_URL
+ARG WAN21_MODEL_FILENAME
+ARG WAN21_MODEL_SUBDIR
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -149,6 +156,15 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
+
+RUN if [[ -n "${WAN21_MODEL_URL}" ]]; then \
+      echo "[INFO] Downloading WAN 2.1 model from ${WAN21_MODEL_URL} ..."; \
+      mkdir -p "/home/${UBUNTU_USER}/models/${WAN21_MODEL_SUBDIR}" && \
+      cd "/home/${UBUNTU_USER}/models/${WAN21_MODEL_SUBDIR}" && \
+      wget -O "${WAN21_MODEL_FILENAME}" "${WAN21_MODEL_URL}"; \
+    else \
+      echo "[INFO] WAN21_MODEL_URL is empty, skip WAN2.1 model download."; \
+    fi
 
 # ==============================
 # Runtime
