@@ -5,7 +5,7 @@ variable "BASE_IMAGE"  { default = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04" 
 variable "PYTHON_VER"  { default = "3.11" }
 variable "COMFY_PORT"  { default = "8188" }
 
-variable "TORCH_VERSION" { default = "2.4.0" }
+variable "TORCH_VERSION" { default = "2.4.1" }
 variable "TORCH_VISION_VERSION" { default = "0.19.1" }
 variable "TORCH_CUDA"    { default = "cu124" }
 
