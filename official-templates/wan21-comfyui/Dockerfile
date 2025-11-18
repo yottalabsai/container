@@ -15,7 +15,6 @@ ARG TORCH_CUDA="cu124"
 ARG WAN21_MODEL_URL=""
 ARG WAN21_MODEL_FILENAME="wan2.1.safetensors"
 ARG WAN21_MODEL_SUBDIR="ckpt"
-ARG WAN21_MODEL_HF_TOKEN=""
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH + 工具
@@ -120,7 +119,6 @@ ARG NUNCHAKU_REF
 ARG WAN21_MODEL_URL
 ARG WAN21_MODEL_FILENAME
 ARG WAN21_MODEL_SUBDIR
-ARG WAN21_MODEL_HF_TOKEN
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -160,23 +158,30 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-RUN if [[ -n "${WAN21_MODEL_URL}" ]]; then \
-      echo "[INFO] Downloading WAN 2.1 model from ${WAN21_MODEL_URL} ..."; \
-      mkdir -p "/home/${UBUNTU_USER}/models/${WAN21_MODEL_SUBDIR}" && \
-      cd "/home/${UBUNTU_USER}/models/${WAN21_MODEL_SUBDIR}" && \
-      if [[ -n "${WAN21_MODEL_HF_TOKEN}" ]]; then \
-        wget --header="Authorization: Bearer ${WAN21_MODEL_HF_TOKEN}" \
-             --header="User-Agent: Mozilla/5.0" \
-             -O "${WAN21_MODEL_FILENAME}" \
-             "${WAN21_MODEL_URL}"; \
-      else \
-        echo "[WARN] WAN21_MODEL_HF_TOKEN is empty, trying anonymous download (may 401)..."; \
-        wget --header="User-Agent: Mozilla/5.0" \
-             -O "${WAN21_MODEL_FILENAME}" \
-             "${WAN21_MODEL_URL}"; \
-      fi; \
+RUN if [[ "${ENABLE_WAN21}" == "true" ]]; then \
+      set -euo pipefail; \
+      ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
+      mkdir -p "${ROOT}/text_encoders" "${ROOT}/vae" "${ROOT}/diffusion_models"; \
+      cd "${ROOT}"; \
+      echo "[WAN2.1] Downloading text encoder + VAE + diffusion models ..."; \
+      # 文本编码器（umt5）
+      wget -O "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
+        "${WAN21_BASE_URL}/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"; \
+      # VAE
+      wget -O "vae/wan_2.1_vae.safetensors" \
+        "${WAN21_BASE_URL}/split_files/vae/wan_2.1_vae.safetensors"; \
+      # Diffusion 主模型（按需保留/注释）
+      wget -O "diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors" \
+        "${WAN21_BASE_URL}/split_files/diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors"; \
+      wget -O "diffusion_models/wan2.1_i2v_480p_14B_fp16.safetensors" \
+        "${WAN21_BASE_URL}/split_files/diffusion_models/wan2.1_i2v_480p_14B_fp16.safetensors"; \
+      wget -O "diffusion_models/wan2.1_vace_14B_fp16.safetensors" \
+        "${WAN21_BASE_URL}/split_files/diffusion_models/wan2.1_vace_14B_fp16.safetensors"; \
+      wget -O "diffusion_models/wan2.1_fun_camera_v1.1_1.3B_bf16.safetensors" \
+        "${WAN21_BASE_URL}/split_files/diffusion_models/wan2.1_fun_camera_v1.1_1.3B_bf16.safetensors"; \
+      echo "[WAN2.1] Done."; \
     else \
-      echo "[INFO] WAN21_MODEL_URL is empty, skip WAN2.1 model download."; \
+      echo "[WAN2.1] ENABLE_WAN21 != true, skip download."; \
     fi
 
 

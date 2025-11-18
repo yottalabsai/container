@@ -14,7 +14,6 @@ variable "TORCH_CUDA"           { default = "cu124" }
 variable "WAN21_MODEL_URL"       { default = "https://huggingface.co/One-2-Flow/WAN2.1-Unet-XL/resolve/main/WAN2.1-Unet-XL.safetensors" }
 variable "WAN21_MODEL_FILENAME"  { default = "wan2.1.safetensors" }
 variable "WAN21_MODEL_SUBDIR"    { default = "ckpt" }
-variable "WAN21_MODEL_HF_TOKEN" { default = "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" }
 
 group "default" { targets = ["wan21-comfyui"] }
 group "comfy-all" { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
@@ -52,7 +51,6 @@ target "wan21-comfyui" {
     WAN21_MODEL_URL      = WAN21_MODEL_URL
     WAN21_MODEL_FILENAME = WAN21_MODEL_FILENAME
     WAN21_MODEL_SUBDIR   = WAN21_MODEL_SUBDIR
-    WAN21_MODEL_HF_TOKEN = WAN21_MODEL_HF_TOKEN
   }
 }
 
@@ -89,6 +87,5 @@ target "wan21-comfyui-nunchaku" {
     WAN21_MODEL_URL      = WAN21_MODEL_URL
     WAN21_MODEL_FILENAME = WAN21_MODEL_FILENAME
     WAN21_MODEL_SUBDIR   = WAN21_MODEL_SUBDIR
-    WAN21_MODEL_HF_TOKEN = WAN21_MODEL_HF_TOKEN
   }
 }

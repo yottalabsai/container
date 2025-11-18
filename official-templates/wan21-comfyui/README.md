@@ -21,7 +21,7 @@ docker buildx bake comfy-all --push
 docker buildx bake wan21-comfyui \
   --push \
   --set WAN21_MODEL_URL=https://你自己的存储/wan2.1.safetensors
-  --set wan21-comfyui.args.WAN21_MODEL_HF_TOKEN=hf_xxxxxxxxxxxxxxxxx
+  --set WAN21_MODEL_HF_TOKEN=hf_xxxxxxxxxxxxxxxxx
 ```
 
 ## Exposed Ports

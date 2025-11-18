@@ -112,6 +112,10 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
+ARG FLUXDEV_MODEL_URL
+ARG FLUXDEV_MODEL_FILENAME
+ARG FLUXDEV_MODEL_SUBDIR
+
 WORKDIR /home/${UBUNTU_USER}
 
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
@@ -145,13 +149,18 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-RUN if [[ -n "${FLUXDEV_MODEL_URL}" ]]; then \
-      mkdir -p "/home/${UBUNTU_USER}/models/${FLUXDEV_MODEL_SUBDIR}" && \
-      cd "/home/${UBUNTU_USER}/models/${FLUXDEV_MODEL_SUBDIR}" && \
-      wget --header="User-Agent: Mozilla/5.0" \
-           -O "${FLUXDEV_MODEL_FILENAME}" \
-           "${FLUXDEV_MODEL_URL}"; \
+RUN if [[ "${ENABLE_FLUX1_DEV}" == "true" ]]; then \
+      set -euo pipefail; \
+      ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
+      mkdir -p "${ROOT}/checkpoints"; \
+      cd "${ROOT}/checkpoints"; \
+      echo "[FLUX1-DEV] Downloading flux1-dev-fp8.safetensors ..."; \
+      wget -O "flux1-dev-fp8.safetensors" "${FLUX1_DEV_URL}"; \
+      echo "[FLUX1-DEV] Done."; \
+    else \
+      echo "[FLUX1-DEV] ENABLE_FLUX1_DEV != true, skip download."; \
     fi
+
 
 # ==============================
 # runtime
