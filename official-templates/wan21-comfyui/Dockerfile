@@ -15,6 +15,8 @@ ARG TORCH_CUDA="cu124"
 ARG WAN21_MODEL_URL=""
 ARG WAN21_MODEL_FILENAME="wan2.1.safetensors"
 ARG WAN21_MODEL_SUBDIR="ckpt"
+ARG WAN21_MODEL_HF_TOKEN=""
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH + 工具
 # ==============================
@@ -118,6 +120,7 @@ ARG NUNCHAKU_REF
 ARG WAN21_MODEL_URL
 ARG WAN21_MODEL_FILENAME
 ARG WAN21_MODEL_SUBDIR
+ARG WAN21_MODEL_HF_TOKEN
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -161,10 +164,21 @@ RUN if [[ -n "${WAN21_MODEL_URL}" ]]; then \
       echo "[INFO] Downloading WAN 2.1 model from ${WAN21_MODEL_URL} ..."; \
       mkdir -p "/home/${UBUNTU_USER}/models/${WAN21_MODEL_SUBDIR}" && \
       cd "/home/${UBUNTU_USER}/models/${WAN21_MODEL_SUBDIR}" && \
-      wget -O "${WAN21_MODEL_FILENAME}" "${WAN21_MODEL_URL}"; \
+      if [[ -n "${WAN21_MODEL_HF_TOKEN}" ]]; then \
+        wget --header="Authorization: Bearer ${WAN21_MODEL_HF_TOKEN}" \
+             --header="User-Agent: Mozilla/5.0" \
+             -O "${WAN21_MODEL_FILENAME}" \
+             "${WAN21_MODEL_URL}"; \
+      else \
+        echo "[WARN] WAN21_MODEL_HF_TOKEN is empty, trying anonymous download (may 401)..."; \
+        wget --header="User-Agent: Mozilla/5.0" \
+             -O "${WAN21_MODEL_FILENAME}" \
+             "${WAN21_MODEL_URL}"; \
+      fi; \
     else \
       echo "[INFO] WAN21_MODEL_URL is empty, skip WAN2.1 model download."; \
     fi
+
 
 # ==============================
 # Runtime

@@ -20,8 +20,8 @@ docker buildx bake comfy-all --push
 # 覆盖部分参数
 docker buildx bake wan21-comfyui \
   --push \
-  --set wan21-comfyui.args.TORCH_VERSION=2.4.1 \
-  --set wan21-comfyui.args.TORCH_CUDA=cu124
+  --set WAN21_MODEL_URL=https://你自己的存储/wan2.1.safetensors
+  --set wan21-comfyui.args.WAN21_MODEL_HF_TOKEN=hf_xxxxxxxxxxxxxxxxx
 ```
 
 ## Exposed Ports
