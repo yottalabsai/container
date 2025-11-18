@@ -15,10 +15,6 @@ ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
-ARG FLUXDEV_MODEL_URL
-ARG FLUXDEV_MODEL_FILENAME
-ARG FLUXDEV_MODEL_SUBDIR
-
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -112,10 +108,6 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
-ARG FLUXDEV_MODEL_URL
-ARG FLUXDEV_MODEL_FILENAME
-ARG FLUXDEV_MODEL_SUBDIR
-
 WORKDIR /home/${UBUNTU_USER}
 
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
@@ -149,18 +141,13 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-RUN if [[ "${ENABLE_FLUX1_DEV}" == "true" ]]; then \
-      set -euo pipefail; \
-      ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-      mkdir -p "${ROOT}/checkpoints"; \
-      cd "${ROOT}/checkpoints"; \
-      echo "[FLUX1-DEV] Downloading flux1-dev-fp8.safetensors ..."; \
-      wget -O "flux1-dev-fp8.safetensors" "${FLUX1_DEV_URL}"; \
-      echo "[FLUX1-DEV] Done."; \
-    else \
-      echo "[FLUX1-DEV] ENABLE_FLUX1_DEV != true, skip download."; \
-    fi
-
+RUN set -euo pipefail; \
+    ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
+    mkdir -p "${ROOT}/checkpoints"; \
+    echo "[FLUX1-DEV] Downloading flux1-dev-fp8.safetensors ..."; \
+    wget -O "${ROOT}/checkpoints/flux1-dev-fp8.safetensors" \
+      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors"; \
+    echo "[FLUX1-DEV] Done."
 
 # ==============================
 # runtime

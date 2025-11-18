@@ -15,10 +15,6 @@ ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
-ARG WAN22_MODEL_URL
-ARG WAN22_MODEL_FILENAME
-ARG WAN22_MODEL_SUBDIR
-
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -115,10 +111,6 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
-ARG WAN22_MODEL_URL
-ARG WAN22_MODEL_FILENAME
-ARG WAN22_MODEL_SUBDIR
-
 WORKDIR /home/${UBUNTU_USER}
 
 # ComfyUI 主工程
@@ -156,34 +148,22 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-RUN if [[ "${ENABLE_WAN22}" == "true" ]]; then \
-      set -euo pipefail; \
-      ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-      mkdir -p "${ROOT}/text_encoders" "${ROOT}/vae" "${ROOT}/diffusion_models"; \
-      cd "${ROOT}"; \
-      echo "[WAN2.2] Downloading text encoder + VAEs + diffusion models ..."; \
-      # 文本编码器（Wan2.2 用 fp16 版）
-      wget -O "text_encoders/umt5_xxl_fp16.safetensors" \
-        "${WAN22_BASE_URL}/split_files/text_encoders/umt5_xxl_fp16.safetensors"; \
-      # VAEs：Wan2.1 + Wan2.2 两个都下（文档推荐这样搭配）:contentReference[oaicite:2]{index=2}
-      wget -O "vae/wan_2.1_vae.safetensors" \
-        "${WAN22_BASE_URL}/split_files/vae/wan_2.1_vae.safetensors"; \
-      wget -O "vae/wan2.2_vae.safetensors" \
-        "${WAN22_BASE_URL}/split_files/vae/wan2.2_vae.safetensors"; \
-      # Diffusion：挑几条主力模型（按需注释）
-      wget -O "diffusion_models/wan2.2_ti2v_5B_fp16.safetensors" \
-        "${WAN22_BASE_URL}/split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors"; \
-      wget -O "diffusion_models/wan2.2_animate_14B_bf16.safetensors" \
-        "${WAN22_BASE_URL}/split_files/diffusion_models/wan2.2_animate_14B_bf16.safetensors"; \
-      wget -O "diffusion_models/wan2.2_fun_camera_low_noise_14B_fp8_scaled.safetensors" \
-        "${WAN22_BASE_URL}/split_files/diffusion_models/wan2.2_fun_camera_low_noise_14B_fp8_scaled.safetensors"; \
-      wget -O "diffusion_models/wan2.2_fun_camera_high_noise_14B_fp8_scaled.safetensors" \
-        "${WAN22_BASE_URL}/split_files/diffusion_models/wan2.2_fun_camera_high_noise_14B_fp8_scaled.safetensors"; \
-      echo "[WAN2.2] Done."; \
-    else \
-      echo "[WAN2.2] ENABLE_WAN22 != true, skip download."; \
-    fi
-
+RUN set -euo pipefail; \
+    ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
+    mkdir -p \
+      "${ROOT}/text_encoders" \
+      "${ROOT}/vae" \
+      "${ROOT}/diffusion_models"; \
+    echo "[WAN2.2] Downloading text encoder (fp8) ..."; \
+    wget -O "${ROOT}/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
+      "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"; \
+    echo "[WAN2.2] Downloading VAE ..."; \
+    wget -O "${ROOT}/vae/wan2.2_vae.safetensors" \
+      "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan2.2_vae.safetensors"; \
+    echo "[WAN2.2] Downloading diffusion ti2v 5B fp16 ..."; \
+    wget -O "${ROOT}/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors" \
+      "https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors"; \
+    echo "[WAN2.2] Done."
 
 # ==============================
 # runtime

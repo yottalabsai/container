@@ -9,10 +9,6 @@ variable "TORCH_VERSION"        { default = "2.4.1" }
 variable "TORCH_VISION_VERSION" { default = "0.19.1" }
 variable "TORCH_CUDA"           { default = "cu124" }
 
-variable "WAN22_MODEL_URL" { default = "https://huggingface.co/One-2-Flow/WAN2.2-Unet-XL2/resolve/main/WAN2.2-Unet-XL2.safetensors" }
-variable "WAN22_MODEL_FILENAME" { default = "wan2.2.safetensors" }
-variable "WAN22_MODEL_SUBDIR"   { default = "ckpt" }
-
 group "default"  { targets = ["wan22-comfyui"] }
 group "wan22-all" { targets = ["wan22-comfyui", "wan22-comfyui-nunchaku"] }
 
@@ -45,10 +41,6 @@ target "wan22-comfyui" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
-
-    WAN22_MODEL_URL      = WAN22_MODEL_URL
-    WAN22_MODEL_FILENAME = WAN22_MODEL_FILENAME
-    WAN22_MODEL_SUBDIR   = WAN22_MODEL_SUBDIR
   }
 }
 
@@ -81,9 +73,5 @@ target "wan22-comfyui-nunchaku" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
-
-    WAN22_MODEL_URL      = WAN22_MODEL_URL
-    WAN22_MODEL_FILENAME = WAN22_MODEL_FILENAME
-    WAN22_MODEL_SUBDIR   = WAN22_MODEL_SUBDIR
   }
 }

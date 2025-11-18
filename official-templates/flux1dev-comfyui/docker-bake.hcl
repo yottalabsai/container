@@ -9,10 +9,6 @@ variable "TORCH_VERSION"        { default = "2.4.1" }
 variable "TORCH_VISION_VERSION" { default = "0.19.1" }
 variable "TORCH_CUDA"           { default = "cu124" }
 
-variable "FLUXDEV_MODEL_URL" { default = "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/FLUX.1-dev.safetensors" }
-variable "FLUXDEV_MODEL_FILENAME" { default = "flux1-dev.safetensors" }
-variable "FLUXDEV_MODEL_SUBDIR"   { default = "ckpt" }
-
 group "default"      { targets = ["flux1dev-comfyui"] }
 group "flux1dev-all" { targets = ["flux1dev-comfyui", "flux1dev-comfyui-nunchaku"] }
 
@@ -45,10 +41,6 @@ target "flux1dev-comfyui" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
-
-    FLUXDEV_MODEL_URL      = FLUXDEV_MODEL_URL
-    FLUXDEV_MODEL_FILENAME = FLUXDEV_MODEL_FILENAME
-    FLUXDEV_MODEL_SUBDIR   = FLUXDEV_MODEL_SUBDIR
   }
 }
 
@@ -81,9 +73,5 @@ target "flux1dev-comfyui-nunchaku" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
-
-    FLUXDEV_MODEL_URL      = FLUXDEV_MODEL_URL
-    FLUXDEV_MODEL_FILENAME = FLUXDEV_MODEL_FILENAME
-    FLUXDEV_MODEL_SUBDIR   = FLUXDEV_MODEL_SUBDIR
   }
 }
