@@ -151,6 +151,8 @@ ARG COMFYUI_PORT
 
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
+USER root
+
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
