@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7-labs
-
 # ==============================
 # Global build args (可在 bake 里覆盖)
 # ==============================
@@ -27,7 +25,7 @@ SHELL ["/bin/bash","-o","pipefail","-c"]
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    TZ=Asia/Shanghai \
+    TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
@@ -48,23 +46,20 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- 创建非 root 用户（避免 root SSH 登录）----
+# ---- 创建非 root 用户 ----
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true
-
-# ---- 给 ubuntu 用户加密码（可选，可改）----
 RUN echo "${UBUNTU_USER}:ubuntu" | chpasswd
-
-# ---- 允许 ubuntu 用户通过 SSH 登录（禁止 root 登录）----
-RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
-    sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
-    sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
-
-# ---- SSH 预处理：保持容器前台可启动 ----
 RUN mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
     chmod 700 /home/${UBUNTU_USER}/.ssh
 
-# ---- Python 安装（deadsnakes + get-pip 容错）----
+# SSH config
+RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
+    sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
+    sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
+
+
+# ---- Python 环境安装 ----
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -91,18 +86,14 @@ ARG COMFYUI_PORT
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
-# 升级基础 pip 工具
 RUN python -m pip install --upgrade pip wheel setuptools
 
-# 统一 torch 版本：2.4.x + ${TORCH_CUDA}
-# 说明：虽然基座是 CUDA 12.8.1，但 cu124 轮子在 runtime 上是兼容的（同 major 12）
 RUN python -m pip install --no-cache-dir \
       "torch==${TORCH_VERSION}" \
       "torchvision==${TORCH_VISION_VERSION}" \
       "torchaudio==${TORCH_VERSION}" \
       --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
 
-# 打印版本信息，方便排查
 RUN python - <<'PY'
 import torch, platform
 print("PyTorch:", torch.__version__)
@@ -123,17 +114,17 @@ ARG NUNCHAKU_REF
 
 WORKDIR /home/${UBUNTU_USER}
 
-# 安装 ComfyUI
+# ComfyUI 主工程
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
-    python -m pip install -r requirements.txt
+    python -m pip install --no-cache-dir -r requirements.txt
 
-# ComfyUI-Manager
+# ---- FIXED: ComfyUI-Manager (官方 org + 稳定) ----
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
-    git clone --depth=1 https://github.com/ltdrdata/ComfyUI-Manager.git
+    git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
 
-# 可选安装 Nunchaku
+# 可选 Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
         echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
@@ -145,11 +136,12 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
         git clone --depth=1 "${NUNCHAKU_REPO}" ComfyUI-Nunchaku; \
       fi; \
       if [[ -f ComfyUI-Nunchaku/requirements.txt ]]; then \
-        python -m pip install -r ComfyUI-Nunchaku/requirements.txt; \
+        python -m pip install --no-cache-dir -r ComfyUI-Nunchaku/requirements.txt; \
       fi; \
     fi
 
-# 目录结构
+
+# 模型 & 输出目录
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -159,9 +151,8 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # ==============================
-# Runtime: 仅包含运行时 + Nginx / README / logo
+# Runtime
 # ==============================
-
 FROM comfy-builder AS runtime
 
 ARG UBUNTU_USER
@@ -169,13 +160,14 @@ ARG COMFYUI_PORT
 
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
-# --------- Nginx / README / logo（来自额外 build context）---------
-COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
-COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
-COPY README.md /usr/share/nginx/html/README.md
-COPY --from=logo yotta.txt /etc/yotta.txt
+COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
+COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
+COPY README.md      /usr/share/nginx/html/README.md
+COPY --from=logo    yotta.txt /etc/yotta.txt
+COPY --from=scripts start.sh /start.sh
 
-RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+RUN chmod +x /start.sh && \
+    echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
 USER root
@@ -186,10 +178,4 @@ EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-CMD ["bash","-lc","/usr/sbin/sshd && nginx && \
-  su - ${UBUNTU_USER} -c \"cd /home/${UBUNTU_USER}/ComfyUI && \
-    python main.py \
-      --listen 0.0.0.0 \
-      --port ${COMFYUI_PORT} \
-      --output-directory /home/${UBUNTU_USER}/output \
-      --extra-model-paths /home/${UBUNTU_USER}/models\""]
+ENTRYPOINT ["/start.sh"]
