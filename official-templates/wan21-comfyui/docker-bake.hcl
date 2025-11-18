@@ -6,6 +6,7 @@ variable "PYTHON_VER"  { default = "3.11" }
 variable "COMFY_PORT"  { default = "8188" }
 
 variable "TORCH_VERSION" { default = "2.4.0" }
+variable "TORCH_VISION_VERSION" { default = "0.19.1" }
 variable "TORCH_CUDA"    { default = "cu124" }
 
 group "default" { targets = ["wan21-comfyui"] }
@@ -35,6 +36,7 @@ target "wan21-comfyui" {
     NUNCHAKU_REF     = ""
 
     TORCH_VERSION = TORCH_VERSION
+    TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA    = TORCH_CUDA
   }
 }
@@ -63,6 +65,7 @@ target "wan21-comfyui-nunchaku" {
     NUNCHAKU_REF     = "main"
 
     TORCH_VERSION = TORCH_VERSION
+    TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA    = TORCH_CUDA
   }
 }

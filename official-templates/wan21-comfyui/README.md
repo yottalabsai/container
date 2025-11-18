@@ -15,7 +15,7 @@ docker buildx bake wan21-comfyui --push
 docker buildx bake wan21-comfyui-nunchaku --push
 
 # 构建两个变体一起
-docker buildx bake comfy-all
+docker buildx bake comfy-all --push
 
 # 覆盖部分参数
 docker buildx bake wan21-comfyui \

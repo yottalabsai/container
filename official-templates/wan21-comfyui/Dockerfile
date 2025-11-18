@@ -11,7 +11,8 @@ ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 ARG TORCH_VERSION="2.4.0"
-ARG TORCH_CUDA="cu124"  # 对应 https://download.pytorch.org/whl/${TORCH_CUDA}
+ARG TORCH_VISION_VERSION="0.19.1"
+ARG TORCH_CUDA="cu124"
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH + 工具
@@ -96,7 +97,7 @@ RUN python -m pip install --upgrade pip wheel setuptools
 # 说明：虽然基座是 CUDA 12.8.1，但 cu124 轮子在 runtime 上是兼容的（同 major 12）
 RUN python -m pip install --no-cache-dir \
       "torch==${TORCH_VERSION}" \
-      "torchvision==${TORCH_VERSION}" \
+      "torchvision==${TORCH_VISION_VERSION}" \
       "torchaudio==${TORCH_VERSION}" \
       --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
 

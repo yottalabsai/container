@@ -14,6 +14,7 @@ ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
 ARG TORCH_VERSION="2.4.0"
+ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
 # ==============================
@@ -82,7 +83,7 @@ RUN python3 -m pip install --upgrade pip wheel setuptools
 
 RUN python3 -m pip install \
       torch==${TORCH_VERSION} \
-      torchvision==${TORCH_VERSION} \
+      torchvision==${TORCH_VISION_VERSION} \
       torchaudio==${TORCH_VERSION} \
       --index-url https://download.pytorch.org/whl/${TORCH_CUDA}
 
