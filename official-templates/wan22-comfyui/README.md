@@ -19,7 +19,6 @@ docker buildx bake wan22-all --push
 
 docker buildx bake wan22-comfyui \
   --push \
-  --set WAN22_MODEL_URL=https://你自己的存储/wan2.1.safetensors
 
 ```
 
