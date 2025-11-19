@@ -39,7 +39,7 @@ target "sglang" {
     # TORCH         = ""
 
     # 单卡架构：让 Dockerfile 根据 GPU_ARCH 推导 TORCH_CUDA_ARCH_LIST / CMAKE_CUDA_ARCHITECTURES
-    GPU_ARCH                  = "100"   # 你 Dockerfile 里默认也是 100（5090），有需要自己改成 90 等
+    GPU_ARCH                  = "90"   # 你 Dockerfile 里默认也是 100（5090），有需要自己改成 90 等
     CMAKE_BUILD_PARALLEL_LEVEL = "8"
 
     PIP_DISABLE_PIP_VERSION_CHECK = "1"
