@@ -50,7 +50,7 @@ target "sglang" {
     HF_HUB_ENABLE_HF_TRANSFER     = "1"
 
     # 默认给 SGLang 的模型和服务配置（跑 Qwen2.5-7B-Instruct）
-    SGLANG_MODEL  = "Qwen/Qwen2.5-7B-Instruct"
+    SGLANG_MODEL  = "Qwen/Qwen2.5-3B-Instruct"
     SGLANG_HOST   = "0.0.0.0"
     SGLANG_PORT   = "30000"
     SGLANG_EXTRA  = ""
