@@ -38,8 +38,10 @@ target "sglang" {
     #   --set sglang.args.TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121"
     # TORCH         = ""
 
-    # 单卡架构：让 Dockerfile 根据 GPU_ARCH 推导 TORCH_CUDA_ARCH_LIST / CMAKE_CUDA_ARCHITECTURES
-    GPU_ARCH                  = "90"   # 你 Dockerfile 里默认也是 100（5090），有需要自己改成 90 等
+    # 单卡 GPU 架构：让 Dockerfile 根据 GPU_ARCH 推导 TORCH_CUDA_ARCH_LIST / CMAKE_CUDA_ARCHITECTURES
+    # 这里默认是 90，更偏向 H100；如果你在 5090 上跑，可以在命令行覆盖为 100：
+    #   docker buildx bake sglang --set sglang.args.GPU_ARCH=100
+    GPU_ARCH                   = "90"
     CMAKE_BUILD_PARALLEL_LEVEL = "8"
 
     PIP_DISABLE_PIP_VERSION_CHECK = "1"
@@ -47,12 +49,14 @@ target "sglang" {
     HF_HOME                       = "/workspace/hf"
     HF_HUB_ENABLE_HF_TRANSFER     = "1"
 
+    # 默认给 SGLang 的模型和服务配置（跑 Qwen2.5-7B-Instruct）
     SGLANG_MODEL  = "Qwen/Qwen2.5-7B-Instruct"
     SGLANG_HOST   = "0.0.0.0"
     SGLANG_PORT   = "30000"
     SGLANG_EXTRA  = ""
 
-    CCACHE_DIR     = "/root/.ccache"
+    # ccache 相关配置，给 CUDA / C++ 编译加速用的
+    CCACHE_DIR      = "/root/.ccache"
     CCACHE_COMPRESS = "1"
     CCACHE_MAXSIZE  = "10G"
   }
