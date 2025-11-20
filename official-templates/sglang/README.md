@@ -9,7 +9,7 @@ Example:
 ```bash
 cd containers/official-templates/sglang
 
-docker buildx bake sglang --set sglang.push=true
+docker buildx bake sglang --push
 ```
 
 ## Exposed Ports

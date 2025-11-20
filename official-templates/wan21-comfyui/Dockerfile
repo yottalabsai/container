@@ -112,10 +112,6 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
-ARG WAN21_MODEL_URL
-ARG WAN21_MODEL_FILENAME
-ARG WAN21_MODEL_SUBDIR
-
 WORKDIR /home/${UBUNTU_USER}
 
 # ComfyUI 主工程
@@ -195,6 +191,27 @@ COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
+
+# 这里插入 post_start.sh 生成
+RUN cat >/post_start.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG=/home/ubuntu/comfyui.log
+mkdir -p /home/ubuntu
+
+sudo -u ubuntu bash -lc "
+  cd /home/ubuntu/ComfyUI && \
+  python -u main.py \
+    --listen \"0.0.0.0\" \
+    --port   \"${COMFYUI_PORT:-8188}\" \
+  >> \"$LOG\" 2>&1 &
+"
+
+echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
+EOS
+
+RUN chmod +x /post_start.sh
 
 RUN chmod +x /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
