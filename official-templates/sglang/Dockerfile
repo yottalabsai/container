@@ -30,6 +30,7 @@ RUN apt-get update -y && \
       git git-lfs curl wget ca-certificates locales tzdata \
       build-essential pkg-config ninja-build \
       ffmpeg libgl1 libglib2.0-0 \
+      libnuma-dev \
       software-properties-common \
       nginx \
       openssh-server openssh-client \
@@ -82,10 +83,12 @@ RUN python -m pip install --no-cache-dir \
     torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
+# ---- Build deps for sgl-kernel ----
 RUN python -m pip install --no-cache-dir "scikit-build-core>=0.10" cmake
 
 # 构建 sgl-kernel
-RUN python -m pip install --no-cache-dir --no-build-isolation \
+RUN TORCH_CUDA_ARCH_LIST="" \
+    python -m pip install --no-cache-dir --no-build-isolation \
     --config-settings=cmake.args="-G;Ninja" \
     --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
     --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
