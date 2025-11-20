@@ -82,6 +82,8 @@ RUN python -m pip install --no-cache-dir \
     torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
+RUN python -m pip install --no-cache-dir "scikit-build-core>=0.10" cmake
+
 # 构建 sgl-kernel
 RUN python -m pip install --no-cache-dir --no-build-isolation \
     --config-settings=cmake.args="-G;Ninja" \
