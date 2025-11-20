@@ -92,6 +92,7 @@ RUN TORCH_CUDA_ARCH_LIST="" \
     --config-settings=cmake.args="-G;Ninja" \
     --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
     --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
+    --config-settings=cmake.define.CMAKE_POLICY_VERSION_MINIMUM=3.5 \
     "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel"
 
 # 安装 sglang Python 包
