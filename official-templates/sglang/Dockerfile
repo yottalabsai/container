@@ -116,7 +116,7 @@ ARG PYTHON_VERSION
 ARG UBUNTU_USER
 
 ENV HF_HOME=/workspace/hf \
-    SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct" \
+    SGLANG_MODEL="Qwen/Qwen2.5-3B-Instruct" \
     SGLANG_HOST="0.0.0.0" \
     SGLANG_PORT="30000"
 
