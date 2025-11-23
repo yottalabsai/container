@@ -145,13 +145,18 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       hf_transfer
 
 # ========================================
-# User
+# User + sudo 免密
 # ========================================
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
     mkdir -p /etc/sudoers.d && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ubuntu && \
-    chmod 0440 /etc/sudoers.d/90-ubuntu
+    chmod 0440 /etc/sudoers.d/90-ubuntu && \
+    # 确保 sudoers 会 include /etc/sudoers.d 目录
+    if ! grep -q "includedir /etc/sudoers.d" /etc/sudoers; then \
+      echo "includedir /etc/sudoers.d" >> /etc/sudoers; \
+    fi && \
+    chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ========================================
 # Start Script：entry.sh 内联
