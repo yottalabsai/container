@@ -61,6 +61,7 @@ RUN apt-get update -y && \
       openssh-server openssh-client \
       tmux vim zsh zip unzip less procps net-tools htop \
       tini \
+      sudo \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen && update-locale \
