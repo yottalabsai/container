@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # ========================================
 # 基础镜像（可由 bake 覆盖）
 # ========================================
@@ -34,9 +36,9 @@ ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
-# GPU 架构（默认按 5090 = 100）
-ARG TORCH_CUDA_ARCH_LIST="100"
-ARG CMAKE_CUDA_ARCHITECTURES="100"
+# GPU 架构（这里 90：CUDA 12.1 不支持 100）
+ARG TORCH_CUDA_ARCH_LIST="90"
+ARG CMAKE_CUDA_ARCHITECTURES="90"
 
 # ========================================
 # 环境变量
@@ -115,7 +117,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     fi
 
 # ========================================
-# Build tooling for sgl-kernel（修 BackendUnavailable）
+# Build tooling for sgl-kernel
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir \
