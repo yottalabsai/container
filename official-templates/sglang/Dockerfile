@@ -87,13 +87,16 @@ RUN python -m pip install --no-cache-dir "sgl-kernel>=0.3.8"
 # SGLang runtime
 RUN python -m pip install --no-cache-dir "sglang[all]"
 
+# 运行时依赖
 RUN python -m pip install --no-cache-dir \
-    transformers>=4.40,<5 \
+    "transformers>=4.40,<5" \
     huggingface_hub \
     sentencepiece \
-    fastapi uvicorn uvloop orjson \
+    fastapi \
+    uvicorn \
+    uvloop \
+    orjson \
     hf_transfer
-
 
 # ==============================
 # Final: SGLang runtime + Qwen
