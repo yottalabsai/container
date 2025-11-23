@@ -39,8 +39,8 @@ target "sglang" {
     # TORCH         = ""
 
     # GPU 架构：默认 5090 = 100，如在 H100 上可以改成 90
-    TORCH_CUDA_ARCH_LIST     = "90"
-    CMAKE_CUDA_ARCHITECTURES = "90"
+    TORCH_CUDA_ARCH_LIST     = ""
+    CMAKE_CUDA_ARCHITECTURES = ""
 
     CMAKE_BUILD_PARALLEL_LEVEL = "8"
 

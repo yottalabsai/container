@@ -37,8 +37,8 @@ ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
 # GPU 架构（这里 90：CUDA 12.1 不支持 100）
-ARG TORCH_CUDA_ARCH_LIST="90"
-ARG CMAKE_CUDA_ARCHITECTURES="90"
+ARG TORCH_CUDA_ARCH_LIST=""
+ARG CMAKE_CUDA_ARCHITECTURES=""
 
 # ========================================
 # 环境变量
@@ -123,7 +123,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir \
       "scikit-build-core>=0.10" \
       cmake \
-      build
+      build \
 
 # ========================================
 # Build sgl-kernel
@@ -134,14 +134,20 @@ RUN --mount=type=cache,target=/root/.ccache \
       : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; \
       export CMAKE_BUILD_PARALLEL_LEVEL; \
       export CMAKE_PREFIX_PATH="$(python3 -c "from torch.utils import cmake_prefix_path as p; print(p)")"; \
+      EXTRA_ARGS=""; \
+      if [ -n "${CMAKE_CUDA_ARCHITECTURES}" ]; then \
+        EXTRA_ARGS="${EXTRA_ARGS} --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}"; \
+      fi; \
+      if [ -n "${TORCH_CUDA_ARCH_LIST}" ]; then \
+        EXTRA_ARGS="${EXTRA_ARGS} --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}"; \
+      fi; \
       python3 -m pip -v install --no-cache-dir --no-build-isolation \
         --config-settings=cmake.args="-G;Ninja" \
         --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-        --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
         --config-settings=cmake.define.MSCCLPP_BUILD_APPS_NCCL=OFF \
         --config-settings=cmake.define.MSCCLPP_BUILD_TESTS=OFF \
         --config-settings=cmake.define.MSCCLPP_BUILD_PYTHON_BINDINGS=OFF \
-        --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
+        ${EXTRA_ARGS} \
         "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
     '
 
