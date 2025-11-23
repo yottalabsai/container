@@ -79,7 +79,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     rm -rf /var/lib/apt/lists/*
 
 # ========================================
-# SSH：准备 /root/.ssh/authorized_keys，避免 tee 报错
+# root SSH 目录（避免 tee /root/.ssh/authorized_keys 报错）
 # ========================================
 RUN set -eux; \
     mkdir -p /root/.ssh; \
@@ -145,31 +145,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       hf_transfer
 
 # ========================================
-# User + sudo 免密
+# 可选 ubuntu 用户
 # ========================================
-RUN useradd -ms /bin/bash ubuntu && \
-    usermod -aG sudo ubuntu && \
-    mkdir -p /etc/sudoers.d && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ubuntu && \
-    chmod 0440 /etc/sudoers.d/90-ubuntu && \
-    # 确保 sudoers 会 include /etc/sudoers.d 目录
-    if ! grep -q "includedir /etc/sudoers.d" /etc/sudoers; then \
-      echo "includedir /etc/sudoers.d" >> /etc/sudoers; \
-    fi && \
-    chown -R ubuntu:ubuntu /workspace "$HF_HOME"
+RUN useradd -ms /bin/bash ubuntu || true && \
+    chown -R ubuntu:ubuntu /workspace "$HF_HOME" || true
 
 # ========================================
-# sudo 组全员免密（最关键的一刀）
+# Start Script：entry.sh 内联（root 来跑）
 # ========================================
-RUN set -eux; \
-    mkdir -p /etc/sudoers.d; \
-    echo "%sudo ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-sudo-nopasswd; \
-    chmod 0440 /etc/sudoers.d/00-sudo-nopasswd
-
-# ========================================
-# Start Script：entry.sh 内联
-# ========================================
-RUN cat >/entry.sh <<'EOF'
+RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -208,13 +192,16 @@ exec python3 -m sglang.launch_server \
     ${SGLANG_EXTRA}
 EOF
 
-RUN chmod +x /entry.sh && chown ubuntu:ubuntu /entry.sh
+RUN chmod +x /start.sh
 
 EXPOSE 30000
-USER ubuntu
-WORKDIR /home/ubuntu
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
+# 保持 root 运行
+# USER root        # 默认就是 root，可不写
+WORKDIR /workspace
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
+  CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/entry.sh"]
+CMD ["/bin/bash","-lc","/start.sh"]
