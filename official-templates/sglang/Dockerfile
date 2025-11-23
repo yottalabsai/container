@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # ========================================
 # 基础镜像（可由 bake 覆盖）
 # ========================================
@@ -12,8 +10,9 @@ FROM ${BASE_IMAGE}
 ARG TZ="UTC"
 ARG PYTHON_VERSION="3.11"
 
-# TORCH 为空 = 使用稳定版 cu121（2.5.1）
-ARG TORCH=""
+# 默认：官方推荐栈 PyTorch 2.8.0 + cu121
+# 如需自定义，可以在 bake 里覆盖 TORCH
+ARG TORCH="torch==2.8.0+cu121 torchvision==0.21.0+cu121 torchaudio==2.8.0+cu121 --index-url https://download.pytorch.org/whl/cu121"
 
 # 性能相关
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""
@@ -36,7 +35,7 @@ ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
-# GPU 架构（默认留空，让 CMake / sgl-kernel 自己决定）
+# 可选：如果外面没传，就留空，让 sgl-kernel 自己探测
 ARG TORCH_CUDA_ARCH_LIST=""
 ARG CMAKE_CUDA_ARCHITECTURES=""
 
@@ -106,57 +105,31 @@ RUN --mount=type=cache,target=/var/cache/apt \
 # PyTorch
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
-    if [ -n "${TORCH}" ]; then \
-      echo "[TORCH] Installing custom: ${TORCH}"; \
-      python3 -m pip install --no-cache-dir ${TORCH}; \
-    else \
-      echo "[TORCH] Installing stable cu121 (2.5.1)"; \
-      python3 -m pip install --no-cache-dir \
-        torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
-        --index-url https://download.pytorch.org/whl/cu121; \
-    fi
-
-# ========================================
-# Build tooling for sgl-kernel  (单独一条 RUN，下面有空行)
-# ========================================
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --no-cache-dir \
-      "scikit-build-core>=0.10" \
-      cmake \
-      build
-
-# ========================================
-# Build sgl-kernel
-# ========================================
-RUN --mount=type=cache,target=/root/.ccache \
-    --mount=type=cache,target=/root/.cache/pip \
-    bash -lc 'set -euxo pipefail; \
-      : "${CMAKE_BUILD_PARALLEL_LEVEL:=$(nproc)}"; \
-      export CMAKE_BUILD_PARALLEL_LEVEL; \
-      export CMAKE_PREFIX_PATH="$(python3 -c "from torch.utils import cmake_prefix_path as p; print(p)")"; \
-      EXTRA_ARGS=""; \
-      if [ -n "${CMAKE_CUDA_ARCHITECTURES}" ]; then \
-        EXTRA_ARGS="${EXTRA_ARGS} --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES}"; \
-      fi; \
-      if [ -n "${TORCH_CUDA_ARCH_LIST}" ]; then \
-        EXTRA_ARGS="${EXTRA_ARGS} --config-settings=cmake.define.TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}"; \
-      fi; \
-      python3 -m pip -v install --no-cache-dir --no-build-isolation \
-        --config-settings=cmake.args="-G;Ninja" \
-        --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-        --config-settings=cmake.define.MSCCLPP_BUILD_APPS_NCCL=OFF \
-        --config-settings=cmake.define.MSCCLPP_BUILD_TESTS=OFF \
-        --config-settings=cmake.define.MSCCLPP_BUILD_PYTHON_BINDINGS=OFF \
-        ${EXTRA_ARGS} \
-        "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel" \
+    bash -lc 'set -eux; \
+      if [ -n "${TORCH}" ]; then \
+        echo "[TORCH] Installing custom: ${TORCH}"; \
+        python3 -m pip install --no-cache-dir ${TORCH}; \
+      else \
+        echo "[TORCH] Installing default torch==2.8.0+cu121"; \
+        python3 -m pip install --no-cache-dir \
+          torch==2.8.0+cu121 torchvision==0.21.0+cu121 torchaudio==2.8.0+cu121 \
+          --index-url https://download.pytorch.org/whl/cu121; \
+      fi \
     '
 
 # ========================================
-# Install SGLang
+# （不再从源码编译 sgl-kernel，直接用 wheel）
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --no-cache-dir --no-build-isolation \
-      "sglang@git+https://github.com/sgl-project/sglang.git#subdirectory=python"
+    python3 -m pip install --no-cache-dir sgl-kernel
+
+# ========================================
+# 安装 SGLang
+# - 如果你要用固定版本，可以把 sglang 换成 sglang==0.x.y 或 git tag
+# ========================================
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir \
+      "sglang[gpu]"
 
 # ========================================
 # Extra Runtime Deps
@@ -180,9 +153,9 @@ RUN useradd -ms /bin/bash ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ========================================
-# Start Script（entry.sh 内嵌）
+# Start Script（还是内联，不单独文件）
 # ========================================
-RUN cat >/entry.sh <<'EOF'
+RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -191,8 +164,7 @@ echo "[SGLang] Host      : ${SGLANG_HOST}"
 echo "[SGLang] Port      : ${SGLANG_PORT}"
 echo "[Prefetch] Mode    : ${SGLANG_PREFETCH}"
 
-# 如果需要预拉模型（eager 模式）
-if [ "${SGLANG_PREFETCH:-lazy}" = "eager" ]; then
+if [ "${SGLANG_PREFETCH}" = "eager" ]; then
   python3 - <<'PY'
 import os
 from huggingface_hub import snapshot_download
@@ -209,18 +181,20 @@ path = snapshot_download(
     local_dir_use_symlinks=False,
     resume_download=True,
 )
-print("[Prefetch] Downloaded to:", path)
+print("Downloaded:", path)
 PY
 fi
 
-# 启动 SGLang OpenAI 兼容服务
-exec uvicorn sglang.api.server:app \
-  --host "${SGLANG_HOST}" \
-  --port "${SGLANG_PORT}" \
-  ${SGLANG_EXTRA}
+# 官方推荐的启动方式：python -m sglang.launch_server
+exec python3 -m sglang.launch_server \
+    --model-path "${SGLANG_MODEL}" \
+    --host "${SGLANG_HOST}" \
+    --port "${SGLANG_PORT}" \
+    --tp-size 1 \
+    ${SGLANG_EXTRA}
 EOF
 
-RUN chmod +x /entry.sh && chown ubuntu:ubuntu /entry.sh
+RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
 
 EXPOSE 30000
 USER ubuntu
@@ -229,4 +203,4 @@ WORKDIR /home/ubuntu
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/entry.sh"]
+CMD ["/bin/bash","-lc","/start.sh"]
