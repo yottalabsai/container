@@ -4,8 +4,6 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
-# GPU 架构：5090=100, 4090=89, H100=90
-ARG GPU_ARCH="100"
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH + 工具
@@ -35,12 +33,16 @@ RUN apt-get update -y && \
       nginx \
       openssh-server openssh-client \
       tmux vim zsh zip unzip less procps net-tools htop \
+      sudo \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen && update-locale \
     && mkdir -p /var/run/sshd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# root SSH 目录（fix start.sh authorized_keys）
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 # ---- 创建非 root 用户 ----
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true
@@ -73,10 +75,6 @@ RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && pytho
 FROM base AS build
 
 ARG PYTHON_VERSION
-ARG GPU_ARCH
-
-ENV TORCH_CUDA_ARCH_LIST="${GPU_ARCH}" \
-    CMAKE_CUDA_ARCHITECTURES="${GPU_ARCH}"
 
 # 安装 PyTorch (cu121)
 RUN python -m pip install --no-cache-dir \
@@ -143,7 +141,7 @@ RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL="${SGLANG_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
+MODEL="${SGLANG_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
 HOST="${SGLANG_HOST:-0.0.0.0}"
 PORT="${SGLANG_PORT:-30000}"
 
