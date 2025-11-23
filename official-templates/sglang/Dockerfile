@@ -36,7 +36,7 @@ ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
 # ========================================
-# 环境变量（架构就不玩花活了，让后端自己决定）
+# 环境变量
 # ========================================
 ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
@@ -77,6 +77,15 @@ RUN --mount=type=cache,target=/var/cache/apt \
     git lfs install; \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
+
+# ========================================
+# SSH：准备 /root/.ssh/authorized_keys，避免 tee 报错
+# ========================================
+RUN set -eux; \
+    mkdir -p /root/.ssh; \
+    chmod 700 /root/.ssh; \
+    touch /root/.ssh/authorized_keys; \
+    chmod 600 /root/.ssh/authorized_keys
 
 # ========================================
 # Python
