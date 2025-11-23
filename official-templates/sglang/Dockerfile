@@ -36,7 +36,7 @@ ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
-# GPU 架构（这里 90：CUDA 12.1 不支持 100）
+# GPU 架构（默认留空，让 CMake / sgl-kernel 自己决定）
 ARG TORCH_CUDA_ARCH_LIST=""
 ARG CMAKE_CUDA_ARCHITECTURES=""
 
@@ -117,13 +117,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     fi
 
 # ========================================
-# Build tooling for sgl-kernel
+# Build tooling for sgl-kernel  (单独一条 RUN，下面有空行)
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir \
       "scikit-build-core>=0.10" \
       cmake \
-      build \
+      build
 
 # ========================================
 # Build sgl-kernel
