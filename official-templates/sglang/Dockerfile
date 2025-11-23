@@ -149,9 +149,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ========================================
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ubuntu && \
-    chmod 0440 /etc/sudoers.d/ubuntu && \
-    chown -R ubuntu:ubuntu /workspace "$HF_HOME"
+    mkdir -p /etc/sudoers.d && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ubuntu && \
+    chmod 0440 /etc/sudoers.d/90-ubuntu
 
 # ========================================
 # Start Script：entry.sh 内联
