@@ -69,6 +69,8 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
+
 # 创建非 root 用户
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
