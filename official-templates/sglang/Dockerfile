@@ -139,19 +139,41 @@ set -euo pipefail
 MODEL="${SGLANG_MODEL:-Qwen/Qwen2.5-3B-Instruct}"
 HOST="${SGLANG_HOST:-0.0.0.0}"
 PORT="${SGLANG_PORT:-30000}"
+HF_DIR="${HF_HOME:-/workspace/hf}"
 
 echo "[SGLang] Model : ${MODEL}"
 echo "[SGLang] Host  : ${HOST}"
 echo "[SGLang] Port  : ${PORT}"
+echo "[SGLang] HF    : ${HF_DIR}"
 
-exec uvicorn sglang.api.server:app \
-    --host "${HOST}" \
-    --port "${PORT}"
+exec python -m sglang.launch_server \
+  --model "${MODEL}" \
+  --host "${HOST}" \
+  --port "${PORT}" \
+  --download-dir "${HF_DIR}"
 EOF
 
 RUN chmod +x /start.sh
 
+# ==============================
+# Branding：进入容器提示
+# ==============================
+RUN echo "\
+--------------------------------------------------\n\
+   Welcome to YottaLabs GPU Runtime\n\
+   Powered by SGLang + Qwen\n\
+--------------------------------------------------\n\
+" > /etc/yotta.txt
+
+# root 登录提示
+RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+
+# ubuntu 登录提示
+RUN echo 'cat /etc/yotta.txt' >> /home/${UBUNTU_USER}/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /home/${UBUNTU_USER}/.bashrc && \
+    chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.bashrc
+
 EXPOSE 22 30000
 
-ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/start.sh"]
+CMD ["/bin/bash","-lc","service ssh start && /start.sh"]

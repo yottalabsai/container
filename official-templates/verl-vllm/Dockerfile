@@ -106,6 +106,25 @@ EOF
 
 RUN chmod +x /entry.sh
 
+# ==============================
+# Branding：进入容器提示
+# ==============================
+RUN cat <<'EOF' > /etc/yotta.txt
+--------------------------------------------------
+   Welcome to YottaLabs GPU Runtime
+   Powered by vLLM + Qwen2.5
+--------------------------------------------------
+EOF
+
+# root 登录提示
+RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+
+# ubuntu 登录提示
+RUN echo 'cat /etc/yotta.txt' >> /home/${UBUNTU_USER}/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /home/${UBUNTU_USER}/.bashrc && \
+    chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.bashrc
+
 # ===== Ports / Entry =====
 EXPOSE 8000
 WORKDIR /workspace
