@@ -159,6 +159,14 @@ RUN useradd -ms /bin/bash ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ========================================
+# sudo 组全员免密（最关键的一刀）
+# ========================================
+RUN set -eux; \
+    mkdir -p /etc/sudoers.d; \
+    echo "%sudo ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/00-sudo-nopasswd; \
+    chmod 0440 /etc/sudoers.d/00-sudo-nopasswd
+
+# ========================================
 # Start Script：entry.sh 内联
 # ========================================
 RUN cat >/entry.sh <<'EOF'
