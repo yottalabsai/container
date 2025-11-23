@@ -83,21 +83,11 @@ RUN python -m pip install --no-cache-dir \
     torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# ---- Build deps for sgl-kernel ----
-RUN python -m pip install --no-cache-dir "scikit-build-core>=0.10" cmake
+# 安装预编译好的 sgl-kernel（CUDA 12.1+ 只需要这一步）
+RUN python -m pip install --no-cache-dir "sgl-kernel>=0.3.8"
 
-# 构建 sgl-kernel
-RUN TORCH_CUDA_ARCH_LIST="" \
-    python -m pip install --no-cache-dir --no-build-isolation \
-    --config-settings=cmake.args="-G;Ninja" \
-    --config-settings=cmake.define.CMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-    --config-settings=cmake.define.CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
-    --config-settings=cmake.define.CMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    "git+https://github.com/sgl-project/sglang.git#subdirectory=sgl-kernel"
-
-# 安装 sglang Python 包
-RUN python -m pip install --no-cache-dir \
-    "sglang@git+https://github.com/sgl-project/sglang.git#subdirectory=python"
+# 安装 SGLang Runtime
+RUN python -m pip install --no-cache-dir "sglang[all]"
 
 # 运行时依赖
 RUN python -m pip install --no-cache-dir \

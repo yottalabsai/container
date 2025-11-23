@@ -23,7 +23,7 @@ docker buildx bake vllm-qwen --push
 curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "model": "Qwen/Qwen2.5-3B-Instruct",
     "messages": [
       {"role": "system", "content": "You are a helpful assistant."},
       {"role": "user", "content": "用两句话解释量子纠缠。"}
