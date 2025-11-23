@@ -34,6 +34,10 @@ ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
+# GPU 架构（默认按 5090 = 100）
+ARG TORCH_CUDA_ARCH_LIST="100"
+ARG CMAKE_CUDA_ARCHITECTURES="100"
+
 # ========================================
 # 环境变量
 # ========================================
@@ -111,6 +115,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     fi
 
 # ========================================
+# Build tooling for sgl-kernel（修 BackendUnavailable）
+# ========================================
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir \
+      "scikit-build-core>=0.10" \
+      cmake \
+      build
+
+# ========================================
 # Build sgl-kernel
 # ========================================
 RUN --mount=type=cache,target=/root/.ccache \
@@ -159,7 +172,7 @@ RUN useradd -ms /bin/bash ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ========================================
-# Start Script (entry.sh 内嵌)
+# Start Script（entry.sh 内嵌）
 # ========================================
 RUN cat >/entry.sh <<'EOF'
 #!/usr/bin/env bash

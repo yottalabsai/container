@@ -38,6 +38,10 @@ target "sglang" {
     #   --set sglang.args.TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121"
     # TORCH         = ""
 
+    # GPU 架构：默认 5090 = 100，如在 H100 上可以改成 90
+    TORCH_CUDA_ARCH_LIST     = "100"
+    CMAKE_CUDA_ARCHITECTURES = "100"
+
     CMAKE_BUILD_PARALLEL_LEVEL = "8"
 
     PIP_DISABLE_PIP_VERSION_CHECK = "1"
