@@ -49,7 +49,7 @@ target "sglang" {
     SGLANG_MODEL  = "Qwen/Qwen2.5-3B-Instruct"
     SGLANG_HOST   = "0.0.0.0"
     SGLANG_PORT   = "30000"
-    SGLANG_EXTRA  = ""
+    SGLANG_EXTRA  = "--attention-backend torch-sdp --sampling-backend torch"
 
     # ccache 相关配置，给 CUDA / C++ 编译加速用的
     CCACHE_DIR      = "/root/.ccache"
