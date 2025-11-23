@@ -38,10 +38,6 @@ target "sglang" {
     #   --set sglang.args.TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121"
     # TORCH         = ""
 
-    # 单卡 GPU 架构：让 Dockerfile 根据 GPU_ARCH 推导 TORCH_CUDA_ARCH_LIST / CMAKE_CUDA_ARCHITECTURES
-    # 这里默认是 90，更偏向 H100；如果你在 5090 上跑，可以在命令行覆盖为 100：
-    #   docker buildx bake sglang --set sglang.args.GPU_ARCH=100
-    GPU_ARCH                   = "100"
     CMAKE_BUILD_PARALLEL_LEVEL = "8"
 
     PIP_DISABLE_PIP_VERSION_CHECK = "1"

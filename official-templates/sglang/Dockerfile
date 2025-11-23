@@ -13,13 +13,6 @@ ARG PYTHON_VERSION="3.11"
 # TORCH 为空 = 使用稳定版 cu121（2.5.1）
 ARG TORCH=""
 
-# GPU 架构（H100=90, 4090=89, 5090=100）
-ARG GPU_ARCH="100"
-
-# 由 GPU_ARCH 自动推导
-ARG TORCH_CUDA_ARCH_LIST="${GPU_ARCH}"
-ARG CMAKE_CUDA_ARCHITECTURES="${GPU_ARCH}"
-
 # 性能相关
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -166,9 +159,9 @@ RUN useradd -ms /bin/bash ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ========================================
-# Start Script
+# Start Script (entry.sh 内嵌)
 # ========================================
-RUN cat >/start.sh <<'EOF'
+RUN cat >/entry.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -177,7 +170,8 @@ echo "[SGLang] Host      : ${SGLANG_HOST}"
 echo "[SGLang] Port      : ${SGLANG_PORT}"
 echo "[Prefetch] Mode    : ${SGLANG_PREFETCH}"
 
-if [ "${SGLANG_PREFETCH}" = "eager" ]; then
+# 如果需要预拉模型（eager 模式）
+if [ "${SGLANG_PREFETCH:-lazy}" = "eager" ]; then
   python3 - <<'PY'
 import os
 from huggingface_hub import snapshot_download
@@ -194,17 +188,18 @@ path = snapshot_download(
     local_dir_use_symlinks=False,
     resume_download=True,
 )
-print("Downloaded:", path)
+print("[Prefetch] Downloaded to:", path)
 PY
 fi
 
+# 启动 SGLang OpenAI 兼容服务
 exec uvicorn sglang.api.server:app \
-    --host "${SGLANG_HOST}" \
-    --port "${SGLANG_PORT}" \
-    ${SGLANG_EXTRA}
+  --host "${SGLANG_HOST}" \
+  --port "${SGLANG_PORT}" \
+  ${SGLANG_EXTRA}
 EOF
 
-RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
+RUN chmod +x /entry.sh && chown ubuntu:ubuntu /entry.sh
 
 EXPOSE 30000
 USER ubuntu
@@ -213,4 +208,4 @@ WORKDIR /home/ubuntu
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/start.sh"]
+CMD ["/bin/bash","-lc","/entry.sh"]
