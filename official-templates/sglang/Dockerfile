@@ -22,7 +22,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
-# ---- 核心系统依赖 + SSH + 常用工具 ----
+# ---- 基础依赖 + SSH + 工具 ----
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs curl wget ca-certificates locales tzdata \
@@ -33,41 +33,41 @@ RUN apt-get update -y && \
       nginx \
       openssh-server openssh-client \
       tmux vim zsh zip unzip less procps net-tools htop \
-      sudo \
+      tini sudo \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen && update-locale \
     && mkdir -p /var/run/sshd \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# root SSH 目录（fix start.sh authorized_keys）
+# ---- SSH 必备目录（fix authorized_keys 无目录问题） ----
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
-# ---- 创建非 root 用户 ----
-RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true
-RUN echo "${UBUNTU_USER}:ubuntu" | chpasswd
-RUN mkdir -p /home/${UBUNTU_USER}/.ssh && \
-    chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
-    chmod 700 /home/${UBUNTU_USER}/.ssh
+# ---- 创建非 root 用户 + SSH ----
+RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
+    echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
+    mkdir -p /home/${UBUNTU_USER}/.ssh && \
+    chmod 700 /home/${UBUNTU_USER}/.ssh && \
+    chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh
 
-# SSH config
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# ---- Python 环境安装 ----
+# ---- Python 安装 ----
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
-      "python${PYTHON_VERSION}" "python${PYTHON_VERSION}-dev" "python${PYTHON_VERSION}-venv" || true && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python || true && \
-    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 || true && \
+       "python${PYTHON_VERSION}" \
+       "python${PYTHON_VERSION}-dev" \
+       "python${PYTHON_VERSION}-venv" || true && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
     (curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-      /usr/bin/python /tmp/get-pip.py || true) && \
-    rm -f /tmp/get-pip.py
+      /usr/bin/python /tmp/get-pip.py || true)
 
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
+RUN python -m pip install -U pip setuptools wheel
 
 # ==============================
 # Build: 安装 PyTorch + sgl-kernel + sglang
@@ -76,27 +76,27 @@ FROM base AS build
 
 ARG PYTHON_VERSION
 
-# 安装 PyTorch (cu121)
+# PyTorch cu121
 RUN python -m pip install --no-cache-dir \
     torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# 安装预编译好的 sgl-kernel（CUDA 12.1+ 只需要这一步）
+# sgl-kernel（预编译，强烈推荐）
 RUN python -m pip install --no-cache-dir "sgl-kernel>=0.3.8"
 
-# 安装 SGLang Runtime
+# SGLang runtime
 RUN python -m pip install --no-cache-dir "sglang[all]"
 
-# 运行时依赖
 RUN python -m pip install --no-cache-dir \
-    "transformers>=4.40,<5" \
+    transformers>=4.40,<5 \
     huggingface_hub \
     sentencepiece \
     fastapi uvicorn uvloop orjson \
     hf_transfer
 
+
 # ==============================
-# Final: 运行时镜像（带 Qwen + 进入容器提示）
+# Final: SGLang runtime + Qwen
 # ==============================
 FROM base AS final
 
@@ -108,34 +108,26 @@ ENV HF_HOME=/workspace/hf \
     SGLANG_HOST="0.0.0.0" \
     SGLANG_PORT="30000"
 
-# 工作目录 & HF cache
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# 拷贝 Python 依赖（从 build）
 COPY --from=build /usr/local/lib/python${PYTHON_VERSION} /usr/local/lib/python${PYTHON_VERSION}
 COPY --from=build /usr/local/bin /usr/local/bin
 
 # ==============================
-# Branding：进入容器提示
+# Branding
 # ==============================
 RUN echo "\
 --------------------------------------------------\n\
-   Welcome to YottaLabs GPU Runtime\n\
-   Powered by SGLang + Qwen\n\
+    Welcome to YottaLabs GPU Runtime\n\
+         Powered by SGLang + Qwen\n\
 --------------------------------------------------\n\
 " > /etc/yotta.txt
 
-# root 登录提示
-RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nDocs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
-
-# ubuntu 用户登录提示
-RUN echo 'cat /etc/yotta.txt' >> /home/${UBUNTU_USER}/.bashrc && \
-    echo 'echo -e "\nDocs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /home/${UBUNTU_USER}/.bashrc && \
-    chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.bashrc
+RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
+RUN echo 'cat /etc/yotta.txt' >> /home/${UBUNTU_USER}/.bashrc
 
 # ==============================
-# 启动脚本：SGLang + Qwen
+# Start SGLang server
 # ==============================
 RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -149,17 +141,14 @@ echo "[SGLang] Model : ${MODEL}"
 echo "[SGLang] Host  : ${HOST}"
 echo "[SGLang] Port  : ${PORT}"
 
-# 按需下载模型（懒加载，由 sglang 自己通过 HF 拉）
-# 这里不强制预拉，保证镜像是“空模型”商业化交付形态
-
 exec uvicorn sglang.api.server:app \
-  --host "${HOST}" \
-  --port "${PORT}"
+    --host "${HOST}" \
+    --port "${PORT}"
 EOF
 
 RUN chmod +x /start.sh
 
 EXPOSE 22 30000
 
-# 入口：启动 sshd + sglang
-CMD ["/bin/bash","-lc","service ssh start && /start.sh"]
+ENTRYPOINT ["/usr/bin/tini","-g","--"]
+CMD ["/start.sh"]
