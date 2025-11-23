@@ -10,9 +10,9 @@ FROM ${BASE_IMAGE}
 ARG TZ="UTC"
 ARG PYTHON_VERSION="3.11"
 
-# 默认：官方推荐栈 PyTorch 2.8.0 + cu121
-# 如需自定义，可以在 bake 里覆盖 TORCH
-ARG TORCH="torch==2.8.0+cu121 torchvision==0.21.0+cu121 torchaudio==2.8.0+cu121 --index-url https://download.pytorch.org/whl/cu121"
+# TORCH：默认留空 = 使用稳定 2.5.1+cu121 组合
+# 如果你想用别的版本，在 bake 里覆盖 TORCH 即可
+ARG TORCH=""
 
 # 性能相关
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""
@@ -35,19 +35,13 @@ ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
-# 可选：如果外面没传，就留空，让 sgl-kernel 自己探测
-ARG TORCH_CUDA_ARCH_LIST=""
-ARG CMAKE_CUDA_ARCHITECTURES=""
-
 # ========================================
-# 环境变量
+# 环境变量（架构就不玩花活了，让后端自己决定）
 # ========================================
 ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
-    CMAKE_CUDA_ARCHITECTURES=${CMAKE_CUDA_ARCHITECTURES} \
     HF_HOME=${HF_HOME} \
     HF_HUB_ENABLE_HF_TRANSFER=${HF_HUB_ENABLE_HF_TRANSFER} \
     PIP_DISABLE_PIP_VERSION_CHECK=${PIP_DISABLE_PIP_VERSION_CHECK} \
@@ -102,7 +96,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     '
 
 # ========================================
-# PyTorch
+# PyTorch（默认 2.5.1+cu121）
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     bash -lc 'set -eux; \
@@ -110,26 +104,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         echo "[TORCH] Installing custom: ${TORCH}"; \
         python3 -m pip install --no-cache-dir ${TORCH}; \
       else \
-        echo "[TORCH] Installing default torch==2.8.0+cu121"; \
+        echo "[TORCH] Installing stable cu121 (2.5.1)"; \
         python3 -m pip install --no-cache-dir \
-          torch==2.8.0+cu121 torchvision==0.21.0+cu121 torchaudio==2.8.0+cu121 \
+          torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
           --index-url https://download.pytorch.org/whl/cu121; \
       fi \
     '
 
 # ========================================
-# （不再从源码编译 sgl-kernel，直接用 wheel）
+# sgl-kernel：不再源码编译，直接用 wheel
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir sgl-kernel
 
 # ========================================
-# 安装 SGLang
-# - 如果你要用固定版本，可以把 sglang 换成 sglang==0.x.y 或 git tag
+# 安装 SGLang（GPU 版本）
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --no-cache-dir \
-      "sglang[gpu]"
+    python3 -m pip install --no-cache-dir "sglang[gpu]"
 
 # ========================================
 # Extra Runtime Deps
@@ -153,9 +145,9 @@ RUN useradd -ms /bin/bash ubuntu && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME"
 
 # ========================================
-# Start Script（还是内联，不单独文件）
+# Start Script：entry.sh 内联
 # ========================================
-RUN cat >/start.sh <<'EOF'
+RUN cat >/entry.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -185,7 +177,7 @@ print("Downloaded:", path)
 PY
 fi
 
-# 官方推荐的启动方式：python -m sglang.launch_server
+# 用 sglang 自己的 launch_server 启动
 exec python3 -m sglang.launch_server \
     --model-path "${SGLANG_MODEL}" \
     --host "${SGLANG_HOST}" \
@@ -194,7 +186,7 @@ exec python3 -m sglang.launch_server \
     ${SGLANG_EXTRA}
 EOF
 
-RUN chmod +x /start.sh && chown ubuntu:ubuntu /start.sh
+RUN chmod +x /entry.sh && chown ubuntu:ubuntu /entry.sh
 
 EXPOSE 30000
 USER ubuntu
@@ -203,4 +195,4 @@ WORKDIR /home/ubuntu
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/start.sh"]
+CMD ["/bin/bash","-lc","/entry.sh"]
