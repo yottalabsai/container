@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 # ========================================
 # 基础镜像（可由 bake 覆盖）
 # ========================================
@@ -11,7 +13,6 @@ ARG TZ="UTC"
 ARG PYTHON_VERSION="3.11"
 
 # TORCH：默认留空 = 使用稳定 2.5.1+cu121 组合
-# 如果你想用别的版本，在 bake 里覆盖 TORCH 即可
 ARG TORCH=""
 
 # 性能相关
@@ -22,10 +23,11 @@ ARG PYTHONUNBUFFERED=1
 # HF / SGLang
 ARG HF_HOME="/workspace/hf"
 ARG HF_HUB_ENABLE_HF_TRANSFER=1
-ARG SGLANG_MODEL="Qwen/Qwen2.5-7B-Instruct"
+ARG SGLANG_MODEL="Qwen/Qwen2.5-3B-Instruct"
 ARG SGLANG_HOST="0.0.0.0"
 ARG SGLANG_PORT="30000"
-ARG SGLANG_EXTRA=""
+# 默认就禁用 flashinfer，用 torch-sdp / torch 这种最稳的后端
+ARG SGLANG_EXTRA="--attention-backend torch-sdp --sampling-backend torch"
 ARG SGLANG_PREFETCH="lazy"     # lazy / eager
 ARG SGLANG_REVISION=""
 ARG SGLANG_LOCAL_DIR=""
@@ -36,7 +38,7 @@ ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
 # ========================================
-# 环境变量
+# 环境变量（架构就不玩花活了，让后端自己决定）
 # ========================================
 ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
@@ -79,7 +81,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     rm -rf /var/lib/apt/lists/*
 
 # ========================================
-# root SSH 目录（避免 tee /root/.ssh/authorized_keys 报错）
+# root SSH 目录（避免 start.sh 里 tee authorized_keys 报错）
 # ========================================
 RUN set -eux; \
     mkdir -p /root/.ssh; \
@@ -145,13 +147,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       hf_transfer
 
 # ========================================
-# 可选 ubuntu 用户
+# 可选 ubuntu 用户（以后要 ssh 的时候用；默认运行还是 root）
 # ========================================
 RUN useradd -ms /bin/bash ubuntu || true && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME" || true
 
 # ========================================
-# Start Script：entry.sh 内联（root 来跑）
+# Start Script：entry.sh（root 来跑）
 # ========================================
 RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -161,6 +163,9 @@ echo "[SGLang] Model     : ${SGLANG_MODEL}"
 echo "[SGLang] Host      : ${SGLANG_HOST}"
 echo "[SGLang] Port      : ${SGLANG_PORT}"
 echo "[Prefetch] Mode    : ${SGLANG_PREFETCH}"
+echo "[Extra Args]       : ${SGLANG_EXTRA}"
+
+date
 
 if [ "${SGLANG_PREFETCH}" = "eager" ]; then
   python3 - <<'PY'
@@ -183,25 +188,26 @@ print("Downloaded:", path)
 PY
 fi
 
-# 用 sglang 自己的 launch_server 启动
+# 把日志同时打到文件，方便你排查
 exec python3 -m sglang.launch_server \
     --model-path "${SGLANG_MODEL}" \
     --host "${SGLANG_HOST}" \
     --port "${SGLANG_PORT}" \
     --tp-size 1 \
-    ${SGLANG_EXTRA}
+    ${SGLANG_EXTRA} \
+    2>&1 | tee /workspace/sglang.log
 EOF
 
 RUN chmod +x /start.sh
 
 EXPOSE 30000
 
-# 保持 root 运行
-# USER root        # 默认就是 root，可不写
+# 保持 root 运行（不再 USER ubuntu）
 WORKDIR /workspace
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
-  CMD curl -fsS "http://127.0.0.1:${SGLANG_PORT}/docs" >/dev/null || exit 1
+# ⚠️ 暂时移除 HEALTHCHECK，避免错误路径 /docs 导致平台认为容器挂了
+# 让平台自己做外部 health check（例如在 /v1/chat/completions 上做）
+# HEALTHCHECK ...
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/bin/bash","-lc","/start.sh"]

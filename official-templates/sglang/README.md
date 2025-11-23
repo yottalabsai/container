@@ -20,15 +20,18 @@ docker buildx bake sglang --push
 ## Test
 
 ```
-curl http://localhost:30000/v1/chat/completions \
+ps aux | grep sglang
+ss -tlnp | grep 30000 || netstat -tlnp | grep 30000
+
+curl -X POST http://localhost:30000/generate \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen/Qwen2.5-3B-Instruct",
-    "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "用两句话解释量子纠缠。"}
-    ],
-    "temperature": 0.7,
-    "max_tokens": 256
+    "prompt": "用两句话解释量子纠缠。",
+    "sampling_params": {
+      "temperature": 0.7,
+      "max_tokens": 256
+    }
   }'
+
 ```
