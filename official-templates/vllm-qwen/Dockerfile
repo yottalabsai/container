@@ -102,8 +102,10 @@ RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && pytho
 # PyTorch: nightly cu126（适配 5090 / Blackwell）
 # ==============================
 RUN python -m pip install --no-cache-dir --pre \
-    torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/nightly/cu126
+    --index-url https://download.pytorch.org/whl/nightly/cu126 \
+    --extra-index-url https://pypi.org/simple \
+    --extra-index-url https://pypi.nvidia.com \
+    torch torchvision torchaudio
 
 # ==============================
 # vLLM & HuggingFace 生态
