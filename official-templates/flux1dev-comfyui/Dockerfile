@@ -46,6 +46,9 @@ RUN apt-get update -y && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && update-locale && \
     mkdir -p /var/run/sshd && \
+    mkdir -p /root/.ssh && \
+    touch /root/.ssh/authorized_keys && \
+    chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
@@ -200,7 +203,7 @@ EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-# 用 curl 探 ComfyUI 端口
+# 健康检查：探 ComfyUI HTTP 端口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
