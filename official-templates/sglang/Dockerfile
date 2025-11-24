@@ -254,11 +254,13 @@ fi
 # ---------- 5) 启动 SGLang ----------
 echo "[SGLang] Launching server..."
 exec python3 -m sglang.launch_server \
-    --model-path "${SGLANG_MODEL}" \
-    --host "${SGLANG_HOST}" \
-    --port "${SGLANG_PORT}" \
-    --tp-size "${TP_SIZE_EFFECTIVE}" \
-    ${SGLANG_EXTRA}
+  --model-path "${SGLANG_MODEL}" \
+  --host "${SGLANG_HOST}" \
+  --port "${SGLANG_PORT}" \
+  --tp-size "${SGLANG_TP:-1}" \
+  --trust-remote-code \
+  ${SGLANG_EXTRA:-} \
+  2>&1 | tee /workspace/sglang.log
 EOF
 
 RUN chmod +x /start.sh
