@@ -40,7 +40,7 @@ RUN apt-get update -y && \
       software-properties-common \
       nginx \
       openssh-server openssh-client \
-      sudo \  # 新增：安装 sudo，给后面的 sudo -u ubuntu 用
+      sudo \
       tmux vim zsh zip unzip less procps net-tools htop && \
     git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
