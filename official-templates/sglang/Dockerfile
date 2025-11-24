@@ -26,9 +26,16 @@ ARG HF_HUB_ENABLE_HF_TRANSFER=1
 ARG SGLANG_MODEL="Qwen/Qwen2.5-3B-Instruct"
 ARG SGLANG_HOST="0.0.0.0"
 ARG SGLANG_PORT="30000"
-# 默认就禁用 flashinfer，用 torch-sdp / torch 这种最稳的后端
-ARG SGLANG_EXTRA="--attention-backend torch-sdp --sampling-backend torch"
-ARG SGLANG_PREFETCH="lazy"     # lazy / eager
+
+# 1️⃣ TP：允许外部覆盖；留空 = 自动按 GPU 数量推 tp-size
+ARG SGLANG_TP_SIZE=""
+
+# 2️⃣ 预拉模式：
+#   lazy  = 不预拉，第一次请求时再拉
+#   eager = 容器启动时就 snapshot_download
+#   auto  = 自动策略（默认：多卡 / 大卡用 eager，单卡用 lazy）
+ARG SGLANG_PREFETCH="auto"
+
 ARG SGLANG_REVISION=""
 ARG SGLANG_LOCAL_DIR=""
 
@@ -38,7 +45,7 @@ ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
 # ========================================
-# 环境变量（架构就不玩花活了，让后端自己决定）
+# 环境变量
 # ========================================
 ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
@@ -54,7 +61,7 @@ ENV TZ=${TZ} \
     SGLANG_MODEL=${SGLANG_MODEL} \
     SGLANG_HOST=${SGLANG_HOST} \
     SGLANG_PORT=${SGLANG_PORT} \
-    SGLANG_EXTRA=${SGLANG_EXTRA} \
+    SGLANG_TP_SIZE=${SGLANG_TP_SIZE} \
     SGLANG_PREFETCH=${SGLANG_PREFETCH} \
     SGLANG_REVISION=${SGLANG_REVISION} \
     SGLANG_LOCAL_DIR=${SGLANG_LOCAL_DIR}
@@ -81,7 +88,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     rm -rf /var/lib/apt/lists/*
 
 # ========================================
-# root SSH 目录（避免 start.sh 里 tee authorized_keys 报错）
+# root SSH 目录（避免外面 echo 公钥时报错）
 # ========================================
 RUN set -eux; \
     mkdir -p /root/.ssh; \
@@ -123,7 +130,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     '
 
 # ========================================
-# sgl-kernel：不再源码编译，直接用 wheel
+# sgl-kernel：用 wheel，避免自己编译
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir sgl-kernel
@@ -147,13 +154,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       hf_transfer
 
 # ========================================
-# 可选 ubuntu 用户（以后要 ssh 的时候用；默认运行还是 root）
+# 可选 ubuntu 用户（以后要 ssh 用；现在默认还是 root 跑）
 # ========================================
 RUN useradd -ms /bin/bash ubuntu || true && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME" || true
 
 # ========================================
-# Start Script：entry.sh（root 来跑）
+# Start Script：自动 TP + 自适应 lazy/eager
 # ========================================
 RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -162,12 +169,58 @@ set -euo pipefail
 echo "[SGLang] Model     : ${SGLANG_MODEL}"
 echo "[SGLang] Host      : ${SGLANG_HOST}"
 echo "[SGLang] Port      : ${SGLANG_PORT}"
-echo "[Prefetch] Mode    : ${SGLANG_PREFETCH}"
-echo "[Extra Args]       : ${SGLANG_EXTRA}"
+echo "[Prefetch Env]    : ${SGLANG_PREFETCH:-auto}"
+echo "[TP Env]          : ${SGLANG_TP_SIZE:-<empty>}"
 
 date
 
-if [ "${SGLANG_PREFETCH}" = "eager" ]; then
+# ---------- 1) 自动推断 tp-size ----------
+TP_SIZE_EFFECTIVE=""
+if [ -n "${SGLANG_TP_SIZE:-}" ]; then
+  TP_SIZE_EFFECTIVE="${SGLANG_TP_SIZE}"
+  echo "[TP] Use env SGLANG_TP_SIZE = ${TP_SIZE_EFFECTIVE}"
+else
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l | tr -d ' ')
+    if [ -z "${GPU_COUNT}" ] || [ "${GPU_COUNT}" -lt 1 ]; then
+      GPU_COUNT=1
+    fi
+  else
+    GPU_COUNT=1
+  fi
+
+  TP_SIZE_EFFECTIVE="${GPU_COUNT}"
+  echo "[TP] Auto-detected GPU count = ${GPU_COUNT}, use tp-size = ${TP_SIZE_EFFECTIVE}"
+fi
+
+# ---------- 2) lazy/eager 自适应 ----------
+PREFETCH_MODE="${SGLANG_PREFETCH:-auto}"
+
+if [ "${PREFETCH_MODE}" = "auto" ]; then
+  # 简单策略：
+  # - 多卡（>=2）默认 eager：一次性把权重拉好，适合 5090 双卡这类长跑服务
+  # - 单卡默认 lazy：减小启动时间
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_COUNT_PREF=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l | tr -d ' ')
+    if [ -z "${GPU_COUNT_PREF}" ] || [ "${GPU_COUNT_PREF}" -lt 1 ]; then
+      GPU_COUNT_PREF=1
+    fi
+  else
+    GPU_COUNT_PREF=1
+  fi
+
+  if [ "${GPU_COUNT_PREF}" -ge 2 ]; then
+    PREFETCH_MODE="eager"
+  else
+    PREFETCH_MODE="lazy"
+  fi
+  echo "[Prefetch] AUTO resolved to: ${PREFETCH_MODE} (gpu-count=${GPU_COUNT_PREF})"
+fi
+
+echo "[Prefetch] Final Mode: ${PREFETCH_MODE}"
+
+# ---------- 3) 如果是 eager / auto->eager，就提前 snapshot_download ----------
+if [ "${PREFETCH_MODE}" = "eager" ]; then
   python3 - <<'PY'
 import os
 from huggingface_hub import snapshot_download
@@ -184,16 +237,27 @@ path = snapshot_download(
     local_dir_use_symlinks=False,
     resume_download=True,
 )
-print("Downloaded:", path)
+print("[Prefetch] Downloaded to:", path)
 PY
 fi
 
-# 把日志同时打到文件，方便你排查
+# ---------- 4) 后端选择兜底：默认禁用 flashinfer，走 torch_native/torch ----------
+# 如果你想玩高级后端，可以在环境变量里覆盖：
+#   SGLANG_EXTRA="--attention-backend triton --sampling-backend flashinfer"
+if [ -z "${SGLANG_EXTRA:-}" ]; then
+  SGLANG_EXTRA="--attention-backend torch_native --sampling-backend torch"
+  echo "[SGLang] No extra args provided, use default: ${SGLANG_EXTRA}"
+else
+  echo "[SGLang] Use custom extra args: ${SGLANG_EXTRA}"
+fi
+
+# ---------- 5) 启动 SGLang ----------
+echo "[SGLang] Launching server..."
 exec python3 -m sglang.launch_server \
     --model-path "${SGLANG_MODEL}" \
     --host "${SGLANG_HOST}" \
     --port "${SGLANG_PORT}" \
-    --tp-size 1 \
+    --tp-size "${TP_SIZE_EFFECTIVE}" \
     ${SGLANG_EXTRA} \
     2>&1 | tee /workspace/sglang.log
 EOF
@@ -202,12 +266,7 @@ RUN chmod +x /start.sh
 
 EXPOSE 30000
 
-# 保持 root 运行（不再 USER ubuntu）
 WORKDIR /workspace
-
-# ⚠️ 暂时移除 HEALTHCHECK，避免错误路径 /docs 导致平台认为容器挂了
-# 让平台自己做外部 health check（例如在 /v1/chat/completions 上做）
-# HEALTHCHECK ...
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/bin/bash","-lc","/start.sh"]
