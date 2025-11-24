@@ -258,8 +258,7 @@ exec python3 -m sglang.launch_server \
     --host "${SGLANG_HOST}" \
     --port "${SGLANG_PORT}" \
     --tp-size "${TP_SIZE_EFFECTIVE}" \
-    ${SGLANG_EXTRA} \
-    2>&1 | tee /workspace/sglang.log
+    ${SGLANG_EXTRA}
 EOF
 
 RUN chmod +x /start.sh
