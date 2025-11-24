@@ -245,7 +245,7 @@ fi
 # 如果你想玩高级后端，可以在环境变量里覆盖：
 #   SGLANG_EXTRA="--attention-backend triton --sampling-backend flashinfer"
 if [ -z "${SGLANG_EXTRA:-}" ]; then
-  SGLANG_EXTRA="--attention-backend torch_native --sampling-backend torch"
+  SGLANG_EXTRA="--attention-backend torch_native --sampling-backend pytorch"
   echo "[SGLang] No extra args provided, use default: ${SGLANG_EXTRA}"
 else
   echo "[SGLang] Use custom extra args: ${SGLANG_EXTRA}"
