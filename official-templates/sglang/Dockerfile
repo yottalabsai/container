@@ -1,53 +1,74 @@
-# ============================================================
-# 基础镜像（CUDA 12.1.1 + Ubuntu 22.04）
-# ============================================================
+# ========================================
+# 基础镜像（可由 bake 覆盖）
+# ========================================
 ARG BASE_IMAGE="nvidia/cuda:12.1.1-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# ============================================================
-# 构建参数
-# ============================================================
+# ========================================
+# 构建参数（全部允许 bake 覆盖）
+# ========================================
 ARG TZ="UTC"
 ARG PYTHON_VERSION="3.11"
+
+# TORCH：默认留空 = 使用稳定 2.5.1+cu121 组合
 ARG TORCH=""
 
+# 性能相关
+ARG CMAKE_BUILD_PARALLEL_LEVEL=""
+ARG PIP_DISABLE_PIP_VERSION_CHECK=1
+ARG PYTHONUNBUFFERED=1
+
+# HF / SGLang
 ARG HF_HOME="/workspace/hf"
 ARG HF_HUB_ENABLE_HF_TRANSFER=1
-
 ARG SGLANG_MODEL="Qwen/Qwen2.5-3B-Instruct"
 ARG SGLANG_HOST="0.0.0.0"
 ARG SGLANG_PORT="30000"
 
-# extra 默认允许为空；但 Dockerfile 内部会固定补充 trust-remote-code
+# ⚠️ 不再写任何默认值，由外部传入
 ARG SGLANG_EXTRA=""
 
+# Prefetch / TP 策略：auto / lazy / eager
+ARG SGLANG_PREFETCH="auto"
+ARG SGLANG_TP="auto"
+
+ARG SGLANG_REVISION=""
+ARG SGLANG_LOCAL_DIR=""
+
+# ccache
 ARG CCACHE_DIR="/root/.ccache"
 ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
-# ============================================================
+# ========================================
 # 环境变量
-# ============================================================
+# ========================================
 ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     HF_HOME=${HF_HOME} \
     HF_HUB_ENABLE_HF_TRANSFER=${HF_HUB_ENABLE_HF_TRANSFER} \
+    PIP_DISABLE_PIP_VERSION_CHECK=${PIP_DISABLE_PIP_VERSION_CHECK} \
+    PYTHONUNBUFFERED=${PYTHONUNBUFFERED} \
     CCACHE_DIR=${CCACHE_DIR} \
     CCACHE_COMPRESS=${CCACHE_COMPRESS} \
     CCACHE_MAXSIZE=${CCACHE_MAXSIZE} \
     SGLANG_MODEL=${SGLANG_MODEL} \
     SGLANG_HOST=${SGLANG_HOST} \
     SGLANG_PORT=${SGLANG_PORT} \
-    SGLANG_EXTRA=${SGLANG_EXTRA}
+    SGLANG_EXTRA=${SGLANG_EXTRA} \
+    SGLANG_PREFETCH=${SGLANG_PREFETCH} \
+    SGLANG_TP=${SGLANG_TP} \
+    SGLANG_REVISION=${SGLANG_REVISION} \
+    SGLANG_LOCAL_DIR=${SGLANG_LOCAL_DIR}
 
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
-# ============================================================
+# ========================================
 # System Deps
-# ============================================================
+# ========================================
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     set -eux; \
@@ -63,18 +84,18 @@ RUN --mount=type=cache,target=/var/cache/apt \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && update-locale; \
     rm -rf /var/lib/apt/lists/*
 
-# ============================================================
-# SSH（避免 authorized_keys 再报错）
-# ============================================================
+# ========================================
+# root SSH 目录（避免 start.sh 里 tee authorized_keys 报错）
+# ========================================
 RUN set -eux; \
     mkdir -p /root/.ssh; \
     chmod 700 /root/.ssh; \
     touch /root/.ssh/authorized_keys; \
-    chmod 600 /root/.ssh/authorized_keys;
+    chmod 600 /root/.ssh/authorized_keys
 
-# ============================================================
+# ========================================
 # Python
-# ============================================================
+# ========================================
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     bash -lc 'set -eux; \
@@ -89,46 +110,56 @@ RUN --mount=type=cache,target=/var/cache/apt \
       python3 -m pip install --no-cache-dir -U pip setuptools wheel \
     '
 
-# ============================================================
-# PyTorch
-# ============================================================
+# ========================================
+# PyTorch（默认 2.5.1+cu121）
+# ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     bash -lc 'set -eux; \
       if [ -n "${TORCH}" ]; then \
+        echo "[TORCH] Installing custom: ${TORCH}"; \
         python3 -m pip install --no-cache-dir ${TORCH}; \
       else \
+        echo "[TORCH] Installing stable cu121 (2.5.1)"; \
         python3 -m pip install --no-cache-dir \
           torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 \
           --index-url https://download.pytorch.org/whl/cu121; \
       fi \
     '
 
-# ============================================================
-# sglang 依赖
-# ============================================================
+# ========================================
+# sgl-kernel：wheel
+# ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
-    python3 -m pip install --no-cache-dir sgl-kernel "sglang[gpu]"
+    python3 -m pip install --no-cache-dir sgl-kernel
 
-# ============================================================
-# HF & runtime deps
-# ============================================================
+# ========================================
+# 安装 SGLang（GPU 版本）
+# ========================================
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python3 -m pip install --no-cache-dir "sglang[gpu]"
+
+# ========================================
+# Extra Runtime Deps
+# ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir \
       "transformers>=4.40,<5" \
       huggingface_hub sentencepiece \
       fastapi uvicorn uvloop orjson \
-      psutil pyzmq pybase64 hf_transfer openai partial_json_parser
+      psutil pybase64 pyzmq \
+      openai partial_json_parser \
+      hf_transfer
 
-# ============================================================
-# ubuntu 用户
-# ============================================================
+# ========================================
+# 可选 ubuntu 用户（以后要 ssh 的时候用；默认运行还是 root）
+# ========================================
 RUN useradd -ms /bin/bash ubuntu || true && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME" || true
 
-# ============================================================
-# Start Script（自动 TP + auto Prefetch + trust remote code）
-# ============================================================
-RUN cat >/start.sh <<'EOF'
+# ========================================
+# Start Script：/post_start.sh（root 来跑）
+# ========================================
+RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -137,75 +168,80 @@ echo "[SGLang] Host      : ${SGLANG_HOST}"
 echo "[SGLang] Port      : ${SGLANG_PORT}"
 echo "[Prefetch Env]    : ${SGLANG_PREFETCH:-auto}"
 echo "[TP Env]          : ${SGLANG_TP:-auto}"
-date
+echo "Mon $(date -u +"%b %d %H:%M:%S") UTC $(date -u +"%Y")"
 
-# --------------------------------------------
-# 自动探测 GPU 数量 => TP 自动选择
-# --------------------------------------------
-GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-if [ "${SGLANG_TP:-auto}" = "auto" ]; then
-  if [ "${GPU_COUNT}" -ge 2 ]; then
-    TP="${GPU_COUNT}"
-  else
-    TP=1
-  fi
-else
-  TP="${SGLANG_TP}"
+# ---- 检测 GPU 数量 ----
+GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 1)
+if [ "${GPU_COUNT}" -lt 1 ]; then
+  GPU_COUNT=1
 fi
-echo "[TP] Auto-detected GPU count = ${GPU_COUNT}, use tp-size = ${TP}"
 
-# --------------------------------------------
-# 自动 Prefetch
-# 单卡：lazy
-# 多卡：eager
-# --------------------------------------------
-if [ "${SGLANG_PREFETCH:-auto}" = "auto" ]; then
+# ---- 解析 TP ----
+TP_ENV="${SGLANG_TP:-auto}"
+if [ "${TP_ENV}" = "auto" ]; then
   if [ "${GPU_COUNT}" -ge 2 ]; then
-    PREFETCH="eager"
+    TP_SIZE=${GPU_COUNT}
   else
-    PREFETCH="lazy"
+    TP_SIZE=1
   fi
+  echo "[TP] Auto-detected GPU count = ${GPU_COUNT}, use tp-size = ${TP_SIZE}"
 else
-  PREFETCH="${SGLANG_PREFETCH}"
+  TP_SIZE="${TP_ENV}"
+  echo "[TP] Use tp-size from env: ${TP_SIZE}"
 fi
-echo "[Prefetch] Final Mode: ${PREFETCH}"
 
-# --------------------------------------------
-# eager 模式预加载
-# --------------------------------------------
-if [ "${PREFETCH}" = "eager" ]; then
-python3 - <<PY
+# ---- 解析 Prefetch ----
+PREFETCH_ENV="${SGLANG_PREFETCH:-auto}"
+if [ "${PREFETCH_ENV}" = "auto" ]; then
+  if [ "${GPU_COUNT}" -ge 2 ]; then
+    PREFETCH_MODE="eager"
+  else
+    PREFETCH_MODE="lazy"
+  fi
+  echo "[Prefetch] Final Mode(auto) : ${PREFETCH_MODE}"
+else
+  PREFETCH_MODE="${PREFETCH_ENV}"
+  echo "[Prefetch] Final Mode(env)  : ${PREFETCH_MODE}"
+fi
+
+echo "[SGLang] Extra Args: ${SGLANG_EXTRA:-<empty>}"
+
+# ---- eager 预下载权重 ----
+if [ "${PREFETCH_MODE}" = "eager" ]; then
+  python3 - <<'PY'
 import os
 from huggingface_hub import snapshot_download
 
 model = os.environ["SGLANG_MODEL"]
-print("[Prefetch] Downloading:", model)
-path = snapshot_download(repo_id=model, local_dir="/workspace/hf", local_dir_use_symlinks=False)
+local = os.environ.get("SGLANG_LOCAL_DIR") or None
+rev = os.environ.get("SGLANG_REVISION") or None
+
+print("[Prefetch] Downloading:", model, "->", local or "(hf cache)")
+path = snapshot_download(
+    repo_id=model,
+    local_dir=local,
+    revision=rev,
+    local_dir_use_symlinks=False,
+    resume_download=True,
+)
 print("[Prefetch] Downloaded to:", path)
 PY
 fi
 
-# --------------------------------------------
-# 补充 trust-remote-code（强制启用）
-# --------------------------------------------
-EXTRA_ARGS="--trust-remote-code ${SGLANG_EXTRA:-}"
-
-echo "[SGLang] Extra Args: ${EXTRA_ARGS}"
-
-# --------------------------------------------
-# 启动服务
-# --------------------------------------------
+# ---- 启动 sglang server ----
 exec python3 -m sglang.launch_server \
-  --model-path "${SGLANG_MODEL}" \
-  --host "${SGLANG_HOST}" \
-  --port "${SGLANG_PORT}" \
-  --tp-size "${TP}" \
-  ${EXTRA_ARGS} \
-  2>&1 | tee /workspace/sglang.log
+    --model-path "${SGLANG_MODEL}" \
+    --host "${SGLANG_HOST}" \
+    --port "${SGLANG_PORT}" \
+    --tp-size "${TP_SIZE}" \
+    ${SGLANG_EXTRA}
 EOF
 
-RUN chmod +x /start.sh
+RUN chmod +x /post_start.sh
 
 EXPOSE 30000
+
+WORKDIR /workspace
+
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/bin/bash","-lc","/start.sh"]
