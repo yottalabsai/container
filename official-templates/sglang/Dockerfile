@@ -168,7 +168,7 @@ echo "[SGLang] Host      : ${SGLANG_HOST}"
 echo "[SGLang] Port      : ${SGLANG_PORT}"
 echo "[Prefetch Env]    : ${SGLANG_PREFETCH:-auto}"
 echo "[TP Env]          : ${SGLANG_TP:-auto}"
-echo "Mon $(date -u +"%b %d %H:%M:%S") UTC $(date -u +"%Y")"
+echo "$(date -u)"
 
 # ---- 检测 GPU 数量 ----
 GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 1)
@@ -237,7 +237,9 @@ exec python3 -m sglang.launch_server \
     ${SGLANG_EXTRA}
 EOF
 
-RUN chmod +x /post_start.sh
+# 关键两行：让 /start.sh 也存在，并直接复用 /post_start.sh
+RUN chmod +x /post_start.sh && \
+    ln -sf /post_start.sh /start.sh
 
 EXPOSE 30000
 

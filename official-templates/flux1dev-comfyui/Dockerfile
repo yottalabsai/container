@@ -40,6 +40,7 @@ RUN apt-get update -y && \
       software-properties-common \
       nginx \
       openssh-server openssh-client \
+      sudo \  # ★ 新增：安装 sudo，给后面的 sudo -u ubuntu 用
       tmux vim zsh zip unzip less procps net-tools htop && \
     git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
@@ -192,12 +193,15 @@ RUN chmod +x /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-USER root
 WORKDIR /home/${UBUNTU_USER}
 
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
+
+# 用 curl 探 ComfyUI 端口
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
 ENTRYPOINT ["/start.sh"]
