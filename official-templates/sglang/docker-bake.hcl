@@ -45,14 +45,14 @@ target "sglang" {
     HF_HOME                       = "/workspace/hf"
     HF_HUB_ENABLE_HF_TRANSFER     = "1"
 
-    # 默认给 SGLang 的模型和服务配置（跑 Qwen2.5-7B-Instruct）
+    # 默认给 SGLang 的模型和服务配置（跑 Qwen/Qwen2.5-3B-Instruct）
     SGLANG_MODEL  = "Qwen/Qwen2.5-3B-Instruct"
     SGLANG_HOST   = "0.0.0.0"
     SGLANG_PORT   = "30000"
     SGLANG_EXTRA  = "--trust-remote-code"
 
-    # 让 Dockerfile 里自动 TP 生效（空串 = 自动按 GPU 数量推 tp-size）
-    SGLANG_TP_SIZE  = ""
+    # 让 Dockerfile 里自动 TP 生效（空串 或 auto = 自动按 GPU 数量推 tp-size）
+    SGLANG_TP = "auto"
 
     # 预拉策略：auto = 单卡 lazy，多卡 eager
     SGLANG_PREFETCH = "auto"
