@@ -16,7 +16,7 @@ ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
 # ==============================
-# Base: CUDA + 系统依赖 + Python + SSH
+# Base: CUDA + 系统依赖 + Python + SSH + 工具
 # ==============================
 FROM ${BASE_IMAGE} AS base
 
@@ -32,6 +32,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
+# ---- 核心系统依赖 + SSH + 常用工具 ----
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs curl wget ca-certificates locales tzdata \
@@ -46,21 +47,24 @@ RUN apt-get update -y && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen && update-locale && \
     mkdir -p /var/run/sshd && \
+    mkdir -p /root/.ssh && \
+    touch /root/.ssh/authorized_keys && \
+    chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# user
+# ---- 创建非 root 用户 ----
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
     chmod 700 /home/${UBUNTU_USER}/.ssh
 
-# SSH config
+# SSH 配置：允许密码登录，禁 root
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# Python & pip
+# ---- Python 环境安装 ----
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -74,7 +78,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# python-env: 安装 PyTorch
+# python-env: torch + 基础 pip
 # ==============================
 FROM base AS python-env
 
@@ -87,8 +91,9 @@ ARG COMFYUI_PORT
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
-RUN python -m pip install --upgrade pip wheel setuptools && \
-    python -m pip install --no-cache-dir \
+RUN python -m pip install --upgrade pip wheel setuptools
+
+RUN python -m pip install --no-cache-dir \
       "torch==${TORCH_VERSION}" \
       "torchvision==${TORCH_VISION_VERSION}" \
       "torchaudio==${TORCH_VERSION}" \
@@ -103,7 +108,7 @@ print("Arch:", platform.machine())
 PY
 
 # ==============================
-# comfy-builder: 安装 ComfyUI + Manager + 可选 Nunchaku + WAN 2.2 模型
+# Comfy-builder: ComfyUI + Manager + 可选 Nunchaku + WAN 2.2 模型
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -149,6 +154,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
+# WAN 2.2 模型（按你之前贴的 ti2v 5B fp16）
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
     mkdir -p \
@@ -167,7 +173,7 @@ RUN set -euo pipefail; \
     echo "[WAN2.2] Done."
 
 # ==============================
-# runtime
+# Runtime
 # ==============================
 FROM comfy-builder AS runtime
 
@@ -179,13 +185,14 @@ ENV COMFYUI_PORT=${COMFYUI_PORT}
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
+# 这些 context 由 docker buildx bake 提供
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# 生成 post_start.sh：起 ComfyUI
+# 生成 post_start.sh：实际起 ComfyUI（保持和 Flux1/WAN2.1 一致的 sudo 风格）
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -193,10 +200,10 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-su -s /bin/bash ubuntu -c "
+sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
-    --listen 0.0.0.0 \
+    --listen \"0.0.0.0\" \
     --port   \"${COMFYUI_PORT:-8188}\" \
   >> \"$LOG\" 2>&1 &
 "
@@ -214,6 +221,7 @@ EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
+# 健康检查：探 ComfyUI HTTP 端口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
