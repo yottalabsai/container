@@ -42,13 +42,15 @@ RUN apt-get update -y && \
       nginx \
       openssh-server openssh-client \
       sudo \
-      tmux vim zsh zip unzip less procps net-tools htop \
-    && git lfs install \
-    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
-    && locale-gen && update-locale \
-    && mkdir -p /var/run/sshd \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+      tmux vim zsh zip unzip less procps net-tools htop && \
+    git lfs install && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen && update-locale && \
+    mkdir -p /var/run/sshd && \
+    mkdir -p /root/.ssh && \
+    touch /root/.ssh/authorized_keys && \
+    chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ---- 创建非 root 用户 ----
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
@@ -62,7 +64,7 @@ RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# ---- Python 环境安装 ----
+# ---- Python 环境安装（对齐最开始版本）----
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -204,10 +206,11 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-su -s /bin/bash ubuntu -c "
+# 和最开始版本完全对齐：用 sudo -u ubuntu bash -lc
+sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
-    --listen 0.0.0.0 \
+    --listen \"0.0.0.0\" \
     --port   \"${COMFYUI_PORT:-8188}\" \
   >> \"$LOG\" 2>&1 &
 "
@@ -217,7 +220,7 @@ EOS
 
 RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+    echo 'echo -e \"\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\"' >> /root/.bashrc
 
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 
@@ -225,7 +228,7 @@ EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-# 可选健康检查（和 Flux1 一致）
+# 健康检查：探 ComfyUI HTTP 端口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
