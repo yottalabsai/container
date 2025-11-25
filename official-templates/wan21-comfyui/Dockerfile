@@ -1,13 +1,16 @@
 # ==============================
-# Global build args (可在 bake 里覆盖)
+# WAN 2.1 ComfyUI 基座构建参数
 # ==============================
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 ARG COMFYUI_PORT="8188"
+
+# 是否安装 Nunchaku（默认：否，由 bake 覆盖）
 ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
+
 ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
@@ -38,6 +41,7 @@ RUN apt-get update -y && \
       software-properties-common \
       nginx \
       openssh-server openssh-client \
+      sudo \
       tmux vim zsh zip unzip less procps net-tools htop \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
@@ -47,17 +51,16 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- 创建非 root 用户 ----
-RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true
-RUN echo "${UBUNTU_USER}:ubuntu" | chpasswd
-RUN mkdir -p /home/${UBUNTU_USER}/.ssh && \
+RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
+    echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
+    mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
     chmod 700 /home/${UBUNTU_USER}/.ssh
 
-# SSH config
+# SSH 配置：允许密码登录，禁 root
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
-
 
 # ---- Python 环境安装 ----
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
@@ -73,7 +76,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# Python-env: torch + 基础 pip
+# python-env: torch + 基础 pip
 # ==============================
 FROM base AS python-env
 
@@ -103,7 +106,7 @@ print("Arch:", platform.machine())
 PY
 
 # ==============================
-# Comfy-builder: 安装 ComfyUI + Manager + 可选 Nunchaku + WAN2.1 模型
+# Comfy-builder: ComfyUI + Manager + 可选 Nunchaku + WAN 2.1 模型
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -119,7 +122,7 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# ---- FIXED: ComfyUI-Manager (官方 org + 稳定) ----
+# ComfyUI-Manager
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
@@ -140,7 +143,6 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-
 # 模型 & 输出目录
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
@@ -150,6 +152,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
+# WAN 2.1 最小模型组合（1.3B）
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
     mkdir -p \
@@ -173,7 +176,6 @@ RUN set -euo pipefail; \
       "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_vace_1.3B_fp16.safetensors"; \
     echo "[WAN2.1] Done."
 
-
 # ==============================
 # Runtime
 # ==============================
@@ -185,14 +187,16 @@ ARG COMFYUI_PORT
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 USER root
+WORKDIR /home/${UBUNTU_USER}
 
+# 这些 context 由 docker buildx bake 提供
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# 这里插入 post_start.sh 生成
+# 生成 post_start.sh：实际起 ComfyUI
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -203,7 +207,7 @@ mkdir -p /home/ubuntu
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
-    --listen \"0.0.0.0\" \
+    --listen 0.0.0.0 \
     --port   \"${COMFYUI_PORT:-8188}\" \
   >> \"$LOG\" 2>&1 &
 "
@@ -211,18 +215,18 @@ sudo -u ubuntu bash -lc "
 echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
 EOS
 
-RUN chmod +x /post_start.sh
-
-RUN chmod +x /start.sh && \
+RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-USER root
-WORKDIR /home/${UBUNTU_USER}
-
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
+
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
+
+# 可选健康检查（和 Flux1 一致）
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
 ENTRYPOINT ["/start.sh"]

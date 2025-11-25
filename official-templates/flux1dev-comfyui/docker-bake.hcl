@@ -19,10 +19,12 @@ target "flux1dev-comfyui" {
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/flux1.dev:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
+    "${PUBLISHER}/flux1.dev:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
   contexts = {
+    # 当前目录为 main context
+    # scripts/proxy/logo 是额外 context，用于 COPY --from=<name>
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"
     logo    = "../../container-template"
@@ -51,7 +53,7 @@ target "flux1dev-comfyui-nunchaku" {
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/flux1.dev:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
+    "${PUBLISHER}/flux1.dev:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
   contexts = {

@@ -51,16 +51,19 @@ RUN apt-get update -y && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# 创建普通用户
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
     chmod 700 /home/${UBUNTU_USER}/.ssh
 
+# SSH 配置：允许密码登录，但禁 root
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
+# 安装指定版本 Python + pip
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -71,6 +74,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
       /usr/bin/python /tmp/get-pip.py || true) && \
     rm -f /tmp/get-pip.py
 
+# 兜底：保证 python -m pip 可用
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
@@ -94,6 +98,7 @@ RUN python -m pip install --upgrade pip wheel setuptools && \
       "torchaudio==${TORCH_VERSION}" \
       --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
 
+# 简单的环境自检
 RUN python - <<'PY'
 import torch, platform
 print("PyTorch:", torch.__version__)
@@ -114,14 +119,17 @@ ARG NUNCHAKU_REF
 
 WORKDIR /home/${UBUNTU_USER}
 
+# ComfyUI 本体
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
+# Manager 节点
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
 
+# 可选：Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
         echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
@@ -137,6 +145,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
+# 模型 & 目录结构
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -145,6 +154,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
+# 预下 Flux1-Dev FP8 checkpoint（最小单一模型）
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
     mkdir -p "${ROOT}/checkpoints"; \
@@ -164,14 +174,16 @@ ARG COMFYUI_PORT
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 USER root
+WORKDIR /home/${UBUNTU_USER}
 
+# 这些来自 docker buildx bake 的额外上下文（scripts/proxy/logo）
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# 这里插入 post_start.sh 生成
+# 这里插入 post_start.sh（容器内第二阶段启动 ComfyUI）
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -179,10 +191,11 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
+# 以 ubuntu 用户运行 ComfyUI
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
-    --listen \"0.0.0.0\" \
+    --listen 0.0.0.0 \
     --port   \"${COMFYUI_PORT:-8188}\" \
   >> \"$LOG\" 2>&1 &
 "
@@ -190,21 +203,21 @@ sudo -u ubuntu bash -lc "
 echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
 EOS
 
-RUN chmod +x /post_start.sh
-
-RUN chmod +x /start.sh && \
+RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-WORKDIR /home/${UBUNTU_USER}
-
+# 数据卷
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
+
+# 暴露端口：Nginx / ComfyUI / SSH
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-# 健康检查：探 ComfyUI HTTP 端口
+# 健康检查：直接探 ComfyUI HTTP 端口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
+# 入口脚本来自 scripts 上下文的 start.sh
 ENTRYPOINT ["/start.sh"]

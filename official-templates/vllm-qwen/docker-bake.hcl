@@ -17,6 +17,7 @@ target "vllm-qwen" {
 
   tags = [
     "${PUBLISHER}/qwen:vllm-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
+    "${PUBLISHER}/vllm:qwen-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
   # 先保留你原来的上下文结构，方便之后复用模版

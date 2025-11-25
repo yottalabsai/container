@@ -40,6 +40,7 @@ RUN apt-get update -y && \
       software-properties-common \
       nginx \
       openssh-server openssh-client \
+      sudo \
       tmux vim zsh zip unzip less procps net-tools htop && \
     git lfs install && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
@@ -54,7 +55,7 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
     chmod 700 /home/${UBUNTU_USER}/.ssh
 
-# SSH config: 禁止 root，允许密码登录 ubuntu
+# SSH config
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
@@ -102,7 +103,7 @@ print("Arch:", platform.machine())
 PY
 
 # ==============================
-# comfy-builder: 安装 ComfyUI + Manager + 可选 Nunchaku
+# comfy-builder: 安装 ComfyUI + Manager + 可选 Nunchaku + WAN 2.2 模型
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -118,7 +119,7 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# ComfyUI-Manager（官方 org）
+# ComfyUI-Manager
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
@@ -176,6 +177,7 @@ ARG COMFYUI_PORT
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 USER root
+WORKDIR /home/${UBUNTU_USER}
 
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
@@ -183,7 +185,7 @@ COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# 这里插入 post_start.sh 生成
+# 生成 post_start.sh：起 ComfyUI
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -194,7 +196,7 @@ mkdir -p /home/ubuntu
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
-    --listen \"0.0.0.0\" \
+    --listen 0.0.0.0 \
     --port   \"${COMFYUI_PORT:-8188}\" \
   >> \"$LOG\" 2>&1 &
 "
@@ -202,18 +204,17 @@ sudo -u ubuntu bash -lc "
 echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
 EOS
 
-RUN chmod +x /post_start.sh
-
-RUN chmod +x /start.sh && \
+RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-USER root
-WORKDIR /home/${UBUNTU_USER}
-
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
+
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
 ENTRYPOINT ["/start.sh"]
