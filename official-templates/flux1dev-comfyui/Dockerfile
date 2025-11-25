@@ -192,7 +192,7 @@ LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
 # 以 ubuntu 用户运行 ComfyUI
-sudo -u ubuntu bash -lc "
+su -s /bin/bash ubuntu -c "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
     --listen 0.0.0.0 \

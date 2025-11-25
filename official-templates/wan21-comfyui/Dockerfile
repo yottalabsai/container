@@ -204,7 +204,7 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-sudo -u ubuntu bash -lc "
+su -s /bin/bash ubuntu -c "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
     --listen 0.0.0.0 \
