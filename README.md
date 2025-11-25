@@ -1,6 +1,6 @@
 # Yotta Containers
 
-This repository contains the Dockerfiles for the Yotta Labs containers used for our official templates. Resulting containers are available on [Docker Hub](https://hub.docker.com/u/yottalabs).
+This repository contains the Dockerfiles for the Yotta containers used for our official templates. Resulting containers are available on [Docker Hub](https://hub.docker.com/u/yottalabs).
 
 | Container             | Yotta Labs Template              | Description |
 |-----------------------|------------------------------|-------------|
