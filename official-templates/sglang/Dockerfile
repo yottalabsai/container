@@ -63,6 +63,8 @@ ENV TZ=${TZ} \
     SGLANG_REVISION=${SGLANG_REVISION} \
     SGLANG_LOCAL_DIR=${SGLANG_LOCAL_DIR}
 
+ENV SGLANG_AUTOSTART="true"
+
 WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
@@ -240,6 +242,25 @@ EOF
 # 关键两行：让 /start.sh 也存在，并直接复用 /post_start.sh
 RUN chmod +x /post_start.sh && \
     ln -sf /post_start.sh /start.sh
+
+# ========================================
+# Entry script: /entrypoint.sh
+# ========================================
+RUN cat >/entrypoint.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${SGLANG_AUTOSTART:-true}" != "true" ]; then
+  echo "[DEBUG] SGLANG_AUTOSTART=false → 手动模式，不自动启动 SGLang。"
+  echo "[DEBUG] 容器已就绪，你可以 kubectl exec 进去执行：/post_start.sh"
+  exec tail -f /dev/null
+fi
+
+echo "[INFO] 自动启动 SGLang 服务..."
+exec /post_start.sh
+EOF
+
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 30000
 
