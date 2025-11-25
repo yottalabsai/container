@@ -267,4 +267,4 @@ EXPOSE 30000
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
-CMD ["/bin/bash","-lc","/start.sh"]
+CMD ["/bin/bash","-lc","/entrypoint.sh"]
