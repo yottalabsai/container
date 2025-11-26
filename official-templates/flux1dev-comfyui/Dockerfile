@@ -194,7 +194,7 @@ RUN set -euo pipefail; \
       echo "[FLUX1-DEV] Downloading VAE (ae.safetensors) with HuggingFace token ..."; \
       wget --header="Authorization: Bearer ${HF_TOKEN}" \
         -O "${ROOT}/vae/ae.safetensors" \
-        "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors""; \
+        "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors"; \
     else \
       echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
     fi; \
