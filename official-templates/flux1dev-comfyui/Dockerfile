@@ -19,7 +19,7 @@ ARG TORCH_CUDA="cu124"
 ARG ENABLE_FLUX_VAE="true"
 
 # HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
-ARG HF_TOKEN=""
+ARG HF_TOKEN="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"
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
@@ -194,7 +194,7 @@ RUN set -euo pipefail; \
       echo "[FLUX1-DEV] Downloading VAE (ae.safetensors) with HuggingFace token ..."; \
       wget --header="Authorization: Bearer ${HF_TOKEN}" \
         -O "${ROOT}/vae/ae.safetensors" \
-        "https://huggingface.co/comfyanonymous/flux_vae/resolve/main/ae.safetensors"; \
+        "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors""; \
     else \
       echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
     fi; \
