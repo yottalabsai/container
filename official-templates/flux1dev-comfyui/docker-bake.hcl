@@ -9,6 +9,10 @@ variable "TORCH_VERSION"        { default = "2.4.1" }
 variable "TORCH_VISION_VERSION" { default = "0.19.1" }
 variable "TORCH_CUDA"           { default = "cu124" }
 
+variable "ENABLE_FLUX_VAE"           { default = "true" }
+variable "HF_TOKEN"           { default = "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" }
+
+
 group "default"      { targets = ["flux1dev-comfyui"] }
 group "flux1dev-all" { targets = ["flux1dev-comfyui", "flux1dev-comfyui-nunchaku"] }
 
@@ -43,6 +47,9 @@ target "flux1dev-comfyui" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
+
+    ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
+    HF_TOKEN             = HF_TOKEN
   }
 }
 
@@ -75,5 +82,8 @@ target "flux1dev-comfyui-nunchaku" {
     TORCH_VERSION        = TORCH_VERSION
     TORCH_VISION_VERSION = TORCH_VISION_VERSION
     TORCH_CUDA           = TORCH_CUDA
+
+    ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
+    HF_TOKEN             = HF_TOKEN
   }
 }

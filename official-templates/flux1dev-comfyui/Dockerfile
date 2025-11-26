@@ -15,6 +15,12 @@ ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu124"
 
+# 是否启用 FLUX VAE 下载（默认 false）
+ARG ENABLE_FLUX_VAE="true"
+
+# HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
+ARG HF_TOKEN=""
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -155,7 +161,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# FLUX1-DEV 模型下载（全部公开源，无需 HF token）
+# FLUX1-DEV 模型下载（UNet + T5 + CLIP + 可选 VAE）
 # -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
@@ -164,23 +170,33 @@ RUN set -euo pipefail; \
       "${ROOT}/text_encoders" \
       "${ROOT}/vae"; \
     \
-    echo "[FLUX1-DEV] Downloading FULL diffusion model (flux1-dev.safetensors) from Comfy-Org ..."; \
+    echo "[FLUX1-DEV] Downloading UNet (flux1-dev.safetensors) from Comfy-Org ..."; \
     wget -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
       "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev.safetensors"; \
     \
-    echo "[FLUX1-DEV] Downloading T5 XXL text encoder (fp8) from comfyanonymous ..."; \
+    echo "[FLUX1-DEV] Downloading T5 XXL text encoder (fp8) ..."; \
     wget -O "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors" \
       "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
     \
-    echo "[FLUX1-DEV] Downloading CLIP_L text encoder from comfyanonymous ..."; \
+    echo "[FLUX1-DEV] Downloading CLIP_L text encoder ..."; \
     wget -O "${ROOT}/text_encoders/clip_l.safetensors" \
       "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"; \
     \
-    echo "[FLUX1-DEV] Downloading VAE (ae.safetensors) from comfyanonymous ..."; \
-    wget -O "${ROOT}/vae/ae.safetensors" \
-      "https://huggingface.co/comfyanonymous/flux_vae/resolve/main/ae.safetensors"; \
+    if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
+      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=true → preparing VAE download..."; \
+      if [ -z "${HF_TOKEN}" ]; then \
+        echo "[FLUX1-DEV] ERROR: VAE download requires HF_TOKEN, but HF_TOKEN is empty."; \
+        exit 1; \
+      fi; \
+      echo "[FLUX1-DEV] Downloading VAE (ae.safetensors) with HuggingFace token ..."; \
+      wget --header="Authorization: Bearer ${HF_TOKEN}" \
+        -O "${ROOT}/vae/ae.safetensors" \
+        "https://huggingface.co/comfyanonymous/flux_vae/resolve/main/ae.safetensors"; \
+    else \
+      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
+    fi; \
     \
-    echo "[FLUX1-DEV] FULL model set downloaded successfully."
+    echo "[FLUX1-DEV] Model download stage finished."
 
 
 # ==============================
