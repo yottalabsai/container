@@ -49,7 +49,7 @@ target "sglang" {
     SGLANG_MODEL  = "Qwen/Qwen2.5-3B-Instruct"
     SGLANG_HOST   = "0.0.0.0"
     SGLANG_PORT   = "30000"
-    SGLANG_EXTRA  = "--trust-remote-code"
+    SGLANG_EXTRA  = "--trust-remote-code --mem-fraction-static 0.7"
 
     # 让 Dockerfile 里自动 TP 生效（空串 或 auto = 自动按 GPU 数量推 tp-size）
     SGLANG_TP = "auto"
