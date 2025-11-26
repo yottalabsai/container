@@ -155,17 +155,33 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# FLUX1-DEV - 单文件 checkpoint（带两个 text encoder）
+# FLUX1-DEV - FULL MODEL SET
+# Diffusion UNet + T5 XXL + CLIP_L + VAE
 # -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-    mkdir -p "${ROOT}/diffusion_models"; \
+    mkdir -p \
+      "${ROOT}/diffusion_models" \
+      "${ROOT}/text_encoders" \
+      "${ROOT}/vae"; \
     \
-    echo "[FLUX1-DEV] Downloading single-file checkpoint (flux1-dev.safetensors) ..."; \
+    echo "[FLUX1-DEV] Downloading FULL diffusion model (flux1-dev.safetensors) ..."; \
     wget -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
-      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev.safetensors"; \
+      "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"; \
     \
-    echo "[FLUX1-DEV] Done."
+    echo "[FLUX1-DEV] Downloading T5 XXL text encoder (fp8) ..."; \
+    wget -O "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors" \
+      "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
+    \
+    echo "[FLUX1-DEV] Downloading CLIP_L text encoder ..."; \
+    wget -O "${ROOT}/text_encoders/clip_l.safetensors" \
+      "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"; \
+    \
+    echo "[FLUX1-DEV] Downloading VAE (ae.safetensors) ..."; \
+    wget -O "${ROOT}/vae/ae.safetensors" \
+      "https://huggingface.co/comfyanonymous/flux_vae/resolve/main/ae.safetensors"; \
+    \
+    echo "[FLUX1-DEV] FULL model set downloaded successfully."
 
 # ==============================
 # runtime
