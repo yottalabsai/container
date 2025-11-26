@@ -154,13 +154,13 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-# 预下 Flux1-Dev FP8 checkpoint（最小单一模型）
+# 预下 Flux1-Dev 官方完整 checkpoint（推荐使用）
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
     mkdir -p "${ROOT}/checkpoints"; \
-    echo "[FLUX1-DEV] Downloading flux1-dev-fp8.safetensors ..."; \
-    wget -O "${ROOT}/checkpoints/flux1-dev-fp8.safetensors" \
-      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev-fp8.safetensors"; \
+    echo "[FLUX1-DEV] Downloading flux1-dev.safetensors ..."; \
+    wget -O "${ROOT}/checkpoints/flux1-dev.safetensors" \
+      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev.safetensors"; \
     echo "[FLUX1-DEV] Done."
 
 # ==============================
