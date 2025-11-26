@@ -154,14 +154,34 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-# 预下 Flux1-Dev 官方完整 checkpoint（推荐使用）
+# -------------------------------
+# Download FULL Flux1-Dev models
+# -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-    mkdir -p "${ROOT}/checkpoints"; \
-    echo "[FLUX1-DEV] Downloading flux1-dev.safetensors ..."; \
-    wget -O "${ROOT}/checkpoints/flux1-dev.safetensors" \
+    mkdir -p \
+      "${ROOT}/diffusion_models" \
+      "${ROOT}/text_encoders" \
+      "${ROOT}/vae"; \
+    \
+    echo "[FLUX1-DEV] Downloading UNet (flux1-dev.safetensors) ..."; \
+    wget -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
       "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev.safetensors"; \
-    echo "[FLUX1-DEV] Done."
+    \
+    echo "[FLUX1-DEV] Downloading Text Encoder - CLIP-L ..."; \
+    wget -O "${ROOT}/text_encoders/clip_l.safetensors" \
+      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/clip_l.safetensors"; \
+    \
+    echo "[FLUX1-DEV] Downloading Text Encoder - T5 XXL FP8 ..."; \
+    wget -O "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors" \
+      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
+    \
+    echo "[FLUX1-DEV] Downloading Flux VAE ..."; \
+    wget -O "${ROOT}/vae/ae.safetensors" \
+      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/ae.safetensors"; \
+    \
+    echo "[FLUX1-DEV] Full model download complete."
+
 
 # ==============================
 # runtime
