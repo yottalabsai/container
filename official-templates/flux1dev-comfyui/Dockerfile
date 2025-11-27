@@ -189,8 +189,15 @@ RUN set -euo pipefail; \
       "${ROOT}/text_encoders" \
       "${ROOT}/vae"; \
     \
+    # 黑森林仓库现在是 gated，必须要 HF_TOKEN
+    if [ -z "${HF_TOKEN}" ]; then \
+      echo "[FLUX1-DEV] ERROR: black-forest-labs/FLUX.1-dev is gated, HF_TOKEN is required."; \
+      exit 1; \
+    fi; \
+    \
     echo "[FLUX1-DEV] Downloading OFFICIAL Diffusion Model (UNet/Transformer) ..."; \
-    wget -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
+    wget --header="Authorization: Bearer ${HF_TOKEN}" \
+      -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
       "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"; \
     \
     echo "[FLUX1-DEV] Downloading T5 XXL text encoder (FP8) ..."; \
@@ -203,10 +210,6 @@ RUN set -euo pipefail; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
       echo "[FLUX1-DEV] ENABLE_FLUX_VAE=true → OFFICIAL VAE download..."; \
-      if [ -z "${HF_TOKEN}" ]; then \
-        echo "[FLUX1-DEV] ERROR: VAE download requires HF_TOKEN, but HF_TOKEN is empty."; \
-        exit 1; \
-      fi; \
       wget --header="Authorization: Bearer ${HF_TOKEN}" \
         -O "${ROOT}/vae/ae.safetensors" \
         "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors"; \
@@ -215,6 +218,7 @@ RUN set -euo pipefail; \
     fi; \
     \
     echo "[FLUX1-DEV] Model download stage finished (official models installed)."
+
 
 # ==============================
 # runtime
