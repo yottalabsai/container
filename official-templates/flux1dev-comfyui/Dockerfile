@@ -154,9 +154,12 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
 
-# 🔧 关键修复：提前安装 ComfyUI-Manager 依赖 GitPython，避免运行时再从 pypi 装
-RUN cd /home/${UBUNTU_USER}/ComfyUI && \
-    python -m pip install --no-cache-dir "GitPython>=3.1.44"
+# 正确安装 GitPython：必须装到系统级 site-packages，否则 ComfyUI 无法 import git
+USER root
+RUN python -m pip install --no-cache-dir "GitPython>=3.1.44"
+
+# 再切回 ubuntu（继续剩下步骤）
+USER ${UBUNTU_USER}
 
 # 可选：Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
