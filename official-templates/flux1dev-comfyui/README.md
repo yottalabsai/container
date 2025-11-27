@@ -13,7 +13,7 @@ docker buildx bake flux1dev-comfyui --push
 # Nunchaku 版
 docker buildx bake flux1dev-comfyui-nunchaku --push
 
-docker buildx bake flux1dev-all --push
+docker buildx bake flux1dev-all --no-cache --push
 ```
 
 ## Exposed Ports
