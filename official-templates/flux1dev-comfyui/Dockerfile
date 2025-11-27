@@ -22,7 +22,7 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 ARG ENABLE_FLUX_VAE="true"
 
 # HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
-ARG HF_TOKEN=""
+ARG HF_TOKEN
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
