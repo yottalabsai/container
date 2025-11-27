@@ -11,14 +11,14 @@ ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-# [UPGRADE] Torch / CUDA 相关参数
+# Torch / CUDA 相关参数
 ARG TORCH_CHANNEL="nightly"          # nightly / stable
 ARG TORCH_VERSION="2.4.1"           # stable 时使用
 ARG TORCH_VISION_VERSION="0.19.1"   # stable 时使用
-ARG TORCH_CUDA="cu128"              # [UPGRADE] 默认 cu128 适配 CUDA 12.8
+ARG TORCH_CUDA="cu128"              # 默认 cu128 适配 CUDA 12.8
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
-# 是否启用 FLUX VAE 下载（默认 false）
+# 是否启用 FLUX VAE 下载（默认 true）
 ARG ENABLE_FLUX_VAE="true"
 
 # HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
@@ -40,7 +40,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    # [UPGRADE] 针对 5090 / Blackwell
+    # 针对 5090 / Blackwell
     TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
 
 RUN apt-get update -y && \
@@ -154,6 +154,10 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
 
+# 🔧 关键修复：提前安装 ComfyUI-Manager 依赖 GitPython，避免运行时再从 pypi 装
+RUN cd /home/${UBUNTU_USER}/ComfyUI && \
+    python -m pip install --no-cache-dir "GitPython>=3.1.44"
+
 # 可选：Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
@@ -264,7 +268,7 @@ RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# [UPGRADE] 把 ComfyUI/models 也当成数据卷，方便挂载/持久化
+# 把 ComfyUI/models 也当成数据卷，方便挂载/持久化
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output", "/home/${UBUNTU_USER}/ComfyUI/models"]
 
 # 暴露端口：Nginx / ComfyUI / SSH
