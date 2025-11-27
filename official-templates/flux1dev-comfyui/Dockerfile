@@ -11,15 +11,18 @@ ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-ARG TORCH_VERSION="2.4.1"
-ARG TORCH_VISION_VERSION="0.19.1"
-ARG TORCH_CUDA="cu124"
+# [UPGRADE] Torch / CUDA 相关参数
+ARG TORCH_CHANNEL="nightly"          # nightly / stable
+ARG TORCH_VERSION="2.4.1"           # stable 时使用
+ARG TORCH_VISION_VERSION="0.19.1"   # stable 时使用
+ARG TORCH_CUDA="cu128"              # [UPGRADE] 默认 cu128 适配 CUDA 12.8
+ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
 # 是否启用 FLUX VAE 下载（默认 false）
 ARG ENABLE_FLUX_VAE="true"
 
 # HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
-ARG HF_TOKEN="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"
+ARG HF_TOKEN=""
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
@@ -36,7 +39,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    # [UPGRADE] 针对 5090 / Blackwell
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -89,20 +94,30 @@ RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && pytho
 FROM base AS python-env
 
 ARG UBUNTU_USER
+ARG TORCH_CHANNEL
 ARG TORCH_VERSION
 ARG TORCH_VISION_VERSION
 ARG TORCH_CUDA
+ARG TORCH_NIGHTLY_INDEX_URL
 ARG COMFYUI_PORT
 
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
 RUN python -m pip install --upgrade pip wheel setuptools && \
-    python -m pip install --no-cache-dir \
-      "torch==${TORCH_VERSION}" \
-      "torchvision==${TORCH_VISION_VERSION}" \
-      "torchaudio==${TORCH_VERSION}" \
-      --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
+    if [[ "${TORCH_CHANNEL}" == "nightly" ]]; then \
+      echo "[Torch] Using nightly channel (${TORCH_CUDA})"; \
+      python -m pip install --no-cache-dir --pre \
+        torch torchvision torchaudio \
+        --index-url "${TORCH_NIGHTLY_INDEX_URL}/${TORCH_CUDA}"; \
+    else \
+      echo "[Torch] Using stable channel ${TORCH_VERSION} (${TORCH_CUDA})"; \
+      python -m pip install --no-cache-dir \
+        "torch==${TORCH_VERSION}" \
+        "torchvision==${TORCH_VISION_VERSION}" \
+        "torchaudio==${TORCH_VERSION}" \
+        --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"; \
+    fi
 
 # 简单的环境自检
 RUN python - <<'PY'
@@ -111,6 +126,7 @@ print("PyTorch:", torch.__version__)
 print("CUDA available:", torch.cuda.is_available())
 print("Device count:", torch.cuda.device_count() if torch.cuda.is_available() else 0)
 print("Arch:", platform.machine())
+print("CUDA arch list:", getattr(torch.cuda, "get_arch_list", lambda: "n/a")())
 PY
 
 # ==============================
@@ -246,8 +262,8 @@ RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# 数据卷
-VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
+# [UPGRADE] 把 ComfyUI/models 也当成数据卷，方便挂载/持久化
+VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output", "/home/${UBUNTU_USER}/ComfyUI/models"]
 
 # 暴露端口：Nginx / ComfyUI / SSH
 EXPOSE 80

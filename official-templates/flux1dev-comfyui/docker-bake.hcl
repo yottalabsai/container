@@ -5,9 +5,12 @@ variable "BASE_IMAGE" { default = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04" }
 variable "PYTHON_VER" { default = "3.11" }
 variable "COMFY_PORT" { default = "8188" }
 
+# [UPGRADE] Torch 相关
+variable "TORCH_CHANNEL"        { default = "nightly" }
 variable "TORCH_VERSION"        { default = "2.4.1" }
 variable "TORCH_VISION_VERSION" { default = "0.19.1" }
-variable "TORCH_CUDA"           { default = "cu124" }
+variable "TORCH_CUDA"           { default = "cu128" }
+variable "TORCH_NIGHTLY_INDEX_URL" { default = "https://download.pytorch.org/whl/nightly" }
 
 variable "ENABLE_FLUX_VAE"           { default = "true" }
 variable "HF_TOKEN"           { default = "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" }
@@ -44,9 +47,11 @@ target "flux1dev-comfyui" {
     NUNCHAKU_REPO    = ""
     NUNCHAKU_REF     = ""
 
-    TORCH_VERSION        = TORCH_VERSION
-    TORCH_VISION_VERSION = TORCH_VISION_VERSION
-    TORCH_CUDA           = TORCH_CUDA
+    TORCH_CHANNEL         = TORCH_CHANNEL
+    TORCH_VERSION         = TORCH_VERSION
+    TORCH_VISION_VERSION  = TORCH_VISION_VERSION
+    TORCH_CUDA            = TORCH_CUDA
+    TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
     ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
     HF_TOKEN             = HF_TOKEN
@@ -79,9 +84,11 @@ target "flux1dev-comfyui-nunchaku" {
     NUNCHAKU_REPO    = "https://github.com/nunchaku-tech/ComfyUI-nunchaku.git"
     NUNCHAKU_REF     = "main"
 
-    TORCH_VERSION        = TORCH_VERSION
-    TORCH_VISION_VERSION = TORCH_VISION_VERSION
-    TORCH_CUDA           = TORCH_CUDA
+    TORCH_CHANNEL         = TORCH_CHANNEL
+    TORCH_VERSION         = TORCH_VERSION
+    TORCH_VISION_VERSION  = TORCH_VISION_VERSION
+    TORCH_CUDA            = TORCH_CUDA
+    TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
     ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
     HF_TOKEN             = HF_TOKEN
