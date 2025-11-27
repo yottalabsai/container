@@ -189,11 +189,11 @@ RUN set -euo pipefail; \
       "${ROOT}/text_encoders" \
       "${ROOT}/vae"; \
     \
-    echo "[FLUX1-DEV] Downloading UNet (flux1-dev.safetensors) from Comfy-Org ..."; \
+    echo "[FLUX1-DEV] Downloading OFFICIAL Diffusion Model (UNet/Transformer) ..."; \
     wget -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
-      "https://huggingface.co/Comfy-Org/flux1-dev/resolve/main/flux1-dev.safetensors"; \
+      "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"; \
     \
-    echo "[FLUX1-DEV] Downloading T5 XXL text encoder (fp8) ..."; \
+    echo "[FLUX1-DEV] Downloading T5 XXL text encoder (FP8) ..."; \
     wget -O "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors" \
       "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
     \
@@ -202,21 +202,19 @@ RUN set -euo pipefail; \
       "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=true → preparing VAE download..."; \
+      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=true → OFFICIAL VAE download..."; \
       if [ -z "${HF_TOKEN}" ]; then \
         echo "[FLUX1-DEV] ERROR: VAE download requires HF_TOKEN, but HF_TOKEN is empty."; \
         exit 1; \
       fi; \
-      echo "[FLUX1-DEV] Downloading VAE (ae.safetensors) with HuggingFace token ..."; \
       wget --header="Authorization: Bearer ${HF_TOKEN}" \
         -O "${ROOT}/vae/ae.safetensors" \
-        "https://huggingface.co/Comfy-Org/Lumina_Image_2.0_Repackaged/resolve/main/split_files/vae/ae.safetensors"; \
+        "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors"; \
     else \
       echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
     fi; \
     \
-    echo "[FLUX1-DEV] Model download stage finished."
-
+    echo "[FLUX1-DEV] Model download stage finished (official models installed)."
 
 # ==============================
 # runtime
