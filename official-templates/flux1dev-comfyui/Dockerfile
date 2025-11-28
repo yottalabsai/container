@@ -163,6 +163,10 @@ RUN python -m pip install --no-cache-dir \
 
 # 再切回 ubuntu（继续剩下步骤）
 USER ${UBUNTU_USER}
+RUN python -m pip install --no-cache-dir --user \
+      "GitPython>=3.1.44" \
+      "PyGithub" \
+      "toml"
 
 # 可选：Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
