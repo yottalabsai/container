@@ -149,37 +149,13 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# 🔧 Hotfix: 创建 utils 包，并补充 install_util.py 修 Manager 的 import bug
-RUN cd /home/${UBUNTU_USER}/ComfyUI && \
-    mkdir -p utils && \
-    cat <<'PY' > utils/__init__.py
-# Make "utils" a proper Python package.
-PY
-    && \
-    cat <<'PY' > utils/install_util.py
-from pathlib import Path
-import sys
-
-# The path to the requirements.txt file
-requirements_path = Path(__file__).parents[1] / "requirements.txt"
-
-def get_missing_requirements_message():
-    """The warning message to display when a package is missing."""
-
-    extra = ""
-    if sys.flags.no_user_site:
-        extra = "-s "
-    return f"""
-Please install the updated requirements.txt file by running:
-{sys.executable} {extra}-m pip install -r {requirements_path}
-If you are on the portable package you can run: update\\update_comfyui.bat to solve this problem.
-""".strip()
-PY
-
 # Manager 节点
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
-    git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager
+    git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager && \
+    cd ComfyUI-Manager && \
+    # 给 __init__.py 打补丁：把硬 import 改成 try/except，避免异常直接让整个 custom node 失败
+    sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
 # 正确安装 GitPython：必须装到系统级 site-packages，否则 ComfyUI 无法 import git
 USER root
@@ -226,22 +202,21 @@ RUN mkdir -p \
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
     mkdir -p \
-      "${ROOT}/diffusion_models" \
+      "${ROOT}/unet" \
       "${ROOT}/text_encoders" \
       "${ROOT}/vae"; \
     \
-    # 黑森林仓库现在是 gated，必须要 HF_TOKEN
     if [ -z "${HF_TOKEN}" ]; then \
       echo "[FLUX1-DEV] ERROR: black-forest-labs/FLUX.1-dev is gated, HF_TOKEN is required."; \
       exit 1; \
     fi; \
     \
-    echo "[FLUX1-DEV] Downloading OFFICIAL Diffusion Model (UNet/Transformer) ..."; \
+    echo "[FLUX1-DEV] Downloading UNET (flux1-dev.safetensors) ..."; \
     wget --header="Authorization: Bearer ${HF_TOKEN}" \
-      -O "${ROOT}/diffusion_models/flux1-dev.safetensors" \
+      -O "${ROOT}/unet/flux1-dev.safetensors" \
       "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"; \
     \
-    echo "[FLUX1-DEV] Downloading T5 XXL text encoder (FP8) ..."; \
+    echo "[FLUX1-DEV] Downloading T5XXL text encoder (FP8) ..."; \
     wget -O "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors" \
       "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
     \
@@ -250,7 +225,7 @@ RUN set -euo pipefail; \
       "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=true → OFFICIAL VAE download..."; \
+      echo "[FLUX1-DEV] Downloading OFFICIAL VAE ..."; \
       wget --header="Authorization: Bearer ${HF_TOKEN}" \
         -O "${ROOT}/vae/ae.safetensors" \
         "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors"; \
@@ -258,8 +233,7 @@ RUN set -euo pipefail; \
       echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
     fi; \
     \
-    echo "[FLUX1-DEV] Model download stage finished (official models installed)."
-
+    echo "[FLUX1-DEV] Model installation complete."
 
 # ==============================
 # runtime
