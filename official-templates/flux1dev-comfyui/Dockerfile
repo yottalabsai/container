@@ -149,6 +149,35 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
+# Hotfix: 补上 utils.install_util，修掉
+# "No module named 'utils.install_util'; 'utils' is not a package"
+RUN cd /home/${UBUNTU_USER}/ComfyUI && \
+    mkdir -p utils && \
+    cat > utils/__init__.py << 'PY'
+# Make "utils" a proper package for ComfyUI.
+PY
+    && \
+    cat > utils/install_util.py << 'PY'
+from pathlib import Path
+import sys
+
+# The path to the requirements.txt file
+requirements_path = Path(__file__).parents[1] / "requirements.txt"
+
+
+def get_missing_requirements_message():
+    """The warning message to display when a package is missing."""
+
+    extra = ""
+    if sys.flags.no_user_site:
+        extra = "-s "
+    return f"""
+Please install the updated requirements.txt file by running:
+{sys.executable} {extra}-m pip install -r {requirements_path}
+If you are on the portable package you can run: update\\update_comfyui.bat to solve this problem.
+""".strip()
+PY
+
 # Manager 节点
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
