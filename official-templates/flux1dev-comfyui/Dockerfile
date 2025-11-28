@@ -149,21 +149,19 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# Hotfix: 补上 utils.install_util，修掉
-# "No module named 'utils.install_util'; 'utils' is not a package"
+# 🔧 Hotfix: 补上 utils.install_util，修掉 “utils is not a package”
 RUN cd /home/${UBUNTU_USER}/ComfyUI && \
     mkdir -p utils && \
-    cat > utils/__init__.py << 'PY'
+    cat <<'PY' > utils/__init__.py
 # Make "utils" a proper package for ComfyUI.
 PY
     && \
-    cat > utils/install_util.py << 'PY'
+    cat <<'PY' > utils/install_util.py
 from pathlib import Path
 import sys
 
 # The path to the requirements.txt file
 requirements_path = Path(__file__).parents[1] / "requirements.txt"
-
 
 def get_missing_requirements_message():
     """The warning message to display when a package is missing."""
