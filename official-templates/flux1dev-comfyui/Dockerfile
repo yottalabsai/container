@@ -149,11 +149,11 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# 🔧 Hotfix: 补上 utils.install_util，修掉 “utils is not a package”
+# 🔧 Hotfix: 创建 utils 包，并补充 install_util.py 修 Manager 的 import bug
 RUN cd /home/${UBUNTU_USER}/ComfyUI && \
     mkdir -p utils && \
     cat <<'PY' > utils/__init__.py
-# Make "utils" a proper package for ComfyUI.
+# Make "utils" a proper Python package.
 PY
     && \
     cat <<'PY' > utils/install_util.py
