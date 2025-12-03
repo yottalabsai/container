@@ -31,9 +31,6 @@ target "vllm-qwen" {
     "${PUBLISHER}/vllm:qwen-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
-  # 构建完成直接 push 到 registry
-  output = ["type=registry"]
-
   # build context（与你 flux 定义保持一致）
   contexts = {
     scripts = "../../container-template"

@@ -82,9 +82,6 @@ target "wan22-comfyui-nunchaku" {
     "${PUBLISHER}/wan2.2-animate-14b:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
-  # 这个也默认 push 到 Registry
-  output = ["type=registry"]
-
   contexts = {
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"

@@ -39,8 +39,6 @@ target "wan21-comfyui" {
     "${PUBLISHER}/wan2.1-t2v-1.3b:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
-  output = ["type=registry"]
-
   contexts = {
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"
