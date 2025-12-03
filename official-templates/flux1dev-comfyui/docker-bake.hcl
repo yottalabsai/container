@@ -13,7 +13,7 @@ variable "TORCH_CUDA"           { default = "cu128" }
 variable "TORCH_NIGHTLY_INDEX_URL" { default = "https://download.pytorch.org/whl/nightly" }
 
 variable "ENABLE_FLUX_VAE"           { default = "true" }
-variable "HF_TOKEN"           { default = "" }
+variable "HF_TOKEN"                  { default = "" }
 
 
 group "default"      { targets = ["flux1dev-comfyui"] }

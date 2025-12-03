@@ -19,7 +19,7 @@ variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/wh
 # Wan2.1 模型下载参数
 variable "WAN_ENABLE_DOWNLOAD"  { default = "true" }
 variable "WAN_MODEL_ID"         { default = "Wan-AI/Wan2.1-T2V-1.3B" }
-variable "HF_TOKEN"         { default = "" }
+variable "HF_TOKEN"             { default = "" }
 
 # 组：
 # - default：只构建标准版

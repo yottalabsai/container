@@ -19,7 +19,7 @@ variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/wh
 # Wan2.2 模型下载参数（对应 Dockerfile 里的 ARG）
 variable "WAN_ENABLE_DOWNLOAD"  { default = "true" }
 variable "WAN_MODEL_ID"         { default = "Wan-AI/Wan2.2-Animate-14B" }
-variable "HF_TOKEN"         { default = "" }
+variable "HF_TOKEN"             { default = "" }
 
 # 组：
 # - default：只构建标准版
