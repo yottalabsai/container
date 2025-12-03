@@ -7,7 +7,14 @@ FROM ${BASE_IMAGE}
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 
-ARG VLLM_MODEL="Qwen/Qwen2.5-3B-Instruct"
+# vLLM 模型相关（默认使用 Qwen3-30B-A3B-Instruct-2507）
+ARG VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507"
+
+# 独立的大模型下载模块参数
+ARG ENABLE_MODEL_DOWNLOAD="true"
+ARG HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507"
+ARG HF_TOKEN=""
+
 ARG VLLM_HOST="0.0.0.0"
 ARG VLLM_PORT="8000"
 
@@ -109,7 +116,7 @@ RUN python -m pip install --no-cache-dir --pre \
 # vLLM 生态
 # ==============================
 RUN python -m pip install --no-cache-dir \
-      vllm transformers sentencepiece huggingface_hub hf_transfer einops
+      vllm transformers sentencepiece "huggingface_hub[cli]" hf_transfer einops
 
 # Flash 加速（按需）
 RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
@@ -119,6 +126,28 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
       python -m pip install flashinfer || true; fi
 
 # ==============================
+# Qwen3-30B 模型预下载模块（可关）
+# ==============================
+RUN set -euo pipefail; \
+    if [ "${ENABLE_MODEL_DOWNLOAD}" != "true" ]; then \
+      echo "[MODEL] ENABLE_MODEL_DOWNLOAD != true，跳过预下载 Qwen 模型"; \
+      exit 0; \
+    fi; \
+    mkdir -p "${HF_HOME}"; \
+    HF_ARGS=""; \
+    if [ -n "${HF_TOKEN:-}" ]; then \
+      echo "[MODEL] 使用 HF_TOKEN 下载模型"; \
+      HF_ARGS="--token ${HF_TOKEN}"; \
+    fi; \
+    echo "[MODEL] 预下载模型 ${HF_MODEL_ID} 到 ${HF_HOME}/${HF_MODEL_ID} ..."; \
+    huggingface-cli download "${HF_MODEL_ID}" \
+      --local-dir "${HF_HOME}/${HF_MODEL_ID}" \
+      --local-dir-use-symlinks False \
+      --resume-download \
+      ${HF_ARGS}; \
+    echo "[MODEL] 模型下载完成：${HF_HOME}/${HF_MODEL_ID}"
+
+# ==============================
 # vLLM 环境变量
 # ==============================
 ENV VLLM_MODEL=${VLLM_MODEL} \
@@ -126,7 +155,8 @@ ENV VLLM_MODEL=${VLLM_MODEL} \
     VLLM_PORT=${VLLM_PORT} \
     TP_SIZE=${TP_SIZE} \
     MAX_MODEL_LEN=${MAX_MODEL_LEN} \
-    GPU_MEM_UTIL=${GPU_MEM_UTIL}
+    GPU_MEM_UTIL=${GPU_MEM_UTIL} \
+    HF_MODEL_ID=${HF_MODEL_ID}
 
 # ==============================
 # Copy 平台 start.sh（来自 bake scripts context）
@@ -141,20 +171,34 @@ RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
 set -e
 
-echo "[post_start] Starting vLLM model: ${VLLM_MODEL}"
+LOG=/workspace/vllm.log
+mkdir -p /workspace
+
+# 优先使用本地已下载模型目录，其次回退到模型 ID
+MODEL_PATH="${HF_HOME}/${HF_MODEL_ID}"
+MODEL_ARG="${VLLM_MODEL}"
+
+if [ -d "${MODEL_PATH}" ]; then
+  echo "[post_start] Using local model path: ${MODEL_PATH}"
+  MODEL_ARG="${MODEL_PATH}"
+else
+  echo "[post_start] Local path not found, fallback to HF id: ${VLLM_MODEL}"
+fi
+
+echo "[post_start] Starting vLLM model: ${MODEL_ARG}"
 
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST}" \
   --port "${VLLM_PORT}" \
-  --model "${VLLM_MODEL}" \
+  --model "${MODEL_ARG}" \
   --download-dir "${HF_HOME}" \
   --trust-remote-code \
   --tensor-parallel-size "${TP_SIZE}" \
   --max-model-len "${MAX_MODEL_LEN}" \
   --gpu-memory-utilization "${GPU_MEM_UTIL}" \
-  >> /workspace/vllm.log 2>&1 &
+  >> "${LOG}" 2>&1 &
 
-echo "[post_start] vLLM launched. Log: /workspace/vllm.log"
+echo "[post_start] vLLM launched. Log: ${LOG}"
 EOF
 
 RUN chmod +x /post_start.sh

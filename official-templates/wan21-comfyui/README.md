@@ -15,7 +15,7 @@ docker buildx bake wan21-comfyui --push
 docker buildx bake wan21-comfyui-nunchaku --push
 
 # 构建两个变体一起
-docker buildx bake comfy-all --push
+docker buildx bake wan21-all --push
 
 # 覆盖部分参数
 docker buildx bake wan21-comfyui --push
@@ -34,3 +34,5 @@ curl -s http://localhost:8188/system_stats | jq .
 
 # 或查看队列状态
 curl -s http://localhost:8188/queue | jq .
+
+

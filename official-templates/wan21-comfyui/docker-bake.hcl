@@ -1,26 +1,45 @@
-variable "PUBLISHER"  { default = "yottalabsai" }
-variable "TAG_SUFFIX" { default = "2025102101" }
+# ==============================
+# Wan2.1-T2V-1.3B ComfyUI 镜像构建
+# ==============================
 
-variable "BASE_IMAGE" { default = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04" }
-variable "PYTHON_VER" { default = "3.11" }
-variable "COMFY_PORT" { default = "8188" }
+variable "PUBLISHER"   { default = "yottalabsai" }
+variable "TAG_SUFFIX"  { default = "2025102101" }
 
-variable "TORCH_VERSION"        { default = "2.4.1" }
-variable "TORCH_VISION_VERSION" { default = "0.19.1" }
-variable "TORCH_CUDA"           { default = "cu124" }
+variable "BASE_IMAGE"  { default = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04" }
+variable "PYTHON_VER"  { default = "3.11" }
+variable "COMFY_PORT"  { default = "8188" }
 
-group "default" { targets = ["wan21-comfyui"] }
-group "comfy-all" { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
+# Torch / CUDA
+variable "TORCH_CHANNEL"            { default = "nightly" }
+variable "TORCH_VERSION"            { default = "2.4.1" }
+variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
+variable "TORCH_CUDA"               { default = "cu128" }
+variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
-# ---- 标准版（无 Nunchaku）----
+# Wan2.1 模型下载参数
+variable "WAN_ENABLE_DOWNLOAD"  { default = "true" }
+variable "WAN_MODEL_ID"         { default = "Wan-AI/Wan2.1-T2V-1.3B" }
+variable "WAN_HF_TOKEN"         { default = "" }
+
+# 组：
+# - default：只构建标准版
+# - wan21-all：标准 + Nunchaku
+group "default"    { targets = ["wan21-comfyui"] }
+group "wan21-all"  { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
+
+# ==============================
+# Wan2.1-T2V-1.3B - 标准版
+# ==============================
 target "wan21-comfyui" {
-  description = "ComfyUI + WAN 2.1 环境镜像"
-  dockerfile  = "Dockerfile"
+  description = "ComfyUI + Wan2.1-T2V-1.3B"
+  dockerfile  = "Dockerfile.wan2.1-T2V-1.3B"
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/wan2.1:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
+    "${PUBLISHER}/wan2.1-t2v-1.3b:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
+
+  output = ["type=registry"]
 
   contexts = {
     scripts = "../../container-template"
@@ -38,22 +57,31 @@ target "wan21-comfyui" {
     NUNCHAKU_REPO    = ""
     NUNCHAKU_REF     = ""
 
-    TORCH_VERSION        = TORCH_VERSION
-    TORCH_VISION_VERSION = TORCH_VISION_VERSION
-    TORCH_CUDA           = TORCH_CUDA
+    TORCH_CHANNEL           = TORCH_CHANNEL
+    TORCH_VERSION           = TORCH_VERSION
+    TORCH_VISION_VERSION    = TORCH_VISION_VERSION
+    TORCH_CUDA              = TORCH_CUDA
+    TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
+    WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
+    WAN_MODEL_ID        = WAN_MODEL_ID
+    WAN_HF_TOKEN        = WAN_HF_TOKEN
   }
 }
 
-# ---- Nunchaku 版 ----
+# ==============================
+# Wan2.1-T2V-1.3B - Nunchaku 版
+# ==============================
 target "wan21-comfyui-nunchaku" {
-  description = "ComfyUI + WAN 2.1 + Nunchaku 变体"
-  dockerfile  = "Dockerfile"
+  description = "ComfyUI + Wan2.1-T2V-1.3B + Nunchaku"
+  dockerfile  = "Dockerfile.wan2.1-T2V-1.3B"
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/wan2.1:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"
+    "${PUBLISHER}/wan2.1-t2v-1.3b:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
+
+  output = ["type=registry"]
 
   contexts = {
     scripts = "../../container-template"
@@ -71,9 +99,14 @@ target "wan21-comfyui-nunchaku" {
     NUNCHAKU_REPO    = "https://github.com/nunchaku-tech/ComfyUI-nunchaku.git"
     NUNCHAKU_REF     = "main"
 
-    TORCH_VERSION        = TORCH_VERSION
-    TORCH_VISION_VERSION = TORCH_VISION_VERSION
-    TORCH_CUDA           = TORCH_CUDA
+    TORCH_CHANNEL           = TORCH_CHANNEL
+    TORCH_VERSION           = TORCH_VERSION
+    TORCH_VISION_VERSION    = TORCH_VISION_VERSION
+    TORCH_CUDA              = TORCH_CUDA
+    TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
+    WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
+    WAN_MODEL_ID        = WAN_MODEL_ID
+    WAN_HF_TOKEN        = WAN_HF_TOKEN
   }
 }
