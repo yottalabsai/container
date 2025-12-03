@@ -183,4 +183,114 @@ mkdir -p "${TARGET_DIR}"
 
 ARGS=(
   "${REPO_ID}"
-  --local-dir "${TARGET
+  --local-dir "${TARGET_DIR}"
+  --local-dir-use-symlinks False
+  --resume-download
+)
+
+if [ -n "${TOKEN}" ]; then
+  ARGS+=(--token "${TOKEN}")
+fi
+
+echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
+huggingface-cli download "${ARGS[@]}"
+echo "[hf_download] Done."
+HF
+
+RUN chmod +x /usr/local/bin/hf_download.sh
+
+# 回到 ubuntu 用户继续后续步骤
+USER ${UBUNTU_USER}
+RUN python -m pip install --no-cache-dir --user \
+      "GitPython>=3.1.44" \
+      "PyGithub" \
+      "toml"
+
+# 可选：Nunchaku
+RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
+      if [[ -z "${NUNCHAKU_REPO}" ]]; then \
+        echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
+      fi; \
+      cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
+      if [[ -n "${NUNCHAKU_REF}" ]]; then \
+        git clone --branch "${NUNCHAKU_REF}" --depth=1 "${NUNCHAKU_REPO}" ComfyUI-Nunchaku; \
+      else \
+        git clone --depth=1 "${NUNCHAKU_REPO}" ComfyUI-Nunchaku; \
+      fi; \
+      if [[ -f ComfyUI-Nunchaku/requirements.txt ]]; then \
+        python -m pip install --no-cache-dir -r ComfyUI-Nunchaku/requirements.txt; \
+      fi; \
+    fi
+
+# 模型 & 目录结构
+RUN mkdir -p \
+      /home/${UBUNTU_USER}/models/ckpt \
+      /home/${UBUNTU_USER}/models/vae \
+      /home/${UBUNTU_USER}/models/lora \
+      /home/${UBUNTU_USER}/models/clip \
+      /home/${UBUNTU_USER}/ComfyUI/input \
+      /home/${UBUNTU_USER}/output
+
+# -------------------------------
+# Wan2.1-T2V-1.3B 模型下载（huggingface-cli 版本）
+# -------------------------------
+RUN set -euo pipefail; \
+    if [ "${WAN_ENABLE_DOWNLOAD}" != "true" ]; then \
+      echo "[WAN2.1] WAN_ENABLE_DOWNLOAD != true，跳过模型下载"; \
+      exit 0; \
+    fi; \
+    ROOT="/home/${UBUNTU_USER}/ComfyUI/models/wan2.1-t2v-1.3b"; \
+    echo "[WAN2.1] Downloading ${WAN_MODEL_ID} into ${ROOT} ..."; \
+    hf_download.sh "${WAN_MODEL_ID}" "${ROOT}" "${WAN_HF_TOKEN}"
+
+# ==============================
+# runtime
+# ==============================
+FROM comfy-builder AS runtime
+
+ARG UBUNTU_USER
+ARG COMFYUI_PORT
+
+ENV COMFYUI_PORT=${COMFYUI_PORT}
+
+USER root
+WORKDIR /home/${UBUNTU_USER}
+
+COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
+COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
+COPY README.md      /usr/share/nginx/html/README.md
+COPY --from=logo    yotta.txt /etc/yotta.txt
+COPY --from=scripts start.sh /start.sh
+
+RUN cat >/post_start.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG=/home/ubuntu/comfyui.log
+mkdir -p /home/ubuntu
+
+sudo -u ubuntu bash -lc "
+  cd /home/ubuntu/ComfyUI && \
+  python -u main.py \
+    --listen 0.0.0.0 \
+    --port   \"${COMFYUI_PORT:-8188}\" \
+  >> \"$LOG\" 2>&1 &
+"
+
+echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
+EOS
+
+RUN chmod +x /post_start.sh /start.sh && \
+    echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+
+VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output", "/home/${UBUNTU_USER}/ComfyUI/models"]
+
+EXPOSE 80
+EXPOSE ${COMFYUI_PORT}
+EXPOSE 22
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
+
+ENTRYPOINT ["/start.sh"]
