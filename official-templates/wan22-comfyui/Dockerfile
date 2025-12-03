@@ -166,6 +166,7 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
+# 通用 huggingface 下载脚本
 RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -181,7 +182,9 @@ TOKEN="${3:-}"
 
 mkdir -p "${TARGET_DIR}"
 
+# 注意：第一个参数必须是 download，这里就是你之前少的那一步
 ARGS=(
+  download
   "${REPO_ID}"
   --local-dir "${TARGET_DIR}"
   --local-dir-use-symlinks False
