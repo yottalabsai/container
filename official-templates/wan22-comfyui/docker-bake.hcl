@@ -32,15 +32,12 @@ group "wan22-all"  { targets = ["wan22-comfyui", "wan22-comfyui-nunchaku"] }
 # ==============================
 target "wan22-comfyui" {
   description = "ComfyUI + Wan2.2-Animate-14B"
-  dockerfile  = "Dockerfile.wan2.2-Animate-14B"
+  dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/wan2.2-animate-14b:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
+    "${PUBLISHER}/wan2.2:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
-
-  # 构建完成后直接推到 Registry
-  output = ["type=registry"]
 
   contexts = {
     scripts = "../../container-template"
@@ -75,11 +72,11 @@ target "wan22-comfyui" {
 # ==============================
 target "wan22-comfyui-nunchaku" {
   description = "ComfyUI + Wan2.2-Animate-14B + Nunchaku"
-  dockerfile  = "Dockerfile.wan2.2-Animate-14B"
+  dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/wan2.2-animate-14b:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
+    "${PUBLISHER}/wan2.2:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
   contexts = {

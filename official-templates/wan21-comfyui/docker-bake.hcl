@@ -32,11 +32,11 @@ group "wan21-all"  { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
 # ==============================
 target "wan21-comfyui" {
   description = "ComfyUI + Wan2.1-T2V-1.3B"
-  dockerfile  = "Dockerfile.wan2.1-T2V-1.3B"
+  dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/wan2.1-t2v-1.3b:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
+    "${PUBLISHER}/wan2.1:comfyui-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
 
   contexts = {
@@ -72,14 +72,12 @@ target "wan21-comfyui" {
 # ==============================
 target "wan21-comfyui-nunchaku" {
   description = "ComfyUI + Wan2.1-T2V-1.3B + Nunchaku"
-  dockerfile  = "Dockerfile.wan2.1-T2V-1.3B"
+  dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/wan2.1-t2v-1.3b:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
+    "${PUBLISHER}/wan2.1:comfyui-nunchaku-cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}",
   ]
-
-  output = ["type=registry"]
 
   contexts = {
     scripts = "../../container-template"
