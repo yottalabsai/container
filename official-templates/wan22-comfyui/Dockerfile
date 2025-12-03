@@ -21,7 +21,7 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 # Wan2.2 模型下载控制
 ARG WAN_ENABLE_DOWNLOAD="true"
 ARG WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
-ARG WAN_HF_TOKEN=""
+ARG HF_TOKEN=""
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
@@ -142,7 +142,7 @@ ARG NUNCHAKU_REF
 
 ARG WAN_ENABLE_DOWNLOAD
 ARG WAN_MODEL_ID
-ARG WAN_HF_TOKEN
+ARG HF_TOKEN
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -244,7 +244,7 @@ RUN set -euo pipefail; \
     fi; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models/wan2.2-animate-14b"; \
     echo "[WAN2.2] Downloading ${WAN_MODEL_ID} into ${ROOT} ..."; \
-    hf_download.sh "${WAN_MODEL_ID}" "${ROOT}" "${WAN_HF_TOKEN}"
+    hf_download.sh "${WAN_MODEL_ID}" "${ROOT}" "${HF_TOKEN}"
 
 # ==============================
 # runtime
