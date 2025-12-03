@@ -193,7 +193,7 @@ if [ -n "${TOKEN}" ]; then
 fi
 
 echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
-huggingface-cli download "${ARGS[@]}"
+python -m huggingface_hub.commands.huggingface_cli "${ARGS[@]}"
 echo "[hf_download] Done."
 HF
 

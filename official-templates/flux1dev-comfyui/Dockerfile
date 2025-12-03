@@ -22,7 +22,7 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 ARG ENABLE_FLUX_VAE="true"
 
 # HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
-ARG HF_TOKEN
+ARG HF_TOKEN=""
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
@@ -41,7 +41,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
     # 针对 5090 / Blackwell
-    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
+    HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -67,7 +68,8 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
-    chmod 700 /home/${UBUNTU_USER}/.ssh
+    chmod 700 /home/${UBUNTU_USER}/.ssh && \
+    mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
 # SSH 配置：允许密码登录，但禁 root
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
@@ -157,12 +159,47 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     # 给 __init__.py 打补丁：把硬 import 改成 try/except，避免异常直接让整个 custom node 失败
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 正确安装 GitPython：必须装到系统级 site-packages，否则 ComfyUI 无法 import git
+# 正确安装 GitPython + PyGithub + toml + huggingface_hub[cli]（提供 huggingface-cli）
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
       "PyGithub" \
-      "toml"
+      "toml" \
+      "huggingface_hub[cli]"
+
+# 通用 huggingface 下载脚本（和 Wan 系列统一）
+RUN cat >/usr/local/bin/hf_download.sh <<'HF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -lt 2 ]; then
+  echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
+  exit 1
+fi
+
+REPO_ID="$1"
+TARGET_DIR="$2"
+TOKEN="${3:-}"
+
+mkdir -p "${TARGET_DIR}"
+
+ARGS=(
+  "${REPO_ID}"
+  --local-dir "${TARGET_DIR}"
+  --local-dir-use-symlinks False
+  --resume-download
+)
+
+if [ -n "${TOKEN}" ]; then
+  ARGS+=(--token "${TOKEN}")
+fi
+
+echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
+python -m huggingface_hub.commands.huggingface_cli "${ARGS[@]}"
+echo "[hf_download] Done."
+HF
+
+RUN chmod +x /usr/local/bin/hf_download.sh
 
 # 再切回 ubuntu（继续剩下步骤）
 USER ${UBUNTU_USER}
@@ -197,7 +234,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# FLUX1-DEV 模型下载（UNet + T5 + CLIP + 可选 VAE）
+# FLUX1-DEV 模型下载（UNet + T5 + CLIP + 可选 VAE，统一 huggingface-cli）
 # -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
@@ -211,27 +248,31 @@ RUN set -euo pipefail; \
       exit 1; \
     fi; \
     \
-    echo "[FLUX1-DEV] Downloading UNET (flux1-dev.safetensors) ..."; \
-    wget --header="Authorization: Bearer ${HF_TOKEN}" \
-      -O "${ROOT}/unet/flux1-dev.safetensors" \
-      "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/flux1-dev.safetensors"; \
+    FLUX_REPO_DIR="${ROOT}/_flux1-dev-repo"; \
+    echo "[FLUX1-DEV] Downloading black-forest-labs/FLUX.1-dev into ${FLUX_REPO_DIR} ..."; \
+    hf_download.sh "black-forest-labs/FLUX.1-dev" "${FLUX_REPO_DIR}" "${HF_TOKEN}"; \
     \
-    echo "[FLUX1-DEV] Downloading T5XXL text encoder (FP8) ..."; \
-    wget -O "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors" \
-      "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
-    \
-    echo "[FLUX1-DEV] Downloading CLIP_L text encoder ..."; \
-    wget -O "${ROOT}/text_encoders/clip_l.safetensors" \
-      "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors"; \
+    echo "[FLUX1-DEV] Linking UNET (flux1-dev.safetensors) ..."; \
+    cp "${FLUX_REPO_DIR}/flux1-dev.safetensors" "${ROOT}/unet/flux1-dev.safetensors"; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] Downloading OFFICIAL VAE ..."; \
-      wget --header="Authorization: Bearer ${HF_TOKEN}" \
-        -O "${ROOT}/vae/ae.safetensors" \
-        "https://huggingface.co/black-forest-labs/FLUX.1-dev/resolve/main/ae.safetensors"; \
+      echo "[FLUX1-DEV] Linking OFFICIAL VAE (ae.safetensors) ..."; \
+      cp "${FLUX_REPO_DIR}/ae.safetensors" "${ROOT}/vae/ae.safetensors"; \
     else \
-      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
+      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE link."; \
     fi; \
+    \
+    ENC_REPO_DIR="${ROOT}/_flux_text_encoders"; \
+    echo "[FLUX1-DEV] Downloading comfyanonymous/flux_text_encoders into ${ENC_REPO_DIR} ..."; \
+    hf_download.sh "comfyanonymous/flux_text_encoders" "${ENC_REPO_DIR}"; \
+    \
+    echo "[FLUX1-DEV] Linking T5XXL text encoder (FP8) ..."; \
+    cp "${ENC_REPO_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" \
+       "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
+    \
+    echo "[FLUX1-DEV] Linking CLIP_L text encoder ..."; \
+    cp "${ENC_REPO_DIR}/clip_l.safetensors" \
+       "${ROOT}/text_encoders/clip_l.safetensors"; \
     \
     echo "[FLUX1-DEV] Model installation complete."
 

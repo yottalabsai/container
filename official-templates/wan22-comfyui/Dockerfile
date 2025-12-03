@@ -40,7 +40,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
     # 针对 5090 / Blackwell
-    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
+    HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -66,7 +67,8 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
-    chmod 700 /home/${UBUNTU_USER}/.ssh
+    chmod 700 /home/${UBUNTU_USER}/.ssh && \
+    mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
 # SSH 配置：允许密码登录，但禁 root
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
@@ -156,7 +158,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd ComfyUI-Manager && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 安装 GitPython + PyGithub + toml + huggingface_hub (提供 huggingface-cli)
+# 安装 GitPython + PyGithub + toml + huggingface_hub[cli]，并写入通用 hf_download.sh
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -164,6 +166,40 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
+RUN cat >/usr/local/bin/hf_download.sh <<'HF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -lt 2 ]; then
+  echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
+  exit 1
+fi
+
+REPO_ID="$1"
+TARGET_DIR="$2"
+TOKEN="${3:-}"
+
+mkdir -p "${TARGET_DIR}"
+
+ARGS=(
+  "${REPO_ID}"
+  --local-dir "${TARGET_DIR}"
+  --local-dir-use-symlinks False
+  --resume-download
+)
+
+if [ -n "${TOKEN}" ]; then
+  ARGS+=(--token "${TOKEN}")
+fi
+
+echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
+python -m huggingface_hub.commands.huggingface_cli "${ARGS[@]}"
+echo "[hf_download] Done."
+HF
+
+RUN chmod +x /usr/local/bin/hf_download.sh
+
+# 回到 ubuntu 用户继续后续步骤
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
       "GitPython>=3.1.44" \
@@ -196,27 +232,16 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# Wan2.2-Animate-14B 模型下载
+# Wan2.2-Animate-14B 模型下载（统一用 hf_download.sh）
 # -------------------------------
 RUN set -euo pipefail; \
     if [ "${WAN_ENABLE_DOWNLOAD}" != "true" ]; then \
       echo "[WAN2.2] WAN_ENABLE_DOWNLOAD != true，跳过模型下载"; \
       exit 0; \
     fi; \
-    ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-    mkdir -p "${ROOT}/wan2.2-animate-14b"; \
-    HF_ARGS=""; \
-    if [ -n "${WAN_HF_TOKEN:-}" ]; then \
-      echo "[WAN2.2] 使用 WAN_HF_TOKEN 访问 HuggingFace"; \
-      HF_ARGS="--token ${WAN_HF_TOKEN}"; \
-    fi; \
-    echo "[WAN2.2] Downloading ${WAN_MODEL_ID} to ${ROOT}/wan2.2-animate-14b ..."; \
-    huggingface-cli download "${WAN_MODEL_ID}" \
-      --local-dir "${ROOT}/wan2.2-animate-14b" \
-      --local-dir-use-symlinks False \
-      --resume-download \
-      ${HF_ARGS}; \
-    echo "[WAN2.2] Model download complete."
+    ROOT="/home/${UBUNTU_USER}/ComfyUI/models/wan2.2-animate-14b"; \
+    echo "[WAN2.2] Downloading ${WAN_MODEL_ID} into ${ROOT} ..."; \
+    hf_download.sh "${WAN_MODEL_ID}" "${ROOT}" "${WAN_HF_TOKEN}"
 
 # ==============================
 # runtime
