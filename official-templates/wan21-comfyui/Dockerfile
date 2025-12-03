@@ -39,7 +39,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0"
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
+    HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -65,7 +66,8 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
-    chmod 700 /home/${UBUNTU_USER}/.ssh
+    chmod 700 /home/${UBUNTU_USER}/.ssh && \
+    mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
 # SSH 配置
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
@@ -153,7 +155,9 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd ComfyUI-Manager && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 安装 GitPython + PyGithub + toml + huggingface_hub
+# =========================================
+# 安装 huggingface-cli + 通用下载脚本
+# =========================================
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -161,108 +165,22 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
-USER ${UBUNTU_USER}
-RUN python -m pip install --no-cache-dir --user \
-      "GitPython>=3.1.44" \
-      "PyGithub" \
-      "toml"
-
-# 可选：Nunchaku
-RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
-      if [[ -z "${NUNCHAKU_REPO}" ]]; then \
-        echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
-      fi; \
-      cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
-      if [[ -n "${NUNCHAKU_REF}" ]]; then \
-        git clone --branch "${NUNCHAKU_REF}" --depth=1 "${NUNCHAKU_REPO}" ComfyUI-Nunchaku; \
-      else \
-        git clone --depth=1 "${NUNCHAKU_REPO}" ComfyUI-Nunchaku; \
-      fi; \
-      if [[ -f ComfyUI-Nunchaku/requirements.txt ]]; then \
-        python -m pip install --no-cache-dir -r ComfyUI-Nunchaku/requirements.txt; \
-      fi; \
-    fi
-
-# 模型 & 目录结构
-RUN mkdir -p \
-      /home/${UBUNTU_USER}/models/ckpt \
-      /home/${UBUNTU_USER}/models/vae \
-      /home/${UBUNTU_USER}/models/lora \
-      /home/${UBUNTU_USER}/models/clip \
-      /home/${UBUNTU_USER}/ComfyUI/input \
-      /home/${UBUNTU_USER}/output
-
-# -------------------------------
-# Wan2.1-T2V-1.3B 模型下载
-# -------------------------------
-RUN set -euo pipefail; \
-    if [ "${WAN_ENABLE_DOWNLOAD}" != "true" ]; then \
-      echo "[WAN2.1] WAN_ENABLE_DOWNLOAD != true，跳过模型下载"; \
-      exit 0; \
-    fi; \
-    ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-    mkdir -p "${ROOT}/wan2.1-t2v-1.3b"; \
-    HF_ARGS=""; \
-    if [ -n "${WAN_HF_TOKEN:-}" ]; then \
-      echo "[WAN2.1] 使用 WAN_HF_TOKEN 访问 HuggingFace"; \
-      HF_ARGS="--token ${WAN_HF_TOKEN}"; \
-    fi; \
-    echo "[WAN2.1] Downloading ${WAN_MODEL_ID} to ${ROOT}/wan2.1-t2v-1.3b ..."; \
-    huggingface-cli download "${WAN_MODEL_ID}" \
-      --local-dir "${ROOT}/wan2.1-t2v-1.3b" \
-      --local-dir-use-symlinks False \
-      --resume-download \
-      ${HF_ARGS}; \
-    echo "[WAN2.1] Model download complete."
-
-# ==============================
-# runtime
-# ==============================
-FROM comfy-builder AS runtime
-
-ARG UBUNTU_USER
-ARG COMFYUI_PORT
-
-ENV COMFYUI_PORT=${COMFYUI_PORT}
-
-USER root
-WORKDIR /home/${UBUNTU_USER}
-
-COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
-COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
-COPY README.md      /usr/share/nginx/html/README.md
-COPY --from=logo    yotta.txt /etc/yotta.txt
-COPY --from=scripts start.sh /start.sh
-
-RUN cat >/post_start.sh <<'EOS'
+# 通用 huggingface 下载脚本：后面 Wan2.1 / Wan2.2 / Qwen 全复用
+RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG=/home/ubuntu/comfyui.log
-mkdir -p /home/ubuntu
+if [ "$#" -lt 2 ]; then
+  echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
+  exit 1
+fi
 
-sudo -u ubuntu bash -lc "
-  cd /home/ubuntu/ComfyUI && \
-  python -u main.py \
-    --listen 0.0.0.0 \
-    --port   \"${COMFYUI_PORT:-8188}\" \
-  >> \"$LOG\" 2>&1 &
-"
+REPO_ID="$1"
+TARGET_DIR="$2"
+TOKEN="${3:-}"
 
-echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
-EOS
+mkdir -p "${TARGET_DIR}"
 
-RUN chmod +x /post_start.sh /start.sh && \
-    echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
-
-VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output", "/home/${UBUNTU_USER}/ComfyUI/models"]
-
-EXPOSE 80
-EXPOSE ${COMFYUI_PORT}
-EXPOSE 22
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
-
-ENTRYPOINT ["/start.sh"]
+ARGS=(
+  "${REPO_ID}"
+  --local-dir "${TARGET
