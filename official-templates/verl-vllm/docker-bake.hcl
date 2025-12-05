@@ -26,7 +26,7 @@ target "verl-vllm" {
   ]
 
   args = {
-    BASE_IMAGE     = "nvidia/cuda:12.6.2-cudnn-devel-ubuntu22.04"
+    BASE_IMAGE     = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
     PYTHON_VERSION    = "3.11"
   }
 }
