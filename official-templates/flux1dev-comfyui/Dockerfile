@@ -235,55 +235,64 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# FLUX1-DEV 模型下载（UNet + T5 + CLIP + 可选 VAE，仍然用 snapshot_download）
+# FLUX1-DEV 模型下载（只拉必要文件，仍使用 huggingface-cli）
 # -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
     mkdir -p \
       "${ROOT}/unet" \
       "${ROOT}/text_encoders" \
-      "${ROOT}/vae"; \
+      "${ROOT}/vae" \
+      "${ROOT}/_flux_tmp"; \
     \
     if [ -z "${HF_TOKEN}" ]; then \
-      echo "[FLUX1-DEV] ERROR: black-forest-labs/FLUX.1-dev is gated, HF_TOKEN is required."; \
+      echo "[FLUX1-DEV] ERROR: HF_TOKEN is required."; \
       exit 1; \
     fi; \
     \
-    FLUX_REPO_DIR="${ROOT}/_flux1-dev-repo"; \
-    echo "[FLUX1-DEV] Downloading black-forest-labs/FLUX.1-dev into ${FLUX_REPO_DIR} ..."; \
-    hf_download.sh "black-forest-labs/FLUX.1-dev" "${FLUX_REPO_DIR}" "${HF_TOKEN}"; \
-    \
-    echo "[FLUX1-DEV] Moving UNET (flux1-dev.safetensors) ..."; \
-    mv "${FLUX_REPO_DIR}/flux1-dev.safetensors" \
+    echo "[FLUX1-DEV] Downloading UNET (flux1-dev.safetensors) via huggingface-cli ..."; \
+    huggingface-cli download \
+      black-forest-labs/FLUX.1-dev \
+      flux1-dev.safetensors \
+      --local-dir "${ROOT}/_flux_tmp" \
+      --local-dir-use-symlinks False \
+      --token "${HF_TOKEN}"; \
+    mv "${ROOT}/_flux_tmp/flux1-dev.safetensors" \
        "${ROOT}/unet/flux1-dev.safetensors"; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] Moving OFFICIAL VAE (ae.safetensors) ..."; \
-      mv "${FLUX_REPO_DIR}/ae.safetensors" \
+      echo "[FLUX1-DEV] Downloading OFFICIAL VAE (ae.safetensors) via huggingface-cli ..."; \
+      huggingface-cli download \
+        black-forest-labs/FLUX.1-dev \
+        ae.safetensors \
+        --local-dir "${ROOT}/_flux_tmp" \
+        --local-dir-use-symlinks False \
+        --token "${HF_TOKEN}"; \
+      mv "${ROOT}/_flux_tmp/ae.safetensors" \
          "${ROOT}/vae/ae.safetensors"; \
     else \
-      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE move."; \
+      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
     fi; \
     \
-    # FLUX 主仓库的剩余文件对 ComfyUI 用处不大，用完就删，避免占空间
-    rm -rf "${FLUX_REPO_DIR}"; \
+    rm -rf "${ROOT}/_flux_tmp"; \
     \
     ENC_REPO_DIR="${ROOT}/_flux_text_encoders"; \
-    echo "[FLUX1-DEV] Downloading comfyanonymous/flux_text_encoders into ${ENC_REPO_DIR} ..."; \
-    hf_download.sh "comfyanonymous/flux_text_encoders" "${ENC_REPO_DIR}"; \
+    echo "[FLUX1-DEV] Downloading text encoders via huggingface-cli ..."; \
+    huggingface-cli download \
+      comfyanonymous/flux_text_encoders \
+      t5xxl_fp8_e4m3fn_scaled.safetensors \
+      clip_l.safetensors \
+      --local-dir "${ENC_REPO_DIR}" \
+      --local-dir-use-symlinks False; \
     \
-    echo "[FLUX1-DEV] Moving T5XXL text encoder (FP8) ..."; \
     mv "${ENC_REPO_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" \
        "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
-    \
-    echo "[FLUX1-DEV] Moving CLIP_L text encoder ..."; \
     mv "${ENC_REPO_DIR}/clip_l.safetensors" \
        "${ROOT}/text_encoders/clip_l.safetensors"; \
-    \
-    # 同样删掉临时 encoder 仓库
     rm -rf "${ENC_REPO_DIR}"; \
     \
     echo "[FLUX1-DEV] Model installation complete."
+
 
 # ==============================
 # runtime
