@@ -235,7 +235,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# FLUX1-DEV 模型下载（UNet + T5 + CLIP + 可选 VAE，统一 huggingface-cli）
+# FLUX1-DEV 模型下载（UNet + T5 + CLIP + 可选 VAE，仍然用 snapshot_download）
 # -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
@@ -253,27 +253,35 @@ RUN set -euo pipefail; \
     echo "[FLUX1-DEV] Downloading black-forest-labs/FLUX.1-dev into ${FLUX_REPO_DIR} ..."; \
     hf_download.sh "black-forest-labs/FLUX.1-dev" "${FLUX_REPO_DIR}" "${HF_TOKEN}"; \
     \
-    echo "[FLUX1-DEV] Linking UNET (flux1-dev.safetensors) ..."; \
-    cp "${FLUX_REPO_DIR}/flux1-dev.safetensors" "${ROOT}/unet/flux1-dev.safetensors"; \
+    echo "[FLUX1-DEV] Moving UNET (flux1-dev.safetensors) ..."; \
+    mv "${FLUX_REPO_DIR}/flux1-dev.safetensors" \
+       "${ROOT}/unet/flux1-dev.safetensors"; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] Linking OFFICIAL VAE (ae.safetensors) ..."; \
-      cp "${FLUX_REPO_DIR}/ae.safetensors" "${ROOT}/vae/ae.safetensors"; \
+      echo "[FLUX1-DEV] Moving OFFICIAL VAE (ae.safetensors) ..."; \
+      mv "${FLUX_REPO_DIR}/ae.safetensors" \
+         "${ROOT}/vae/ae.safetensors"; \
     else \
-      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE link."; \
+      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE move."; \
     fi; \
+    \
+    # FLUX 主仓库的剩余文件对 ComfyUI 用处不大，用完就删，避免占空间
+    rm -rf "${FLUX_REPO_DIR}"; \
     \
     ENC_REPO_DIR="${ROOT}/_flux_text_encoders"; \
     echo "[FLUX1-DEV] Downloading comfyanonymous/flux_text_encoders into ${ENC_REPO_DIR} ..."; \
     hf_download.sh "comfyanonymous/flux_text_encoders" "${ENC_REPO_DIR}"; \
     \
-    echo "[FLUX1-DEV] Linking T5XXL text encoder (FP8) ..."; \
-    cp "${ENC_REPO_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" \
+    echo "[FLUX1-DEV] Moving T5XXL text encoder (FP8) ..."; \
+    mv "${ENC_REPO_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" \
        "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
     \
-    echo "[FLUX1-DEV] Linking CLIP_L text encoder ..."; \
-    cp "${ENC_REPO_DIR}/clip_l.safetensors" \
+    echo "[FLUX1-DEV] Moving CLIP_L text encoder ..."; \
+    mv "${ENC_REPO_DIR}/clip_l.safetensors" \
        "${ROOT}/text_encoders/clip_l.safetensors"; \
+    \
+    # 同样删掉临时 encoder 仓库
+    rm -rf "${ENC_REPO_DIR}"; \
     \
     echo "[FLUX1-DEV] Model installation complete."
 
