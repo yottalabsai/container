@@ -10,9 +10,11 @@ Example:
 cd containers/official-templates/wan22-comfyui
 
 # 标准版（amd64+arm64）
+HF_TOKEN=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 \
 docker buildx bake wan22-comfyui --push
 
 # Nunchaku 版（需仓库地址）
+HF_TOKEN=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 \
 docker buildx bake wan22-comfyui-nunchaku --push
   
 HF_TOKEN=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 \

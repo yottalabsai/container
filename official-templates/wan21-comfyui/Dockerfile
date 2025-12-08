@@ -118,6 +118,12 @@ RUN python -m pip install --upgrade pip wheel setuptools && \
         --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"; \
     fi
 
+# 安装 jupyter 以兼容 start.sh
+RUN python -m pip install --no-cache-dir \
+      "jupyterlab>=4.0.0" \
+      "notebook" \
+      "ipykernel"
+
 RUN python - <<'PY'
 import torch, platform
 print("PyTorch:", torch.__version__)
