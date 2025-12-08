@@ -91,6 +91,6 @@ target "flux1dev-comfyui-nunchaku" {
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
     ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
-    HF_TOKEN             = HF_TOKEN
+    HF_TOKEN             = "${HF_TOKEN}"
   }
 }

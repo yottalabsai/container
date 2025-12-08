@@ -15,8 +15,8 @@ docker buildx bake wan22-comfyui --push
 # Nunchaku 版（需仓库地址）
 docker buildx bake wan22-comfyui-nunchaku --push
   
-docker buildx bake wan22-all \
-  --set *.args.HF_TOKEN=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 --push
+HF_TOKEN=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 \
+docker buildx bake wan22-all --push
 
 docker buildx bake wan22-comfyui \
   --push \

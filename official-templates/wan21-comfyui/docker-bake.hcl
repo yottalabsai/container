@@ -103,6 +103,6 @@ target "wan21-comfyui-nunchaku" {
 
     WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
     WAN_MODEL_ID        = WAN_MODEL_ID
-    HF_TOKEN            = HF_TOKEN
+    HF_TOKEN            = "${HF_TOKEN}"
   }
 }
