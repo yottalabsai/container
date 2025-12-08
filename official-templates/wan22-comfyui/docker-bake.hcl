@@ -63,7 +63,7 @@ target "wan22-comfyui" {
 
     WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
     WAN_MODEL_ID        = WAN_MODEL_ID
-    HF_TOKEN            = HF_TOKEN
+    HF_TOKEN            = "${HF_TOKEN}"
   }
 }
 

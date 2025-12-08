@@ -202,7 +202,6 @@ echo "[hf_download] Done."
 HF
 
 RUN chmod +x /usr/local/bin/hf_download.sh
-
 # 再切回 ubuntu（继续剩下步骤）
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
