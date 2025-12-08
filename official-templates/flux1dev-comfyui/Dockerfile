@@ -277,10 +277,18 @@ RUN set -euo pipefail; \
     rm -rf "${ROOT}/_flux_tmp"; \
     \
     ENC_REPO_DIR="${ROOT}/_flux_text_encoders"; \
-    echo "[FLUX1-DEV] Downloading text encoders via huggingface_cli (python -m) ..."; \
+    mkdir -p "${ENC_REPO_DIR}"; \
+    \
+    echo "[FLUX1-DEV] Downloading T5XXL text encoder via huggingface_cli (python -m) ..."; \
     python -m huggingface_hub.commands.huggingface_cli download \
       "comfyanonymous/flux_text_encoders" \
       --include "t5xxl_fp8_e4m3fn_scaled.safetensors" \
+      --local-dir "${ENC_REPO_DIR}" \
+      --local-dir-use-symlinks False; \
+    \
+    echo "[FLUX1-DEV] Downloading CLIP_L text encoder via huggingface_cli (python -m) ..."; \
+    python -m huggingface_hub.commands.huggingface_cli download \
+      "comfyanonymous/flux_text_encoders" \
       --include "clip_l.safetensors" \
       --local-dir "${ENC_REPO_DIR}" \
       --local-dir-use-symlinks False; \
