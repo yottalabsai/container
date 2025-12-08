@@ -235,7 +235,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output
 
 # -------------------------------
-# FLUX1-DEV 模型下载（只拉必要文件，仍使用 huggingface-cli）
+# FLUX1-DEV 模型下载（UNet + VAE + Text Encoders）
 # -------------------------------
 RUN set -euo pipefail; \
     ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
@@ -250,10 +250,10 @@ RUN set -euo pipefail; \
       exit 1; \
     fi; \
     \
-    echo "[FLUX1-DEV] Downloading UNET (flux1-dev.safetensors) via huggingface-cli ..."; \
-    huggingface-cli download \
-      black-forest-labs/FLUX.1-dev \
-      flux1-dev.safetensors \
+    echo "[FLUX1-DEV] Downloading UNET (flux1-dev.safetensors) via huggingface_cli (python -m) ..."; \
+    python -m huggingface_hub.commands.huggingface_cli download \
+      "black-forest-labs/FLUX.1-dev" \
+      --include "flux1-dev.safetensors" \
       --local-dir "${ROOT}/_flux_tmp" \
       --local-dir-use-symlinks False \
       --token "${HF_TOKEN}"; \
@@ -261,10 +261,10 @@ RUN set -euo pipefail; \
        "${ROOT}/unet/flux1-dev.safetensors"; \
     \
     if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] Downloading OFFICIAL VAE (ae.safetensors) via huggingface-cli ..."; \
-      huggingface-cli download \
-        black-forest-labs/FLUX.1-dev \
-        ae.safetensors \
+      echo "[FLUX1-DEV] Downloading OFFICIAL VAE (ae.safetensors) via huggingface_cli (python -m) ..."; \
+      python -m huggingface_hub.commands.huggingface_cli download \
+        "black-forest-labs/FLUX.1-dev" \
+        --include "ae.safetensors" \
         --local-dir "${ROOT}/_flux_tmp" \
         --local-dir-use-symlinks False \
         --token "${HF_TOKEN}"; \
@@ -277,11 +277,11 @@ RUN set -euo pipefail; \
     rm -rf "${ROOT}/_flux_tmp"; \
     \
     ENC_REPO_DIR="${ROOT}/_flux_text_encoders"; \
-    echo "[FLUX1-DEV] Downloading text encoders via huggingface-cli ..."; \
-    huggingface-cli download \
-      comfyanonymous/flux_text_encoders \
-      t5xxl_fp8_e4m3fn_scaled.safetensors \
-      clip_l.safetensors \
+    echo "[FLUX1-DEV] Downloading text encoders via huggingface_cli (python -m) ..."; \
+    python -m huggingface_hub.commands.huggingface_cli download \
+      "comfyanonymous/flux_text_encoders" \
+      --include "t5xxl_fp8_e4m3fn_scaled.safetensors" \
+      --include "clip_l.safetensors" \
       --local-dir "${ENC_REPO_DIR}" \
       --local-dir-use-symlinks False; \
     \
