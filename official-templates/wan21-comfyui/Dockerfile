@@ -18,8 +18,8 @@ ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu128"
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
-# Wan2.1 模型下载控制
-ARG WAN_ENABLE_DOWNLOAD="true"
+# Wan2.1 模型下载控制（注意：仅在运行时使用，不在 build 期下载）
+ARG WAN_ENABLE_DOWNLOAD="false"
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 ARG HF_TOKEN=""
 
@@ -143,10 +143,6 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
-ARG WAN_ENABLE_DOWNLOAD
-ARG WAN_MODEL_ID
-ARG HF_TOKEN
-
 WORKDIR /home/${UBUNTU_USER}
 
 # ComfyUI 本体
@@ -171,7 +167,7 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
-# 通用 huggingface 下载脚本
+# 通用 huggingface 下载脚本（build 阶段就放进镜像，运行时直接用）
 RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -187,7 +183,6 @@ TOKEN="${3:-}"
 
 mkdir -p "${TARGET_DIR}"
 
-# 注意：第一个参数必须是 download，这里就是你之前少的那一步
 ARGS=(
   download
   "${REPO_ID}"
@@ -230,7 +225,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构
+# 模型 & 目录结构（目录先建出来，实际模型在运行时下载或挂载）
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -239,17 +234,8 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output
 
-# -------------------------------
-# Wan2.1-T2V-1.3B 模型下载（huggingface-cli 版本）
-# -------------------------------
-RUN set -euo pipefail; \
-    if [ "${WAN_ENABLE_DOWNLOAD}" != "true" ]; then \
-      echo "[WAN2.1] WAN_ENABLE_DOWNLOAD != true，跳过模型下载"; \
-      exit 0; \
-    fi; \
-    ROOT="/home/${UBUNTU_USER}/ComfyUI/models/wan2.1-t2v-1.3b"; \
-    echo "[WAN2.1] Downloading ${WAN_MODEL_ID} into ${ROOT} ..."; \
-    hf_download.sh "${WAN_MODEL_ID}" "${ROOT}" "${HF_TOKEN}"
+# 注意：这里已经不在 build 阶段下载 Wan2.1 模型
+# Wan 模型下载完全由运行时（/post_start.sh 或用户手动命令）控制
 
 # ==============================
 # runtime
@@ -259,17 +245,28 @@ FROM comfy-builder AS runtime
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
 
-ENV COMFYUI_PORT=${COMFYUI_PORT}
+# 运行时 Wan 模型相关参数（可由 buildx bake / Pod env 注入）
+ARG WAN_ENABLE_DOWNLOAD
+ARG WAN_MODEL_ID
+ARG HF_TOKEN
+
+ENV COMFYUI_PORT=${COMFYUI_PORT} \
+    WAN_ENABLE_DOWNLOAD=${WAN_ENABLE_DOWNLOAD} \
+    WAN_MODEL_ID=${WAN_MODEL_ID} \
+    WAN_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models/wan2.1-t2v-1.3b" \
+    HF_TOKEN=${HF_TOKEN}
 
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
+# 这些 context 依赖 buildx bake 里的 contexts 配置
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
+# post_start.sh：可选自动下载 + 启动 ComfyUI
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -277,6 +274,25 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
+MODEL_DIR="${WAN_MODEL_DIR:-/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b}"
+MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.1-T2V-1.3B}"
+
+echo "[WAN2.1] MODEL_DIR=${MODEL_DIR}"
+echo "[WAN2.1] WAN_ENABLE_DOWNLOAD=${WAN_ENABLE_DOWNLOAD}"
+
+# 1）按需下载模型（目录为空 && WAN_ENABLE_DOWNLOAD=true）
+if [[ "${WAN_ENABLE_DOWNLOAD}" == "true" ]]; then
+  if [ ! -d "${MODEL_DIR}" ] || [ -z "$(ls -A "${MODEL_DIR}" 2>/dev/null || true)" ]; then
+    echo "[WAN2.1] Model dir is empty, start download: ${MODEL_ID}"
+    hf_download.sh "${MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN:-}"
+  else
+    echo "[WAN2.1] Model dir not empty, skip download."
+  fi
+else
+  echo "[WAN2.1] Auto download disabled. Expect model is provided by volume / pre-download."
+fi
+
+# 2）启动 ComfyUI（后台）
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
@@ -286,6 +302,9 @@ sudo -u ubuntu bash -lc "
 "
 
 echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
+echo
+echo "[INFO] If you want to start ComfyUI manually, run inside the container:"
+echo "sudo -u ubuntu bash -lc 'cd /home/ubuntu/ComfyUI && python -u main.py --listen 0.0.0.0 --port ${COMFYUI_PORT:-8188}'"
 EOS
 
 RUN chmod +x /post_start.sh /start.sh && \

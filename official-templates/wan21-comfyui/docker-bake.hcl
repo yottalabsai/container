@@ -17,7 +17,8 @@ variable "TORCH_CUDA"               { default = "cu128" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
 # Wan2.1 模型下载参数
-variable "WAN_ENABLE_DOWNLOAD"  { default = "true" }
+# 注意：现在默认不自动下载，Pod 启动时如需自动下载再通过环境变量覆盖
+variable "WAN_ENABLE_DOWNLOAD"  { default = "false" }
 variable "WAN_MODEL_ID"         { default = "Wan-AI/Wan2.1-T2V-1.3B" }
 variable "HF_TOKEN"             { default = "" }
 
