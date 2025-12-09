@@ -6,7 +6,7 @@ ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 ARG COMFYUI_PORT="8188"
 
-# 是否安装 Nunchaku（默认：否，由 bake 覆盖）
+# 是否安装 Nunchaku（由 bake 决定）
 ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
@@ -18,11 +18,8 @@ ARG TORCH_VISION_VERSION="0.19.1"   # stable 时使用
 ARG TORCH_CUDA="cu128"              # 默认 cu128 适配 CUDA 12.8
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
-# 是否启用 FLUX VAE 下载（默认 true）
+# 默认启用 VAE（运行时可用 ENABLE_FLUX_VAE 覆盖）
 ARG ENABLE_FLUX_VAE="true"
-
-# HuggingFace Token（只在 ENABLE_FLUX_VAE=true 时才需要）
-ARG HF_TOKEN=""
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
@@ -71,7 +68,7 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chmod 700 /home/${UBUNTU_USER}/.ssh && \
     mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
-# SSH 配置：允许密码登录，但禁 root
+# SSH 配置：允许密码登录，但禁止 root 登录
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
@@ -91,7 +88,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# python-env: 安装 PyTorch
+# python-env: 安装 PyTorch + Jupyter
 # ==============================
 FROM base AS python-env
 
@@ -138,7 +135,7 @@ print("CUDA arch list:", getattr(torch.cuda, "get_arch_list", lambda: "n/a")())
 PY
 
 # ==============================
-# comfy-builder
+# comfy-builder: 安装 ComfyUI + Manager + (可选) Nunchaku + 下载脚本
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -147,9 +144,6 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
-ARG ENABLE_FLUX_VAE
-ARG HF_TOKEN
-
 WORKDIR /home/${UBUNTU_USER}
 
 # ComfyUI 本体
@@ -157,15 +151,14 @@ RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# Manager 节点
+# ComfyUI Manager 节点
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager && \
     cd ComfyUI-Manager && \
-    # 给 __init__.py 打补丁：把硬 import 改成 try/except，避免异常直接让整个 custom node 失败
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 正确安装 GitPython + PyGithub + toml + huggingface_hub[cli]（提供 huggingface-cli）
+# 安装 huggingface_hub[cli] 等工具
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -173,42 +166,6 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
-# 通用 huggingface 下载脚本
-RUN cat >/usr/local/bin/hf_download.sh <<'HF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [ "$#" -lt 2 ]; then
-  echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
-  exit 1
-fi
-
-REPO_ID="$1"
-TARGET_DIR="$2"
-TOKEN="${3:-}"
-
-mkdir -p "${TARGET_DIR}"
-
-# 注意：第一个参数必须是 download，这里就是你之前少的那一步
-ARGS=(
-  download
-  "${REPO_ID}"
-  --local-dir "${TARGET_DIR}"
-  --local-dir-use-symlinks False
-  --resume-download
-)
-
-if [ -n "${TOKEN}" ]; then
-  ARGS+=(--token "${TOKEN}")
-fi
-
-echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
-python -m huggingface_hub.commands.huggingface_cli "${ARGS[@]}"
-echo "[hf_download] Done."
-HF
-
-RUN chmod +x /usr/local/bin/hf_download.sh
-# 再切回 ubuntu（继续剩下步骤）
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
       "GitPython>=3.1.44" \
@@ -231,82 +188,139 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构
+# 基本目录结构
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
       /home/${UBUNTU_USER}/models/lora \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
-      /home/${UBUNTU_USER}/output
+      /home/${UBUNTU_USER}/output \
+      /home/${UBUNTU_USER}/ComfyUI/models
 
 # -------------------------------
-# FLUX1-DEV 模型下载（UNet + VAE + Text Encoders）
+# 极简版 FLUX1-Dev 下载脚本（运行时调用）
+# 只认 3 个 env：HF_TOKEN / FLUX_MODEL_DIR / ENABLE_FLUX_VAE
 # -------------------------------
-RUN set -euo pipefail; \
-    ROOT="/home/${UBUNTU_USER}/ComfyUI/models"; \
-    mkdir -p \
-      "${ROOT}/unet" \
-      "${ROOT}/text_encoders" \
-      "${ROOT}/vae" \
-      "${ROOT}/_flux_tmp"; \
-    \
-    if [ -z "${HF_TOKEN}" ]; then \
-      echo "[FLUX1-DEV] ERROR: HF_TOKEN is required."; \
-      exit 1; \
-    fi; \
-    \
-    echo "[FLUX1-DEV] Downloading UNET (flux1-dev.safetensors) via huggingface_cli (python -m) ..."; \
-    python -m huggingface_hub.commands.huggingface_cli download \
-      "black-forest-labs/FLUX.1-dev" \
-      --include "flux1-dev.safetensors" \
-      --local-dir "${ROOT}/_flux_tmp" \
-      --local-dir-use-symlinks False \
-      --token "${HF_TOKEN}"; \
-    mv "${ROOT}/_flux_tmp/flux1-dev.safetensors" \
-       "${ROOT}/unet/flux1-dev.safetensors"; \
-    \
-    if [ "${ENABLE_FLUX_VAE}" = "true" ]; then \
-      echo "[FLUX1-DEV] Downloading OFFICIAL VAE (ae.safetensors) via huggingface_cli (python -m) ..."; \
-      python -m huggingface_hub.commands.huggingface_cli download \
-        "black-forest-labs/FLUX.1-dev" \
-        --include "ae.safetensors" \
-        --local-dir "${ROOT}/_flux_tmp" \
-        --local-dir-use-symlinks False \
-        --token "${HF_TOKEN}"; \
-      mv "${ROOT}/_flux_tmp/ae.safetensors" \
-         "${ROOT}/vae/ae.safetensors"; \
-    else \
-      echo "[FLUX1-DEV] ENABLE_FLUX_VAE=false → skipping VAE download."; \
-    fi; \
-    \
-    rm -rf "${ROOT}/_flux_tmp"; \
-    \
-    ENC_REPO_DIR="${ROOT}/_flux_text_encoders"; \
-    mkdir -p "${ENC_REPO_DIR}"; \
-    \
-    echo "[FLUX1-DEV] Downloading T5XXL text encoder via huggingface_cli (python -m) ..."; \
-    python -m huggingface_hub.commands.huggingface_cli download \
-      "comfyanonymous/flux_text_encoders" \
-      --include "t5xxl_fp8_e4m3fn_scaled.safetensors" \
-      --local-dir "${ENC_REPO_DIR}" \
-      --local-dir-use-symlinks False; \
-    \
-    echo "[FLUX1-DEV] Downloading CLIP_L text encoder via huggingface_cli (python -m) ..."; \
-    python -m huggingface_hub.commands.huggingface_cli download \
-      "comfyanonymous/flux_text_encoders" \
-      --include "clip_l.safetensors" \
-      --local-dir "${ENC_REPO_DIR}" \
-      --local-dir-use-symlinks False; \
-    \
-    mv "${ENC_REPO_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" \
-       "${ROOT}/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors"; \
-    mv "${ENC_REPO_DIR}/clip_l.safetensors" \
-       "${ROOT}/text_encoders/clip_l.safetensors"; \
-    rm -rf "${ENC_REPO_DIR}"; \
-    \
-    echo "[FLUX1-DEV] Model installation complete."
+USER root
+RUN cat >/usr/local/bin/flux_download.sh <<'FLUX'
+#!/usr/bin/env bash
+set -euo pipefail
 
+# ==============================
+# Minimal FLUX1-Dev downloader
+# 环境变量：
+#   HF_TOKEN         - 必填，HuggingFace token
+#   FLUX_MODEL_DIR   - 可选，模型根目录，默认 /home/ubuntu/ComfyUI/models
+#   ENABLE_FLUX_VAE  - 可选，默认 true
+# ==============================
+
+HF_TOKEN="${HF_TOKEN:-}"
+FLUX_MODEL_DIR="${FLUX_MODEL_DIR:-/home/ubuntu/ComfyUI/models}"
+ENABLE_FLUX_VAE="${ENABLE_FLUX_VAE:-true}"
+
+if [[ -z "${HF_TOKEN}" ]]; then
+  echo "[flux_download] HF_TOKEN is empty, cannot download FLUX models." >&2
+  exit 1
+fi
+
+ROOT="${FLUX_MODEL_DIR}"
+
+UNET_REPO="black-forest-labs/FLUX.1-dev"
+UNET_FILE="flux1-dev.safetensors"
+
+VAE_REPO="black-forest-labs/FLUX.1-dev"
+VAE_FILE="ae.safetensors"
+
+ENCODER_REPO="comfyanonymous/flux_text_encoders"
+ENCODER_T5="t5xxl_fp8_e4m3fn_scaled.safetensors"
+ENCODER_CLIP="clip_l.safetensors"
+
+UNET_PATH="${ROOT}/unet/${UNET_FILE}"
+VAE_PATH="${ROOT}/vae/${VAE_FILE}"
+T5_PATH="${ROOT}/text_encoders/${ENCODER_T5}"
+CLIP_PATH="${ROOT}/text_encoders/${ENCODER_CLIP}"
+
+mkdir -p \
+  "${ROOT}/unet" \
+  "${ROOT}/vae" \
+  "${ROOT}/text_encoders" \
+  "${ROOT}/_tmp_unet" \
+  "${ROOT}/_tmp_vae" \
+  "${ROOT}/_tmp_text_encoders"
+
+# 检查现有文件
+NEED_UNET=1
+[[ -f "${UNET_PATH}" ]] && NEED_UNET=0
+
+NEED_VAE=1
+if [[ "${ENABLE_FLUX_VAE}" != "true" ]]; then
+  NEED_VAE=0
+elif [[ -f "${VAE_PATH}" ]]; then
+  NEED_VAE=0
+fi
+
+NEED_T5=1
+[[ -f "${T5_PATH}" ]] && NEED_T5=0
+
+NEED_CLIP=1
+[[ -f "${CLIP_PATH}" ]] && NEED_CLIP=0
+
+if [[ "${NEED_UNET}" -eq 0 && "${NEED_VAE}" -eq 0 && "${NEED_T5}" -eq 0 && "${NEED_CLIP}" -eq 0 ]]; then
+  echo "[flux_download] All FLUX1-Dev files already exist, nothing to do."
+  exit 0
+fi
+
+echo "[flux_download] ROOT=${ROOT}, ENABLE_FLUX_VAE=${ENABLE_FLUX_VAE}"
+
+# UNET
+if [[ "${NEED_UNET}" -eq 1 ]]; then
+  echo "[flux_download] Downloading UNET ..."
+  python -m huggingface_hub.commands.huggingface_cli download \
+    "${UNET_REPO}" \
+    --include "${UNET_FILE}" \
+    --local-dir "${ROOT}/_tmp_unet" \
+    --local-dir-use-symlinks False \
+    --token "${HF_TOKEN}"
+  mv "${ROOT}/_tmp_unet/${UNET_FILE}" "${UNET_PATH}"
+fi
+
+# VAE
+if [[ "${NEED_VAE}" -eq 1 ]]; then
+  echo "[flux_download] Downloading VAE ..."
+  python -m huggingface_hub.commands.huggingface_cli download \
+    "${VAE_REPO}" \
+    --include "${VAE_FILE}" \
+    --local-dir "${ROOT}/_tmp_vae" \
+    --local-dir-use-symlinks False \
+    --token "${HF_TOKEN}"
+  mv "${ROOT}/_tmp_vae/${VAE_FILE}" "${VAE_PATH}"
+fi
+
+# TEXT ENCODERS
+if [[ "${NEED_T5}" -eq 1 || "${NEED_CLIP}" -eq 1 ]]; then
+  echo "[flux_download] Downloading text encoders ..."
+  python -m huggingface_hub.commands.huggingface_cli download \
+    "${ENCODER_REPO}" \
+    --include "${ENCODER_T5}" \
+    --include "${ENCODER_CLIP}" \
+    --local-dir "${ROOT}/_tmp_text_encoders" \
+    --local-dir-use-symlinks False \
+    --token "${HF_TOKEN}"
+
+  [[ "${NEED_T5}"  -eq 1 ]] && mv "${ROOT}/_tmp_text_encoders/${ENCODER_T5}"  "${T5_PATH}"
+  [[ "${NEED_CLIP}" -eq 1 ]] && mv "${ROOT}/_tmp_text_encoders/${ENCODER_CLIP}" "${CLIP_PATH}"
+fi
+
+rm -rf "${ROOT}/_tmp_unet" "${ROOT}/_tmp_vae" "${ROOT}/_tmp_text_encoders"
+
+chown -R ubuntu:ubuntu "${ROOT}"
+
+echo "[flux_download] FLUX1-Dev model installation complete."
+FLUX
+
+RUN chmod +x /usr/local/bin/flux_download.sh
+USER ${UBUNTU_USER}
 
 # ==============================
 # runtime
@@ -315,8 +329,12 @@ FROM comfy-builder AS runtime
 
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
+ARG ENABLE_FLUX_VAE
 
-ENV COMFYUI_PORT=${COMFYUI_PORT}
+# 默认环境变量（运行时可用 env 覆盖）
+ENV COMFYUI_PORT=${COMFYUI_PORT} \
+    ENABLE_FLUX_VAE=${ENABLE_FLUX_VAE} \
+    FLUX_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models"
 
 USER root
 WORKDIR /home/${UBUNTU_USER}
@@ -328,13 +346,21 @@ COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# 这里插入 post_start.sh（容器内第二阶段启动 ComfyUI）
+# post_start.sh：后台下载 FLUX + 启动 ComfyUI
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
+
+# 后台下载 FLUX 模型（如果已存在则会跳过）
+if command -v flux_download.sh >/dev/null 2>&1; then
+  echo "[entry] spawn flux_download.sh in background ..."
+  sudo -u ubuntu bash -lc "flux_download.sh >> /home/ubuntu/flux_download.log 2>&1 &"
+else
+  echo "[entry] flux_download.sh not found, skip model bootstrap."
+fi
 
 # 以 ubuntu 用户运行 ComfyUI
 sudo -u ubuntu bash -lc "

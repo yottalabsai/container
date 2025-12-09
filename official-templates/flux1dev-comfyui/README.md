@@ -30,3 +30,13 @@ curl -s http://localhost:8188/system_stats | jq .
 
 # 或查看队列状态
 curl -s http://localhost:8188/queue | jq .
+
+env:
+  - name: HF_TOKEN
+    value: "hf_xxx"                # 必填
+
+  - name: FLUX_MODEL_DIR           # 可选，不配就用 /home/ubuntu/ComfyUI/models
+    value: "/data/flux-models"
+
+  - name: ENABLE_FLUX_VAE          # 可选，默认 true
+    value: "true"
