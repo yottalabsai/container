@@ -15,8 +15,12 @@ docker buildx bake wan21-comfyui --push
 docker buildx bake wan21-comfyui-nunchaku --push
 
 # 构建两个变体一起
-HF_TOKEN=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 \
 docker buildx bake wan21-all --push
+
+docker buildx bake wan21-all \
+  --set *.args.HF_TOKEN=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 \
+  --set *.args.WAN_ENABLE_DOWNLOAD=false \
+  --push
 
 # 覆盖部分参数
 docker buildx bake wan21-comfyui --push
@@ -40,9 +44,10 @@ curl -s http://localhost:8188/queue | jq .
 # ==== 手动操作说明（容器内）====
 # 1）手动下载 Wan2.1 模型：
    export WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
-   export WAN_MODEL_DIR="/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b"
-   export WAN_HF_TOKEN="hf_xxx"
-   hf_download.sh "${WAN_MODEL_ID}" "${WAN_MODEL_DIR}" "${WAN_HF_TOKEN}"
+    export WAN_MODEL_DIR="/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b"
+    export WAN_AUTO_DOWNLOAD="true"
+    export HF_TOKEN="hf_xxx"
+
 
 # 2）手动启动 ComfyUI：
    sudo -u ubuntu bash -lc '

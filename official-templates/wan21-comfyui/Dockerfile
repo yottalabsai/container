@@ -18,11 +18,6 @@ ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu128"
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
-# Wan2.1 模型下载控制（注意：仅在运行时使用，不在 build 期下载）
-ARG WAN_ENABLE_DOWNLOAD="false"
-ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
-ARG HF_TOKEN=""
-
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -167,7 +162,6 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
-# 通用 huggingface 下载脚本（build 阶段就放进镜像，运行时直接用）
 RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -225,17 +219,15 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构（目录先建出来，实际模型在运行时下载或挂载）
+# 模型 & 目录结构（真正的模型运行时下载）
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
       /home/${UBUNTU_USER}/models/lora \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
-      /home/${UBUNTU_USER}/output
-
-# 注意：这里已经不在 build 阶段下载 Wan2.1 模型
-# Wan 模型下载完全由运行时（/post_start.sh 或用户手动命令）控制
+      /home/${UBUNTU_USER}/output \
+      /home/${UBUNTU_USER}/ComfyUI/models
 
 # ==============================
 # runtime
@@ -245,16 +237,7 @@ FROM comfy-builder AS runtime
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
 
-# 运行时 Wan 模型相关参数（可由 buildx bake / Pod env 注入）
-ARG WAN_ENABLE_DOWNLOAD
-ARG WAN_MODEL_ID
-ARG HF_TOKEN
-
-ENV COMFYUI_PORT=${COMFYUI_PORT} \
-    WAN_ENABLE_DOWNLOAD=${WAN_ENABLE_DOWNLOAD} \
-    WAN_MODEL_ID=${WAN_MODEL_ID} \
-    WAN_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models/wan2.1-t2v-1.3b" \
-    HF_TOKEN=${HF_TOKEN}
+ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 USER root
 WORKDIR /home/${UBUNTU_USER}
@@ -266,7 +249,9 @@ COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# post_start.sh：可选自动下载 + 启动 ComfyUI
+# ==============================
+# post_start.sh：运行时自动下载 + 启动 ComfyUI
+# ==============================
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -274,25 +259,40 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-MODEL_DIR="${WAN_MODEL_DIR:-/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b}"
+# ========= 模型参数（运行时环境控制） =========
+# 用户可以在 Pod / 容器里设置：
+#   export WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
+#   export WAN_MODEL_DIR="/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b"
+#   export WAN_AUTO_DOWNLOAD="true"
+#   export HF_TOKEN="hf_xxx"
 MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.1-T2V-1.3B}"
+MODEL_DIR="${WAN_MODEL_DIR:-/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b}"
+AUTO_DOWNLOAD="${WAN_AUTO_DOWNLOAD:-true}"
 
-echo "[WAN2.1] MODEL_DIR=${MODEL_DIR}"
-echo "[WAN2.1] WAN_ENABLE_DOWNLOAD=${WAN_ENABLE_DOWNLOAD}"
+echo "[WAN] MODEL_ID=${MODEL_ID}"
+echo "[WAN] MODEL_DIR=${MODEL_DIR}"
+echo "[WAN] WAN_AUTO_DOWNLOAD=${AUTO_DOWNLOAD}"
 
-# 1）按需下载模型（目录为空 && WAN_ENABLE_DOWNLOAD=true）
-if [[ "${WAN_ENABLE_DOWNLOAD}" == "true" ]]; then
+# ========= 自动下载逻辑 =========
+if [[ "${AUTO_DOWNLOAD}" == "true" ]]; then
   if [ ! -d "${MODEL_DIR}" ] || [ -z "$(ls -A "${MODEL_DIR}" 2>/dev/null || true)" ]; then
-    echo "[WAN2.1] Model dir is empty, start download: ${MODEL_ID}"
-    hf_download.sh "${MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN:-}"
+    echo "[WAN] Model dir is empty, start downloading..."
+
+    if [ -z "${HF_TOKEN:-}" ]; then
+      echo "[WAN] ERROR: HF_TOKEN is empty, cannot download gated model: ${MODEL_ID}" >&2
+      exit 2
+    fi
+
+    hf_download.sh "${MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}"
+    echo "[WAN] Download finished."
   else
-    echo "[WAN2.1] Model dir not empty, skip download."
+    echo "[WAN] Model dir not empty, skip download."
   fi
 else
-  echo "[WAN2.1] Auto download disabled. Expect model is provided by volume / pre-download."
+  echo "[WAN] WAN_AUTO_DOWNLOAD != true, skip auto download. Expect model is already present."
 fi
 
-# 2）启动 ComfyUI（后台）
+# ========= 启动 ComfyUI =========
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
@@ -302,9 +302,6 @@ sudo -u ubuntu bash -lc "
 "
 
 echo "ComfyUI started on 0.0.0.0:${COMFYUI_PORT:-8188}, logs: $LOG"
-echo
-echo "[INFO] If you want to start ComfyUI manually, run inside the container:"
-echo "sudo -u ubuntu bash -lc 'cd /home/ubuntu/ComfyUI && python -u main.py --listen 0.0.0.0 --port ${COMFYUI_PORT:-8188}'"
 EOS
 
 RUN chmod +x /post_start.sh /start.sh && \

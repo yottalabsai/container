@@ -1,5 +1,5 @@
 # ==============================
-# Wan2.1-T2V-1.3B ComfyUI 镜像构建
+# Wan2.1-T2V-1.3B ComfyUI 镜像构建（运行时下载模型）
 # ==============================
 
 variable "PUBLISHER"   { default = "yottalabsai" }
@@ -16,15 +16,7 @@ variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
 variable "TORCH_CUDA"               { default = "cu128" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
-# Wan2.1 模型下载参数
-# 注意：现在默认不自动下载，Pod 启动时如需自动下载再通过环境变量覆盖
-variable "WAN_ENABLE_DOWNLOAD"  { default = "false" }
-variable "WAN_MODEL_ID"         { default = "Wan-AI/Wan2.1-T2V-1.3B" }
-variable "HF_TOKEN"             { default = "" }
-
 # 组：
-# - default：只构建标准版
-# - wan21-all：标准 + Nunchaku
 group "default"    { targets = ["wan21-comfyui"] }
 group "wan21-all"  { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
 
@@ -32,7 +24,7 @@ group "wan21-all"  { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
 # Wan2.1-T2V-1.3B - 标准版
 # ==============================
 target "wan21-comfyui" {
-  description = "ComfyUI + Wan2.1-T2V-1.3B"
+  description = "ComfyUI + Wan2.1 runtime (model downloaded at pod startup)"
   dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
@@ -61,10 +53,6 @@ target "wan21-comfyui" {
     TORCH_VISION_VERSION    = TORCH_VISION_VERSION
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
-
-    WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
-    WAN_MODEL_ID        = WAN_MODEL_ID
-    HF_TOKEN            = "${HF_TOKEN}"
   }
 }
 
@@ -72,7 +60,7 @@ target "wan21-comfyui" {
 # Wan2.1-T2V-1.3B - Nunchaku 版
 # ==============================
 target "wan21-comfyui-nunchaku" {
-  description = "ComfyUI + Wan2.1-T2V-1.3B + Nunchaku"
+  description = "ComfyUI + Wan2.1 + Nunchaku runtime (model downloaded at pod startup)"
   dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
@@ -101,9 +89,5 @@ target "wan21-comfyui-nunchaku" {
     TORCH_VISION_VERSION    = TORCH_VISION_VERSION
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
-
-    WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
-    WAN_MODEL_ID        = WAN_MODEL_ID
-    HF_TOKEN            = "${HF_TOKEN}"
   }
 }
