@@ -190,7 +190,15 @@ if [ -n "${TOKEN}" ]; then
 fi
 
 echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
-python -m huggingface_hub.commands.huggingface_cli "${ARGS[@]}"
+
+if command -v huggingface-cli >/dev/null 2>&1; then
+  huggingface-cli "${ARGS[@]}"
+else
+  echo "[hf_download] ERROR: huggingface-cli not found in PATH." >&2
+  echo "Please ensure 'huggingface_hub[cli]' is installed." >&2
+  exit 3
+fi
+
 echo "[hf_download] Done."
 HF
 
