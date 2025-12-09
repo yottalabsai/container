@@ -191,8 +191,6 @@ repo_id, target_dir, token = sys.argv[1:4]
 
 kwargs = dict(
     local_dir=target_dir,
-    local_dir_use_symlinks=False,
-    resume_download=True,
 )
 
 if token:

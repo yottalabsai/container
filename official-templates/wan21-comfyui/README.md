@@ -15,7 +15,7 @@ docker buildx bake wan21-comfyui --push
 docker buildx bake wan21-comfyui-nunchaku --push
 
 # 构建两个变体一起
-docker buildx bake wan21-all --push
+docker buildx bake wan21-all --no-cache --push
 
 docker buildx bake wan21-all \
   --set *.args.HF_TOKEN=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 \
