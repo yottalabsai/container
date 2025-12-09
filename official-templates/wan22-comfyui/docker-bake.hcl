@@ -16,11 +16,6 @@ variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
 variable "TORCH_CUDA"               { default = "cu128" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
-# Wan2.2 模型下载参数（对应 Dockerfile 里的 ARG）
-variable "WAN_ENABLE_DOWNLOAD"  { default = "true" }
-variable "WAN_MODEL_ID"         { default = "Wan-AI/Wan2.2-Animate-14B" }
-variable "HF_TOKEN"             { default = "" }
-
 # 组：
 # - default：只构建标准版
 # - wan22-all：标准 + Nunchaku
@@ -60,10 +55,6 @@ target "wan22-comfyui" {
     TORCH_VISION_VERSION    = TORCH_VISION_VERSION
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
-
-    WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
-    WAN_MODEL_ID        = WAN_MODEL_ID
-    HF_TOKEN            = "${HF_TOKEN}"
   }
 }
 
@@ -100,9 +91,5 @@ target "wan22-comfyui-nunchaku" {
     TORCH_VISION_VERSION    = TORCH_VISION_VERSION
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
-
-    WAN_ENABLE_DOWNLOAD = WAN_ENABLE_DOWNLOAD
-    WAN_MODEL_ID        = WAN_MODEL_ID
-    HF_TOKEN            = "${HF_TOKEN}"
   }
 }

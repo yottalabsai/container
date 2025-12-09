@@ -181,6 +181,8 @@ echo "[hf_download] Downloading \${REPO_ID} -> \${TARGET_DIR}"
 
 python - "$REPO_ID" "$TARGET_DIR" "$TOKEN" <<'PY'
 import sys
+import os
+from pathlib import Path
 from huggingface_hub import snapshot_download
 
 if len(sys.argv) < 4:
@@ -189,6 +191,9 @@ if len(sys.argv) < 4:
 
 repo_id, target_dir, token = sys.argv[1:4]
 
+# 开启进度条（仅在 TTY 终端下生效）
+os.environ.setdefault("HF_HUB_ENABLE_PROGRESS_BARS", "1")
+
 kwargs = dict(
     local_dir=target_dir,
 )
@@ -196,8 +201,23 @@ kwargs = dict(
 if token:
     kwargs["token"] = token
 
-print(f"[hf_download][py] snapshot_download(repo_id={repo_id}, local_dir={target_dir})")
-snapshot_download(repo_id=repo_id, **kwargs)
+print(f"[hf_download][py] Start download: repo_id={repo_id}")
+print(f"[hf_download][py] Target dir: {target_dir}")
+
+before_files = set()
+if os.path.isdir(target_dir):
+    before_files = set(Path(target_dir).rglob("*"))
+
+local_path = snapshot_download(repo_id=repo_id, **kwargs)
+
+after_files = set(Path(target_dir).rglob("*"))
+new_files = [p for p in after_files - before_files if p.is_file()]
+
+total_size = sum(p.stat().st_size for p in new_files)
+
+print(f"[hf_download][py] Downloaded {len(new_files)} new files, "
+      f"total size = {total_size / (1024**3):.2f} GB")
+print(f"[hf_download][py] Local snapshot path: {local_path}")
 print("[hf_download][py] Done.")
 PY
 
@@ -269,17 +289,25 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-# ========= 模型参数（运行时环境控制） =========
-# 用户可以在 Pod / 容器里设置：
+# ========= 模型参数（运行时环境控制，终极规范版） =========
+# 用户只需要关心这两个：
 #   export WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
-#   export WAN_MODEL_DIR="/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b"
-#   export WAN_AUTO_DOWNLOAD="true"
 #   export HF_TOKEN="hf_xxx"
+#
+# 可选高级控制：
+#   export WAN_ROOT="/home/ubuntu/ComfyUI/models/wan"
+#   export WAN_AUTO_DOWNLOAD="true"
+
 MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.1-T2V-1.3B}"
-MODEL_DIR="${WAN_MODEL_DIR:-/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b}"
+WAN_ROOT="${WAN_ROOT:-/home/ubuntu/ComfyUI/models/wan}"
 AUTO_DOWNLOAD="${WAN_AUTO_DOWNLOAD:-true}"
 
+# 从 repo id 自动推导目录名
+MODEL_NAME="$(basename "${MODEL_ID}")"
+MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}"
+
 echo "[WAN] MODEL_ID=${MODEL_ID}"
+echo "[WAN] WAN_ROOT=${WAN_ROOT}"
 echo "[WAN] MODEL_DIR=${MODEL_DIR}"
 echo "[WAN] WAN_AUTO_DOWNLOAD=${AUTO_DOWNLOAD}"
 
@@ -301,6 +329,7 @@ if [[ "${AUTO_DOWNLOAD}" == "true" ]]; then
 else
   echo "[WAN] WAN_AUTO_DOWNLOAD != true, skip auto download. Expect model is already present."
 fi
+
 
 # ========= 启动 ComfyUI =========
 sudo -u ubuntu bash -lc "

@@ -158,7 +158,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd ComfyUI-Manager && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 安装 huggingface_hub[cli] 等工具
+# 安装 huggingface_hub 等工具
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -199,8 +199,8 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/models
 
 # -------------------------------
-# 极简版 FLUX1-Dev 下载脚本（运行时调用）
-# 只认 3 个 env：HF_TOKEN / FLUX_MODEL_DIR / ENABLE_FLUX_VAE
+# FLUX1-Dev 下载脚本（运行时调用）
+# 环境变量：HF_TOKEN / FLUX_MODEL_DIR / ENABLE_FLUX_VAE
 # -------------------------------
 USER root
 RUN cat >/usr/local/bin/flux_download.sh <<'FLUX'
@@ -224,97 +224,119 @@ if [[ -z "${HF_TOKEN}" ]]; then
   exit 1
 fi
 
-ROOT="${FLUX_MODEL_DIR}"
+echo "[flux_download] ROOT=${FLUX_MODEL_DIR}, ENABLE_FLUX_VAE=${ENABLE_FLUX_VAE}"
 
-UNET_REPO="black-forest-labs/FLUX.1-dev"
-UNET_FILE="flux1-dev.safetensors"
+python - "$FLUX_MODEL_DIR" "$ENABLE_FLUX_VAE" "$HF_TOKEN" <<'PY'
+import sys
+import shutil
+from pathlib import Path
+from huggingface_hub import snapshot_download
 
-VAE_REPO="black-forest-labs/FLUX.1-dev"
-VAE_FILE="ae.safetensors"
+if len(sys.argv) < 4:
+    print("[flux_download][py] Need FLUX_MODEL_DIR, ENABLE_FLUX_VAE, HF_TOKEN", file=sys.stderr)
+    sys.exit(1)
 
-ENCODER_REPO="comfyanonymous/flux_text_encoders"
-ENCODER_T5="t5xxl_fp8_e4m3fn_scaled.safetensors"
-ENCODER_CLIP="clip_l.safetensors"
+root_dir = Path(sys.argv[1])
+enable_flux_vae = sys.argv[2].lower() == "true"
+token = sys.argv[3] or None
 
-UNET_PATH="${ROOT}/unet/${UNET_FILE}"
-VAE_PATH="${ROOT}/vae/${VAE_FILE}"
-T5_PATH="${ROOT}/text_encoders/${ENCODER_T5}"
-CLIP_PATH="${ROOT}/text_encoders/${ENCODER_CLIP}"
+root_dir.mkdir(parents=True, exist_ok=True)
 
-mkdir -p \
-  "${ROOT}/unet" \
-  "${ROOT}/vae" \
-  "${ROOT}/text_encoders" \
-  "${ROOT}/_tmp_unet" \
-  "${ROOT}/_tmp_vae" \
-  "${ROOT}/_tmp_text_encoders"
+# Repos & filenames
+UNET_REPO = "black-forest-labs/FLUX.1-dev"
+UNET_FILE = "flux1-dev.safetensors"
 
-# 检查现有文件
-NEED_UNET=1
-[[ -f "${UNET_PATH}" ]] && NEED_UNET=0
+VAE_REPO = "black-forest-labs/FLUX.1-dev"
+VAE_FILE = "ae.safetensors"
 
-NEED_VAE=1
-if [[ "${ENABLE_FLUX_VAE}" != "true" ]]; then
-  NEED_VAE=0
-elif [[ -f "${VAE_PATH}" ]]; then
-  NEED_VAE=0
-fi
+ENCODER_REPO = "comfyanonymous/flux_text_encoders"
+ENCODER_T5 = "t5xxl_fp8_e4m3fn_scaled.safetensors"
+ENCODER_CLIP = "clip_l.safetensors"
 
-NEED_T5=1
-[[ -f "${T5_PATH}" ]] && NEED_T5=0
+unet_path = root_dir / "unet" / UNET_FILE
+vae_path = root_dir / "vae" / VAE_FILE
+t5_path = root_dir / "text_encoders" / ENCODER_T5
+clip_path = root_dir / "text_encoders" / ENCODER_CLIP
 
-NEED_CLIP=1
-[[ -f "${CLIP_PATH}" ]] && NEED_CLIP=0
+# Create dirs
+for p in [unet_path.parent, vae_path.parent, t5_path.parent, clip_path.parent]:
+    p.mkdir(parents=True, exist_ok=True)
 
-if [[ "${NEED_UNET}" -eq 0 && "${NEED_VAE}" -eq 0 && "${NEED_T5}" -eq 0 && "${NEED_CLIP}" -eq 0 ]]; then
-  echo "[flux_download] All FLUX1-Dev files already exist, nothing to do."
-  exit 0
-fi
+# Check what we need
+need_unet = not unet_path.is_file()
+need_vae = enable_flux_vae and (not vae_path.is_file())
+need_t5 = not t5_path.is_file()
+need_clip = not clip_path.is_file()
 
-echo "[flux_download] ROOT=${ROOT}, ENABLE_FLUX_VAE=${ENABLE_FLUX_VAE}"
+if not any([need_unet, need_vae, need_t5, need_clip]):
+    print("[flux_download][py] All FLUX1-Dev files already exist, nothing to do.")
+    sys.exit(0)
+
+print(f"[flux_download][py] need_unet={need_unet}, need_vae={need_vae}, need_t5={need_t5}, need_clip={need_clip}")
+
+def dl(repo_id: str, allow_patterns, tmp_dir: Path):
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[flux_download][py] snapshot_download(repo_id={repo_id}, allow_patterns={allow_patterns})")
+    snapshot_download(
+        repo_id=repo_id,
+        local_dir=tmp_dir.as_posix(),
+        allow_patterns=allow_patterns,
+        token=token,
+    )
 
 # UNET
-if [[ "${NEED_UNET}" -eq 1 ]]; then
-  echo "[flux_download] Downloading UNET ..."
-  python -m huggingface_hub.commands.huggingface_cli download \
-    "${UNET_REPO}" \
-    --include "${UNET_FILE}" \
-    --local-dir "${ROOT}/_tmp_unet" \
-    --local-dir-use-symlinks False \
-    --token "${HF_TOKEN}"
-  mv "${ROOT}/_tmp_unet/${UNET_FILE}" "${UNET_PATH}"
-fi
+if need_unet:
+    tmp_unet = root_dir / "_tmp_unet"
+    dl(UNET_REPO, [UNET_FILE], tmp_unet)
+    src = tmp_unet / UNET_FILE
+    if not src.is_file():
+        print(f"[flux_download][py] ERROR: UNET file not found in tmp: {src}", file=sys.stderr)
+        sys.exit(2)
+    shutil.move(src.as_posix(), unet_path.as_posix())
+    shutil.rmtree(tmp_unet, ignore_errors=True)
 
 # VAE
-if [[ "${NEED_VAE}" -eq 1 ]]; then
-  echo "[flux_download] Downloading VAE ..."
-  python -m huggingface_hub.commands.huggingface_cli download \
-    "${VAE_REPO}" \
-    --include "${VAE_FILE}" \
-    --local-dir "${ROOT}/_tmp_vae" \
-    --local-dir-use-symlinks False \
-    --token "${HF_TOKEN}"
-  mv "${ROOT}/_tmp_vae/${VAE_FILE}" "${VAE_PATH}"
-fi
+if need_vae:
+    tmp_vae = root_dir / "_tmp_vae"
+    dl(VAE_REPO, [VAE_FILE], tmp_vae)
+    src = tmp_vae / VAE_FILE
+    if not src.is_file():
+        print(f"[flux_download][py] ERROR: VAE file not found in tmp: {src}", file=sys.stderr)
+        sys.exit(3)
+    shutil.move(src.as_posix(), vae_path.as_posix())
+    shutil.rmtree(tmp_vae, ignore_errors=True)
 
 # TEXT ENCODERS
-if [[ "${NEED_T5}" -eq 1 || "${NEED_CLIP}" -eq 1 ]]; then
-  echo "[flux_download] Downloading text encoders ..."
-  python -m huggingface_hub.commands.huggingface_cli download \
-    "${ENCODER_REPO}" \
-    --include "${ENCODER_T5}" \
-    --include "${ENCODER_CLIP}" \
-    --local-dir "${ROOT}/_tmp_text_encoders" \
-    --local-dir-use-symlinks False \
-    --token "${HF_TOKEN}"
+if need_t5 or need_clip:
+    tmp_te = root_dir / "_tmp_text_encoders"
+    patterns = []
+    if need_t5:
+        patterns.append(ENCODER_T5)
+    if need_clip:
+        patterns.append(ENCODER_CLIP)
+    dl(ENCODER_REPO, patterns, tmp_te)
 
-  [[ "${NEED_T5}"  -eq 1 ]] && mv "${ROOT}/_tmp_text_encoders/${ENCODER_T5}"  "${T5_PATH}"
-  [[ "${NEED_CLIP}" -eq 1 ]] && mv "${ROOT}/_tmp_text_encoders/${ENCODER_CLIP}" "${CLIP_PATH}"
-fi
+    if need_t5:
+        src = tmp_te / ENCODER_T5
+        if not src.is_file():
+            print(f"[flux_download][py] ERROR: T5 encoder not found in tmp: {src}", file=sys.stderr)
+            sys.exit(4)
+        shutil.move(src.as_posix(), t5_path.as_posix())
 
-rm -rf "${ROOT}/_tmp_unet" "${ROOT}/_tmp_vae" "${ROOT}/_tmp_text_encoders"
+    if need_clip:
+        src = tmp_te / ENCODER_CLIP
+        if not src.is_file():
+            print(f"[flux_download][py] ERROR: CLIP encoder not found in tmp: {src}", file=sys.stderr)
+            sys.exit(5)
+        shutil.move(src.as_posix(), clip_path.as_posix())
 
-chown -R ubuntu:ubuntu "${ROOT}"
+    shutil.rmtree(tmp_te, ignore_errors=True)
+
+print("[flux_download][py] FLUX1-Dev model installation complete.")
+PY
+
+# 权限收尾放在运行时脚本里做（这里用当前 FLUX_MODEL_DIR）
+chown -R ubuntu:ubuntu "${FLUX_MODEL_DIR}"
 
 echo "[flux_download] FLUX1-Dev model installation complete."
 FLUX
@@ -357,7 +379,11 @@ mkdir -p /home/ubuntu
 # 后台下载 FLUX 模型（如果已存在则会跳过）
 if command -v flux_download.sh >/dev/null 2>&1; then
   echo "[entry] spawn flux_download.sh in background ..."
-  sudo -u ubuntu bash -lc "flux_download.sh >> /home/ubuntu/flux_download.log 2>&1 &"
+  sudo -u ubuntu \
+    HF_TOKEN="${HF_TOKEN:-}" \
+    FLUX_MODEL_DIR="${FLUX_MODEL_DIR:-/home/ubuntu/ComfyUI/models}" \
+    ENABLE_FLUX_VAE="${ENABLE_FLUX_VAE:-true}" \
+    bash -lc "flux_download.sh >> /home/ubuntu/flux_download.log 2>&1 &"
 else
   echo "[entry] flux_download.sh not found, skip model bootstrap."
 fi

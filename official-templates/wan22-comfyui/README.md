@@ -39,5 +39,6 @@ curl -s http://localhost:8188/system_stats | jq .
 # 队列状态
 curl -s http://localhost:8188/queue | jq .
 
-
-14b
+-e WAN_ENABLE_DOWNLOAD=true \
+-e WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B" \
+-e WAN_HF_TOKEN="hf_xxx" \
