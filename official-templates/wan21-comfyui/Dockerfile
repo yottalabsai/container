@@ -177,27 +177,31 @@ TOKEN="${3:-}"
 
 mkdir -p "${TARGET_DIR}"
 
-ARGS=(
-  download
-  "${REPO_ID}"
-  --local-dir "${TARGET_DIR}"
-  --local-dir-use-symlinks False
-  --resume-download
+echo "[hf_download] Downloading \${REPO_ID} -> \${TARGET_DIR}"
+
+python - "$REPO_ID" "$TARGET_DIR" "$TOKEN" <<'PY'
+import sys
+from huggingface_hub import snapshot_download
+
+if len(sys.argv) < 4:
+    print("[hf_download][py] ERROR: need REPO_ID, TARGET_DIR, TOKEN", file=sys.stderr)
+    sys.exit(1)
+
+repo_id, target_dir, token = sys.argv[1:4]
+
+kwargs = dict(
+    local_dir=target_dir,
+    local_dir_use_symlinks=False,
+    resume_download=True,
 )
 
-if [ -n "${TOKEN}" ]; then
-  ARGS+=(--token "${TOKEN}")
-fi
+if token:
+    kwargs["token"] = token
 
-echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
-
-if command -v huggingface-cli >/dev/null 2>&1; then
-  huggingface-cli "${ARGS[@]}"
-else
-  echo "[hf_download] ERROR: huggingface-cli not found in PATH." >&2
-  echo "Please ensure 'huggingface_hub[cli]' is installed." >&2
-  exit 3
-fi
+print(f"[hf_download][py] snapshot_download(repo_id={repo_id}, local_dir={target_dir})")
+snapshot_download(repo_id=repo_id, **kwargs)
+print("[hf_download][py] Done.")
+PY
 
 echo "[hf_download] Done."
 HF
