@@ -1,36 +1,87 @@
-# Wan-AI / Wan2.1-T2V-1.3B
+# Wan2.1‑T2V‑1.3B — Runtime Usage Guide
 
-Wan2.1-T2V-1.3B is a lightweight text-to-video generation model from the Wan-AI open-source video foundation model family.  
-It focuses on efficient video generation with very low VRAM requirements (~8 GB), making it suitable for most consumer GPUs.
+This document describes how to run the Wan-AI **Wan2.1‑T2V‑1.3B** ComfyUI-enabled container, including the only three environment variables users need to configure and the exposed runtime ports.
 
-## Key Features
-- 1.3B parameters — compact and efficient.
-- Designed for text-to-video generation tasks.
-- Supports short clip synthesis and image-guided video generation.
-- Part of the Wan video foundation model suite.
-- Fully open-source (weights + training code).
+---
 
-## Use Cases
-- Lightweight video generation.
-- Demo / prototype video creation.
-- Integrating into local AI pipelines or ComfyUI workflows.
-- Video generation for apps, research, and creative projects.
+## Runtime Environment Variables
 
-## Integration with ComfyUI
-Wan2.1-T2V-1.3B can be wrapped as a custom node or Python module for:
-- Text-to-video (T2V)
-- Image-to-video (I2V)
-- Inference via CUDA GPU pipeline
+The container exposes **three** user-facing environment variables.  
+These control how the model is downloaded and loaded at runtime.
 
-Most deployments mount:
+| Variable | Default | Required | Description |
+|---------|---------|----------|-------------|
+| `WAN_MODEL_ID` | `Wan-AI/Wan2.1-T2V-1.3B` | false | HuggingFace model repo ID. Override this if you want to load a different Wan model or custom fork. |
+| `HF_TOKEN` | *(empty)* | true (for gated models) | HuggingFace access token used for downloading gated/private models. |
+| `WAN_AUTO_DOWNLOAD` | `true` | false | When `true`, model is auto-downloaded at startup if missing. When `false`, you must mount or pre‑package the model manually. |
 
+### Model Storage Path
 
-## Typical Runtime Ports
-This model itself has no "native" API server, but ComfyUI deployments usually expose:
-- **8188** → ComfyUI Web UI
-- **9000–9100** → Custom pipelines or service wrappers
+Downloaded model files are placed into:
 
-## Recommended Deployment
-- Run inside a ComfyUI container
-- Use GPU with ≥8 GB VRAM
-- FP16 inference recommended
+```
+/home/ubuntu/ComfyUI/models/wan/<model-name>
+```
+
+---
+
+## Exposed Ports
+
+| Port | Description |
+|------|-------------|
+| **8188** | ComfyUI Web UI |
+| **80** | nginx reverse-proxy (optional) |
+| **22** | SSH access (if enabled) |
+
+---
+
+## Quickstart Example
+
+Below is a minimal, recommended way to launch the container:
+
+```bash
+docker run -it --gpus all   -e WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"   -e HF_TOKEN="hf_xxx"   -e WAN_AUTO_DOWNLOAD=true   -p 8188:8188   <your-image>
+```
+
+On first startup, the model will be downloaded automatically if the directory is empty.
+
+---
+
+## Model Auto-Download Behavior
+
+| Condition | Action |
+|----------|--------|
+| `WAN_AUTO_DOWNLOAD=true` and model directory is empty | Auto-download using `hf_download.sh` |
+| Model directory already contains files | Skip download |
+| `HF_TOKEN` missing and model is gated | Script exits with error |
+
+This ensures predictable behavior whether running on a local machine or inside a cloud GPU pod.
+
+---
+
+## ComfyUI Access
+
+Once the container is running, open:
+
+```
+http://localhost:8188/
+```
+
+You will see the full ComfyUI interface with Wan2.1‑T2V‑1.3B support enabled.
+
+---
+
+## Notes
+
+- GPU with **≥8 GB VRAM** is recommended.
+- FP16 inference is used for efficiency.
+- HuggingFace cache is located at:  
+  `/home/ubuntu/.cache/huggingface`
+
+---
+
+## Summary
+
+This image is designed to be extremely simple for users:  
+configure **three variables**, expose **one port**, and the model runs automatically.
+
