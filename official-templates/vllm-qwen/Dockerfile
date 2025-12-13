@@ -7,6 +7,10 @@ FROM ${BASE_IMAGE}
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 
+# Optional build-time installs
+ARG INSTALL_FLASHATTN="false"
+ARG INSTALL_FLASHINFER="false"
+
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
 # ==============================
@@ -34,7 +38,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507" \
     HF_TOKEN="" \
     VLLM_HOST="0.0.0.0" \
-    VLLM_PORT="8001" \
+    VLLM_PORT="8000" \
     TP_SIZE="1" \
     MAX_MODEL_LEN="32768" \
     GPU_MEM_UTIL="0.92" \
@@ -101,7 +105,7 @@ RUN python -m pip --version || \
 RUN python -m pip install --no-cache-dir -U pip setuptools wheel
 
 # ==============================
-# PyTorch (nightly cu128 as you had)
+# PyTorch (nightly cu128)
 # ==============================
 RUN python -m pip install --no-cache-dir --pre \
     --index-url https://download.pytorch.org/whl/nightly/cu128 \
@@ -115,10 +119,7 @@ RUN python -m pip install --no-cache-dir --pre \
 RUN python -m pip install --no-cache-dir \
       vllm transformers sentencepiece "huggingface_hub[cli]" hf_transfer einops
 
-# Optional accel (runtime install not recommended; keep build-time toggles if you want)
-ARG INSTALL_FLASHATTN="false"
-ARG INSTALL_FLASHINFER="false"
-
+# Flash 加速（按需）
 RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
       python -m pip install --no-cache-dir flash-attn || true; fi
 
@@ -132,11 +133,18 @@ COPY --from=scripts start.sh /start.sh
 RUN chmod +x /start.sh && mv /start.sh /start_platform.sh
 
 # ==============================
-# post_start.sh: download model (runtime) + start vLLM
+# post_start.sh: runtime download + hardened vLLM start
 # ==============================
 RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# ------------------------------
+# Prevent concurrent startups (critical on platforms)
+# ------------------------------
+mkdir -p /workspace
+exec 9>/workspace/vllm_start.lock
+flock -n 9 || { echo "[post_start] Another startup in progress, exit"; exit 0; }
 
 LOG="${VLLM_LOG:-/workspace/vllm.log}"
 mkdir -p /workspace "${HF_HOME}"
@@ -150,17 +158,19 @@ echo "[post_start] VLLM_HOST=${VLLM_HOST}"
 echo "[post_start] VLLM_PORT=${VLLM_PORT}"
 echo "[post_start] TP_SIZE=${TP_SIZE} MAX_MODEL_LEN=${MAX_MODEL_LEN} GPU_MEM_UTIL=${GPU_MEM_UTIL}"
 echo "[post_start] VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS}"
+echo "[post_start] MODEL_DIR=${MODEL_DIR}"
 
 # ------------------------------
 # Runtime model download (idempotent)
 # ------------------------------
+HF_ARGS=()
+if [ -n "${HF_TOKEN:-}" ]; then
+  echo "[post_start] Using HF_TOKEN"
+  HF_ARGS+=(--token "${HF_TOKEN}")
+fi
+
 if [ ! -d "${MODEL_DIR}" ]; then
   echo "[post_start] Model not found, downloading ${HF_MODEL_ID} -> ${MODEL_DIR}"
-  HF_ARGS=()
-  if [ -n "${HF_TOKEN:-}" ]; then
-    echo "[post_start] Using HF_TOKEN"
-    HF_ARGS+=(--token "${HF_TOKEN}")
-  fi
   huggingface-cli download \
     "${HF_MODEL_ID}" \
     --local-dir "${MODEL_DIR}" \
@@ -173,10 +183,46 @@ else
 fi
 
 # ------------------------------
-# Port conflict handling
+# Tokenizer sanity check (avoid tokenizer NoneType race)
+# If missing -> remove & re-download once
+# ------------------------------
+required=(
+  "${MODEL_DIR}/config.json"
+  "${MODEL_DIR}/tokenizer.json"
+  "${MODEL_DIR}/tokenizer_config.json"
+  "${MODEL_DIR}/vocab.json"
+)
+
+missing=0
+for f in "${required[@]}"; do
+  if [[ ! -f "$f" ]]; then
+    echo "[post_start] Missing required file: $f"
+    missing=1
+  fi
+done
+
+if [[ "${missing}" -eq 1 ]]; then
+  echo "[post_start] Tokenizer/config files incomplete. Re-downloading model..."
+  rm -rf "${MODEL_DIR}"
+  huggingface-cli download \
+    "${HF_MODEL_ID}" \
+    --local-dir "${MODEL_DIR}" \
+    --local-dir-use-symlinks False \
+    --resume-download \
+    "${HF_ARGS[@]}"
+fi
+
+# ------------------------------
+# Ensure single vLLM instance (avoid port drift 8000->8002)
+# ------------------------------
+pkill -f "vllm.entrypoints.openai.api_server" || true
+sleep 1
+
+# ------------------------------
+# Port conflict handling (HTTP port)
 # ------------------------------
 if lsof -i :"${VLLM_PORT}" >/dev/null 2>&1; then
-  echo "[post_start] ERROR: Port ${VLLM_PORT} already in use. Set VLLM_PORT to another value (default is 8001)."
+  echo "[post_start] ERROR: Port ${VLLM_PORT} already in use. Set VLLM_PORT to another value (default is 8000)."
   lsof -i :"${VLLM_PORT}" || true
   exit 1
 fi
@@ -206,10 +252,8 @@ nohup python -m vllm.entrypoints.openai.api_server \
 echo "[post_start] vLLM launched. Log: ${LOG}"
 EOF
 
-RUN chmod +x /post_start.sh
-
 # ==============================
-# start wrapper: platform start + post_start
+# start wrapper: platform start + post_start + bashrc tips
 # ==============================
 RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -221,19 +265,24 @@ set -euo pipefail
 # 给平台服务一点点启动窗口（避免抢资源时偶发问题）
 sleep 1
 
-# 再启动 vLLM（含运行时下载）
+# 再启动 vLLM（含运行时下载 + 防并发/防多实例）
 /post_start.sh
 
 # 保持容器前台：把平台脚本拉到前台（或阻塞）
 wait -n
 EOF
 
-RUN chmod +x /start.sh
+# ==============================
+# Permissions & bashrc banner
+# ==============================
+RUN chmod +x /post_start.sh /start.sh && \
+    echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
 # ==============================
 # Ports & Entrypoint
 # ==============================
-EXPOSE 22 8001
+EXPOSE 22 8000
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/start.sh"]
