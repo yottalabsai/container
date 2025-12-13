@@ -7,28 +7,10 @@ FROM ${BASE_IMAGE}
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 
-# vLLM 模型相关（默认使用 Qwen3-30B-A3B-Instruct-2507）
-ARG VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507"
-
-# 独立的大模型下载模块参数
-ARG ENABLE_MODEL_DOWNLOAD="true"
-ARG HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507"
-ARG HF_TOKEN=""
-
-ARG VLLM_HOST="0.0.0.0"
-ARG VLLM_PORT="8000"
-
-ARG TP_SIZE="1"
-ARG MAX_MODEL_LEN="32768"
-ARG GPU_MEM_UTIL="0.92"
-
-ARG INSTALL_FLASHATTN="false"
-ARG INSTALL_FLASHINFER="false"
-
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
 # ==============================
-# Env
+# Env (defaults, overridable at runtime)
 # ==============================
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -43,14 +25,29 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/workspace/hf \
     HF_HUB_ENABLE_HF_TRANSFER=1 \
     TORCH_CUDA_ARCH_LIST="12.0" \
-    CMAKE_CUDA_ARCHITECTURES="120"
+    CMAKE_CUDA_ARCHITECTURES="120" \
+    \
+    # ------------------------------
+    # vLLM runtime defaults (Pod 可覆盖)
+    # ------------------------------
+    VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507" \
+    HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507" \
+    HF_TOKEN="" \
+    VLLM_HOST="0.0.0.0" \
+    VLLM_PORT="8001" \
+    TP_SIZE="1" \
+    MAX_MODEL_LEN="32768" \
+    GPU_MEM_UTIL="0.92" \
+    VLLM_TRUST_REMOTE_CODE="true" \
+    VLLM_EXTRA_ARGS="" \
+    VLLM_LOG="/workspace/vllm.log"
 
 WORKDIR /
 
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
 # ==============================
-# 系统依赖
+# System deps
 # ==============================
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -61,7 +58,7 @@ RUN apt-get update -y && \
       nginx \
       openssh-server openssh-client \
       tmux vim zsh zip unzip less procps net-tools htop \
-      tini sudo \
+      tini sudo lsof \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen && update-locale \
@@ -73,7 +70,7 @@ RUN apt-get update -y && \
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 # ==============================
-# 创建 ubuntu 用户
+# Create ubuntu user
 # ==============================
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
@@ -81,7 +78,7 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.ssh && \
     chmod 700 /home/${UBUNTU_USER}/.ssh
 
-# SSH 配置
+# SSH config
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
@@ -104,7 +101,7 @@ RUN python -m pip --version || \
 RUN python -m pip install --no-cache-dir -U pip setuptools wheel
 
 # ==============================
-# PyTorch cu126
+# PyTorch (nightly cu126 as you had)
 # ==============================
 RUN python -m pip install --no-cache-dir --pre \
     --index-url https://download.pytorch.org/whl/nightly/cu126 \
@@ -113,89 +110,97 @@ RUN python -m pip install --no-cache-dir --pre \
     torch torchvision torchaudio
 
 # ==============================
-# vLLM 生态
+# vLLM ecosystem
 # ==============================
 RUN python -m pip install --no-cache-dir \
       vllm transformers sentencepiece "huggingface_hub[cli]" hf_transfer einops
 
-# Flash 加速（按需）
+# Optional accel (runtime install not recommended; keep build-time toggles if you want)
+ARG INSTALL_FLASHATTN="false"
+ARG INSTALL_FLASHINFER="false"
+
 RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
-      python -m pip install flash-attn || true; fi
+      python -m pip install --no-cache-dir flash-attn || true; fi
 
 RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
-      python -m pip install flashinfer || true; fi
+      python -m pip install --no-cache-dir flashinfer || true; fi
 
 # ==============================
-# Qwen3-30B 模型预下载模块（可关）
-# ==============================
-RUN set -euo pipefail; \
-    if [ "${ENABLE_MODEL_DOWNLOAD}" != "true" ]; then \
-      echo "[MODEL] ENABLE_MODEL_DOWNLOAD != true，跳过预下载 Qwen 模型"; \
-      exit 0; \
-    fi; \
-    mkdir -p "${HF_HOME}"; \
-    HF_ARGS=""; \
-    if [ -n "${HF_TOKEN:-}" ]; then \
-      echo "[MODEL] 使用 HF_TOKEN 下载模型"; \
-      HF_ARGS="--token ${HF_TOKEN}"; \
-    fi; \
-    echo "[MODEL] 预下载模型 ${HF_MODEL_ID} 到 ${HF_HOME}/${HF_MODEL_ID} ..."; \
-    huggingface-cli download "${HF_MODEL_ID}" \
-      --local-dir "${HF_HOME}/${HF_MODEL_ID}" \
-      --local-dir-use-symlinks False \
-      --resume-download \
-      ${HF_ARGS}; \
-    echo "[MODEL] 模型下载完成：${HF_HOME}/${HF_MODEL_ID}"
-
-# ==============================
-# vLLM 环境变量
-# ==============================
-ENV VLLM_MODEL=${VLLM_MODEL} \
-    VLLM_HOST=${VLLM_HOST} \
-    VLLM_PORT=${VLLM_PORT} \
-    TP_SIZE=${TP_SIZE} \
-    MAX_MODEL_LEN=${MAX_MODEL_LEN} \
-    GPU_MEM_UTIL=${GPU_MEM_UTIL} \
-    HF_MODEL_ID=${HF_MODEL_ID}
-
-# ==============================
-# Copy 平台 start.sh（来自 bake scripts context）
+# Copy platform start.sh (from bake context)
 # ==============================
 COPY --from=scripts start.sh /start.sh
-RUN chmod +x /start.sh
+RUN chmod +x /start.sh && mv /start.sh /start_platform.sh
 
 # ==============================
-# post_start.sh：容器最后启动 vLLM
+# post_start.sh: download model (runtime) + start vLLM
 # ==============================
 RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-LOG=/workspace/vllm.log
-mkdir -p /workspace
+LOG="${VLLM_LOG:-/workspace/vllm.log}"
+mkdir -p /workspace "${HF_HOME}"
 
-# 优先使用本地已下载模型目录，其次回退到模型 ID
-MODEL_PATH="${HF_HOME}/${HF_MODEL_ID}"
-MODEL_ARG="${VLLM_MODEL}"
+MODEL_DIR="${HF_HOME}/${HF_MODEL_ID}"
 
-if [ -d "${MODEL_PATH}" ]; then
-  echo "[post_start] Using local model path: ${MODEL_PATH}"
-  MODEL_ARG="${MODEL_PATH}"
+echo "[post_start] HF_HOME=${HF_HOME}"
+echo "[post_start] HF_MODEL_ID=${HF_MODEL_ID}"
+echo "[post_start] VLLM_MODEL=${VLLM_MODEL}"
+echo "[post_start] VLLM_HOST=${VLLM_HOST}"
+echo "[post_start] VLLM_PORT=${VLLM_PORT}"
+echo "[post_start] TP_SIZE=${TP_SIZE} MAX_MODEL_LEN=${MAX_MODEL_LEN} GPU_MEM_UTIL=${GPU_MEM_UTIL}"
+echo "[post_start] VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS}"
+
+# ------------------------------
+# Runtime model download (idempotent)
+# ------------------------------
+if [ ! -d "${MODEL_DIR}" ]; then
+  echo "[post_start] Model not found, downloading ${HF_MODEL_ID} -> ${MODEL_DIR}"
+  HF_ARGS=()
+  if [ -n "${HF_TOKEN:-}" ]; then
+    echo "[post_start] Using HF_TOKEN"
+    HF_ARGS+=(--token "${HF_TOKEN}")
+  fi
+  huggingface-cli download \
+    "${HF_MODEL_ID}" \
+    --local-dir "${MODEL_DIR}" \
+    --local-dir-use-symlinks False \
+    --resume-download \
+    "${HF_ARGS[@]}"
+  echo "[post_start] Model download completed"
 else
-  echo "[post_start] Local path not found, fallback to HF id: ${VLLM_MODEL}"
+  echo "[post_start] Model already exists, skip download"
 fi
 
-echo "[post_start] Starting vLLM model: ${MODEL_ARG}"
+# ------------------------------
+# Port conflict handling
+# ------------------------------
+if lsof -i :"${VLLM_PORT}" >/dev/null 2>&1; then
+  echo "[post_start] ERROR: Port ${VLLM_PORT} already in use. Set VLLM_PORT to another value (default is 8001)."
+  lsof -i :"${VLLM_PORT}" || true
+  exit 1
+fi
+
+# ------------------------------
+# Start vLLM (OpenAI compatible server)
+# ------------------------------
+TRUST_FLAG=()
+if [ "${VLLM_TRUST_REMOTE_CODE:-true}" = "true" ]; then
+  TRUST_FLAG+=(--trust-remote-code)
+fi
+
+echo "[post_start] Starting vLLM with model path: ${MODEL_DIR}"
 
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST}" \
   --port "${VLLM_PORT}" \
-  --model "${MODEL_ARG}" \
+  --model "${MODEL_DIR}" \
   --download-dir "${HF_HOME}" \
-  --trust-remote-code \
   --tensor-parallel-size "${TP_SIZE}" \
   --max-model-len "${MAX_MODEL_LEN}" \
   --gpu-memory-utilization "${GPU_MEM_UTIL}" \
+  "${TRUST_FLAG[@]}" \
+  ${VLLM_EXTRA_ARGS} \
   >> "${LOG}" 2>&1 &
 
 echo "[post_start] vLLM launched. Log: ${LOG}"
@@ -204,9 +209,31 @@ EOF
 RUN chmod +x /post_start.sh
 
 # ==============================
+# start wrapper: platform start + post_start
+# ==============================
+RUN cat >/start.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 先跑平台原生启动（SSH/Nginx/用户注入等）
+/start_platform.sh &
+
+# 给平台服务一点点启动窗口（避免抢资源时偶发问题）
+sleep 1
+
+# 再启动 vLLM（含运行时下载）
+/post_start.sh
+
+# 保持容器前台：把平台脚本拉到前台（或阻塞）
+wait -n
+EOF
+
+RUN chmod +x /start.sh
+
+# ==============================
 # Ports & Entrypoint
 # ==============================
-EXPOSE 22 8000
+EXPOSE 22 8001
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/start.sh"]
