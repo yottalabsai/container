@@ -101,10 +101,10 @@ RUN python -m pip --version || \
 RUN python -m pip install --no-cache-dir -U pip setuptools wheel
 
 # ==============================
-# PyTorch (nightly cu126 as you had)
+# PyTorch (nightly cu128 as you had)
 # ==============================
 RUN python -m pip install --no-cache-dir --pre \
-    --index-url https://download.pytorch.org/whl/nightly/cu126 \
+    --index-url https://download.pytorch.org/whl/nightly/cu128 \
     --extra-index-url https://pypi.org/simple \
     --extra-index-url https://pypi.nvidia.com \
     torch torchvision torchaudio

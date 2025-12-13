@@ -9,10 +9,6 @@ Example:
 ```bash
 cd containers/official-templates/vllm-qwen
 
-HF_TOKEN=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 \
-MAX_MODEL_LEN=8192 \
-GPU_MEM_UTIL=0.9 \
-TP_SIZE=1 \
 docker buildx bake vllm-qwen --push
 
 ```
