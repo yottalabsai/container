@@ -23,7 +23,7 @@ docker buildx bake wan21-all \
   --push
 
 # 覆盖部分参数
-docker buildx bake wan21-comfyui --push
+docker buildx bake wan21-comfyui --no-cache --push
 ```
 
 ## Exposed Ports

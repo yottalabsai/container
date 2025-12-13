@@ -9,7 +9,7 @@ Example:
 ```bash
 cd containers/official-templates/vllm-qwen
 
-docker buildx bake vllm-qwen --push
+docker buildx bake vllm-qwen --no-cache --push
 
 ```
 
@@ -21,7 +21,7 @@ docker buildx bake vllm-qwen --push
 ## Test
 
 ```
-curl http://localhost:8000/v1/chat/completions \
+curl http://localhost:8001/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "/workspace/hf/Qwen/Qwen3-30B-A3B-Instruct-2507",

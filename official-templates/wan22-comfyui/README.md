@@ -18,7 +18,7 @@ HF_TOKEN=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 \
 docker buildx bake wan22-comfyui-nunchaku --push
   
 HF_TOKEN=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 \
-docker buildx bake wan22-all --push
+docker buildx bake wan22-all --no-cache --push
 
 docker buildx bake wan22-comfyui \
   --push \
