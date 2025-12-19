@@ -13,7 +13,7 @@ variable "COMFY_PORT"  { default = "8188" }
 variable "TORCH_CHANNEL"            { default = "nightly" }
 variable "TORCH_VERSION"            { default = "2.4.1" }
 variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
-variable "TORCH_CUDA"               { default = "cu128" }
+variable "TORCH_CUDA"               { default = "cu121" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
 # 组：
