@@ -9,16 +9,20 @@ Example:
 ```bash
 cd containers/official-templates/wan22-comfyui
 
-# 标准版（amd64+arm64）
 HF_TOKEN=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 \
-docker buildx bake wan22-comfyui --push
+docker buildx bake wan22-comfyui \
+  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
 
-# Nunchaku 版（需仓库地址）
 HF_TOKEN=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 \
-docker buildx bake wan22-comfyui-nunchaku --push
+docker buildx bake wan22-comfyui-nunchaku \
+  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
   
 HF_TOKEN=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 \
-docker buildx bake wan22-all --no-cache --push
+docker buildx bake wan22-all \
+  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
 
 docker buildx bake wan22-comfyui \
   --push \
