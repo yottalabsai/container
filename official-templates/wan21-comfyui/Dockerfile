@@ -18,6 +18,9 @@ ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu128"
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
+# Wan 模型（构建期就下好）
+ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -138,6 +141,14 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
+# 构建期 Wan 模型参数
+ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
+ARG HF_TOKEN
+
+# 模型根目录（固定在 ubuntu 用户下面）
+ENV WAN_MODEL_ID=${WAN_MODEL_ID} \
+    WAN_ROOT="/home/${UBUNTU_USER}/ComfyUI/models/wan"
+
 WORKDIR /home/${UBUNTU_USER}
 
 # ComfyUI 本体
@@ -166,7 +177,7 @@ RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 2 ]; then
+if [ "$#" < 2 ]; then
   echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
   exit 1
 fi
@@ -177,7 +188,7 @@ TOKEN="${3:-}"
 
 mkdir -p "${TARGET_DIR}"
 
-echo "[hf_download] Downloading \${REPO_ID} -> \${TARGET_DIR}"
+echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
 
 python - "$REPO_ID" "$TARGET_DIR" "$TOKEN" <<'PY'
 import sys
@@ -249,7 +260,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构（真正的模型运行时下载）
+# 模型 & 目录结构
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -258,6 +269,17 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output \
       /home/${UBUNTU_USER}/ComfyUI/models
+
+# ========= 构建阶段下载 Wan 模型 =========
+RUN set -euo pipefail && \
+    MODEL_NAME="$(basename "${WAN_MODEL_ID}")" && \
+    MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}" && \
+    echo "[WAN][build] MODEL_ID=${WAN_MODEL_ID}" && \
+    echo "[WAN][build] WAN_ROOT=${WAN_ROOT}" && \
+    echo "[WAN][build] MODEL_DIR=${MODEL_DIR}" && \
+    mkdir -p "${MODEL_DIR}" && \
+    hf_download.sh "${WAN_MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}" && \
+    echo "[WAN][build] Download finished."
 
 # ==============================
 # runtime
@@ -280,7 +302,7 @@ COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
 # ==============================
-# post_start.sh：运行时自动下载 + 启动 ComfyUI
+# post_start.sh：仅检查 + 启动 ComfyUI（不再下载）
 # ==============================
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
@@ -289,47 +311,20 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-# ========= 模型参数（运行时环境控制，终极规范版） =========
-# 用户只需要关心这两个：
-#   export WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
-#   export HF_TOKEN="hf_xxx"
-#
-# 可选高级控制：
-#   export WAN_ROOT="/home/ubuntu/ComfyUI/models/wan"
-#   export WAN_AUTO_DOWNLOAD="true"
-
 MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.1-T2V-1.3B}"
 WAN_ROOT="${WAN_ROOT:-/home/ubuntu/ComfyUI/models/wan}"
-AUTO_DOWNLOAD="${WAN_AUTO_DOWNLOAD:-true}"
-
-# 从 repo id 自动推导目录名
 MODEL_NAME="$(basename "${MODEL_ID}")"
 MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}"
 
-echo "[WAN] MODEL_ID=${MODEL_ID}"
-echo "[WAN] WAN_ROOT=${WAN_ROOT}"
-echo "[WAN] MODEL_DIR=${MODEL_DIR}"
-echo "[WAN] WAN_AUTO_DOWNLOAD=${AUTO_DOWNLOAD}"
+echo "[WAN][runtime] MODEL_ID=${MODEL_ID}"
+echo "[WAN][runtime] WAN_ROOT=${WAN_ROOT}"
+echo "[WAN][runtime] MODEL_DIR=${MODEL_DIR}"
 
-# ========= 自动下载逻辑 =========
-if [[ "${AUTO_DOWNLOAD}" == "true" ]]; then
-  if [ ! -d "${MODEL_DIR}" ] || [ -z "$(ls -A "${MODEL_DIR}" 2>/dev/null || true)" ]; then
-    echo "[WAN] Model dir is empty, start downloading..."
-
-    if [ -z "${HF_TOKEN:-}" ]; then
-      echo "[WAN] ERROR: HF_TOKEN is empty, cannot download gated model: ${MODEL_ID}" >&2
-      exit 2
-    fi
-
-    hf_download.sh "${MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}"
-    echo "[WAN] Download finished."
-  else
-    echo "[WAN] Model dir not empty, skip download."
-  fi
+if [ -d "${MODEL_DIR}" ]; then
+  echo "[WAN][runtime] Model dir exists."
 else
-  echo "[WAN] WAN_AUTO_DOWNLOAD != true, skip auto download. Expect model is already present."
+  echo "[WAN][runtime][WARN] Model dir not found. Make sure model is baked into image or mounted via volume."
 fi
-
 
 # ========= 启动 ComfyUI =========
 sudo -u ubuntu bash -lc "

@@ -237,6 +237,7 @@ fi
 
 echo "[post_start] Starting vLLM with model path: ${MODEL_DIR}"
 
+export VLLM_PORT="${VLLM_INTERNAL_PORT:-29500}"
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST}" \
   --port "${VLLM_PORT}" \
