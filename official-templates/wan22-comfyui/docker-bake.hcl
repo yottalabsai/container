@@ -16,6 +16,8 @@ variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
 variable "TORCH_CUDA"               { default = "cu121" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
+variable "HF_TOKEN" { default = "" }
+
 # 组：
 # - default：只构建标准版
 # - wan22-all：标准 + Nunchaku
