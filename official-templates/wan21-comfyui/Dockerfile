@@ -279,7 +279,47 @@ RUN set -euo pipefail && \
     echo "[WAN][build] MODEL_DIR=${MODEL_DIR}" && \
     mkdir -p "${MODEL_DIR}" && \
     hf_download.sh "${WAN_MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}" && \
-    echo "[WAN][build] Download finished."
+    echo "[WAN][build] Download finished." && \
+    \
+    echo "[WAN][build] Linking models into ComfyUI/models/ ..." && \
+    mkdir -p \
+      /home/${UBUNTU_USER}/ComfyUI/models/diffusion_models \
+      /home/${UBUNTU_USER}/ComfyUI/models/text_encoders \
+      /home/${UBUNTU_USER}/ComfyUI/models/vae \
+      /home/${UBUNTU_USER}/ComfyUI/models/loras \
+      /home/${UBUNTU_USER}/ComfyUI/models/clip_vision && \
+    \
+    # diffusion_models/*
+    if [ -d "${MODEL_DIR}/diffusion_models" ]; then \
+      find "${MODEL_DIR}/diffusion_models" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/diffusion_models/ \; ; \
+    fi && \
+    \
+    # text_encoders/*
+    if [ -d "${MODEL_DIR}/text_encoders" ]; then \
+      find "${MODEL_DIR}/text_encoders" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/text_encoders/ \; ; \
+    fi && \
+    \
+    # vae/*
+    if [ -d "${MODEL_DIR}/vae" ]; then \
+      find "${MODEL_DIR}/vae" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/vae/ \; ; \
+    fi && \
+    \
+    # loras/*
+    if [ -d "${MODEL_DIR}/loras" ]; then \
+      find "${MODEL_DIR}/loras" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/loras/ \; ; \
+    fi && \
+    \
+    # clip_vision/*（如果仓库里有，就顺便挂一下）
+    if [ -d "${MODEL_DIR}/clip_vision" ]; then \
+      find "${MODEL_DIR}/clip_vision" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/clip_vision/ \; ; \
+    fi && \
+    \
+    echo "[WAN][build] Model linking done."
 
 # ==============================
 # runtime

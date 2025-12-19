@@ -17,10 +17,10 @@ docker buildx bake wan21-comfyui-nunchaku --push
 # 构建两个变体一起
 docker buildx bake wan21-all --no-cache --push
 
+HF_TOKEN=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 \
 docker buildx bake wan21-all \
-  --set *.args.HF_TOKEN=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 \
-  --set *.args.WAN_ENABLE_DOWNLOAD=false \
-  --push
+  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
 
 # 覆盖部分参数
 docker buildx bake wan21-comfyui --no-cache --push
