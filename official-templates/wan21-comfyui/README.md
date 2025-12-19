@@ -10,9 +10,15 @@ Example:
 cd containers/official-templates/wan21-comfyui
 
 # 构建标准版
-docker buildx bake wan21-comfyui --push
+HF_TOKEN=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 \
+docker buildx bake wan21-comfyui \
+  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
 
-docker buildx bake wan21-comfyui-nunchaku --push
+HF_TOKEN=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 \
+docker buildx bake wan21-comfyui-nunchaku \
+  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
 
 # 构建两个变体一起
 docker buildx bake wan21-all --no-cache --push

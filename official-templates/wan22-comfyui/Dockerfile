@@ -11,12 +11,14 @@ ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-# Torch / CUDA 相关参数
-ARG TORCH_CHANNEL="nightly"          # nightly / stable
-ARG TORCH_VERSION="2.4.1"           # stable 时使用
-ARG TORCH_VISION_VERSION="0.19.1"   # stable 时使用
-ARG TORCH_CUDA="cu128"              # 默认 cu128 适配 CUDA 12.8
-ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
+# Torch / CUDA 相关参数（直接固定 stable，别再搞 nightly 了）
+ARG TORCH_VERSION="2.4.1"
+ARG TORCH_VISION_VERSION="0.19.1"
+ARG TORCH_CUDA="cu121"   # 如果你的 GPU 环境就是 12.8，也可以 cu128，看你实际
+
+# Wan2.2-Animate 模型（构建阶段下载）
+ARG WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
+ARG WAN_ROOT="/home/ubuntu/ComfyUI/models/wan"
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
@@ -34,7 +36,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    # 针对 5090 / Blackwell
     TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
     HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
@@ -65,12 +66,12 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chmod 700 /home/${UBUNTU_USER}/.ssh && \
     mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
-# SSH 配置：允许密码登录，但禁 root
+# SSH 配置
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# 安装指定版本 Python + pip
+# 安装 Python
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -81,39 +82,29 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
       /usr/bin/python /tmp/get-pip.py || true) && \
     rm -f /tmp/get-pip.py
 
-# 兜底：保证 python -m pip 可用
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# python-env: 安装 PyTorch
+# python-env: 安装 PyTorch（stable）
 # ==============================
 FROM base AS python-env
 
 ARG UBUNTU_USER
-ARG TORCH_CHANNEL
 ARG TORCH_VERSION
 ARG TORCH_VISION_VERSION
 ARG TORCH_CUDA
-ARG TORCH_NIGHTLY_INDEX_URL
 ARG COMFYUI_PORT
 
 USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
 RUN python -m pip install --upgrade pip wheel setuptools && \
-    if [[ "${TORCH_CHANNEL}" == "nightly" ]]; then \
-      echo "[Torch] Using nightly channel (${TORCH_CUDA})"; \
-      python -m pip install --no-cache-dir --pre \
-        torch torchvision torchaudio \
-        --index-url "${TORCH_NIGHTLY_INDEX_URL}/${TORCH_CUDA}"; \
-    else \
-      echo "[Torch] Using stable channel ${TORCH_VERSION} (${TORCH_CUDA})"; \
-      python -m pip install --no-cache-dir \
-        "torch==${TORCH_VERSION}" \
-        "torchvision==${TORCH_VISION_VERSION}" \
-        "torchaudio==${TORCH_VERSION}" \
-        --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"; \
-    fi
+    echo "[Torch] Using stable channel ${TORCH_VERSION} (${TORCH_CUDA})" && \
+    python -m pip install --no-cache-dir \
+      "torch==${TORCH_VERSION}" \
+      "torchvision==${TORCH_VISION_VERSION}" \
+      "torchaudio==${TORCH_VERSION}" \
+      --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
 
 # 安装 jupyter 以兼容 start.sh
 RUN python -m pip install --no-cache-dir \
@@ -121,7 +112,6 @@ RUN python -m pip install --no-cache-dir \
       "notebook" \
       "ipykernel"
 
-# 简单的环境自检
 RUN python - <<'PY'
 import torch, platform
 print("PyTorch:", torch.__version__)
@@ -140,6 +130,9 @@ ARG UBUNTU_USER
 ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
+ARG WAN_MODEL_ID
+ARG WAN_ROOT
+ARG HF_TOKEN   # 构建时通过 buildx 注入
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -155,7 +148,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd ComfyUI-Manager && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 安装 GitPython + PyGithub + toml + huggingface_hub[cli]，并写入通用 hf_download.sh（root）
+# 安装 huggingface_hub + 通用下载脚本（root）
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -163,7 +156,6 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
-# 通用 huggingface 下载脚本
 RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -193,13 +185,9 @@ if len(sys.argv) < 4:
 
 repo_id, target_dir, token = sys.argv[1:4]
 
-# 开启进度条（仅在 TTY 终端下生效）
 os.environ.setdefault("HF_HUB_ENABLE_PROGRESS_BARS", "1")
 
-kwargs = dict(
-    local_dir=target_dir,
-)
-
+kwargs = dict(local_dir=target_dir)
 if token:
     kwargs["token"] = token
 
@@ -214,7 +202,6 @@ local_path = snapshot_download(repo_id=repo_id, **kwargs)
 
 after_files = set(Path(target_dir).rglob("*"))
 new_files = [p for p in after_files - before_files if p.is_file()]
-
 total_size = sum(p.stat().st_size for p in new_files)
 
 print(f"[hf_download][py] Downloaded {len(new_files)} new files, "
@@ -228,7 +215,7 @@ HF
 
 RUN chmod +x /usr/local/bin/hf_download.sh
 
-# 回到 ubuntu 用户继续后续步骤
+# 回到 ubuntu 用户
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
       "GitPython>=3.1.44" \
@@ -251,7 +238,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构（通用，不在 build 阶段下载模型）
+# 通用基础目录
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -259,7 +246,54 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output \
-      /home/${UBUNTU_USER}/ComfyUI/models/wan2.2-animate-14b
+      /home/${UBUNTU_USER}/ComfyUI/models \
+      "${WAN_ROOT}"
+
+# ========= 构建阶段下载 Wan2.2-Animate-14B 模型 + 链接到 ComfyUI/models =========
+RUN set -euo pipefail && \
+    MODEL_NAME="$(basename "${WAN_MODEL_ID}")" && \
+    MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}" && \
+    echo "[WAN2.2][build] MODEL_ID=${WAN_MODEL_ID}" && \
+    echo "[WAN2.2][build] WAN_ROOT=${WAN_ROOT}" && \
+    echo "[WAN2.2][build] MODEL_DIR=${MODEL_DIR}" && \
+    mkdir -p "${MODEL_DIR}" && \
+    hf_download.sh "${WAN_MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}" && \
+    echo "[WAN2.2][build] Download finished." && \
+    \
+    echo "[WAN2.2][build] Linking models into ComfyUI/models/ ..." && \
+    mkdir -p \
+      /home/${UBUNTU_USER}/ComfyUI/models/diffusion_models \
+      /home/${UBUNTU_USER}/ComfyUI/models/text_encoders \
+      /home/${UBUNTU_USER}/ComfyUI/models/vae \
+      /home/${UBUNTU_USER}/ComfyUI/models/loras \
+      /home/${UBUNTU_USER}/ComfyUI/models/clip_vision && \
+    \
+    if [ -d "${MODEL_DIR}/diffusion_models" ]; then \
+      find "${MODEL_DIR}/diffusion_models" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/diffusion_models/ \; ; \
+    fi && \
+    \
+    if [ -d "${MODEL_DIR}/text_encoders" ]; then \
+      find "${MODEL_DIR}/text_encoders" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/text_encoders/ \; ; \
+    fi && \
+    \
+    if [ -d "${MODEL_DIR}/vae" ]; then \
+      find "${MODEL_DIR}/vae" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/vae/ \; ; \
+    fi && \
+    \
+    if [ -d "${MODEL_DIR}/loras" ]; then \
+      find "${MODEL_DIR}/loras" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/loras/ \; ; \
+    fi && \
+    \
+    if [ -d "${MODEL_DIR}/clip_vision" ]; then \
+      find "${MODEL_DIR}/clip_vision" -maxdepth 1 -type f -name '*.safetensors' \
+        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/clip_vision/ \; ; \
+    fi && \
+    \
+    echo "[WAN2.2][build] Model linking done."
 
 # ==============================
 # runtime
@@ -269,86 +303,28 @@ FROM comfy-builder AS runtime
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
 
-# 默认值：可被 Pod 环境变量覆盖
-ENV COMFYUI_PORT=${COMFYUI_PORT} \
-    WAN_ENABLE_DOWNLOAD="true" \
-    WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
-# HF_TOKEN / WAN_HF_TOKEN 不在镜像里写死，只通过运行时环境变量注入
+ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
-# 这些来自 docker buildx bake 的额外上下文（scripts/proxy/logo）
+# 来自额外构建上下文
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# post_start.sh：容器内第二阶段启动 ComfyUI + 按需下载 Wan2.2
+# post_start.sh：仅负责启动 ComfyUI（不再下载模型）
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 
 LOG=/home/ubuntu/comfyui.log
-
 mkdir -p /home/ubuntu
 
-# ==============================
-# Wan2.2 运行时按需下载（统一版协议）
-# ==============================
-# 运行时环境变量约定：
-#   必填：
-#     HF_TOKEN        : HuggingFace 访问 token（gated 仓库必须）
-#   可选：
-#     WAN_MODEL_ID    : 默认为 Wan-AI/Wan2.2-Animate-14B
-#     WAN_ROOT        : 模型根目录，默认 /home/ubuntu/ComfyUI/models/wan
-#     WAN_AUTO_DOWNLOAD : 是否自动下载，默认 true
-#     WAN_HF_TOKEN    : 若设置，优先于 HF_TOKEN
+echo "[WAN2.2] Using pre-baked models inside image."
 
-MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.2-Animate-14B}"
-WAN_ROOT="${WAN_ROOT:-/home/ubuntu/ComfyUI/models/wan}"
-AUTO_DOWNLOAD="${WAN_AUTO_DOWNLOAD:-true}"
-
-# 从 repo id 自动推导子目录名
-MODEL_NAME="$(basename "${MODEL_ID}")"
-MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}"
-
-# Token 优先级：
-# 1. WAN_HF_TOKEN（用户显式指定）
-# 2. HF_TOKEN（Pod / 平台默认）
-TOKEN="${WAN_HF_TOKEN:-${HF_TOKEN:-}}"
-
-echo "[WAN2.2] MODEL_ID        = ${MODEL_ID}"
-echo "[WAN2.2] WAN_ROOT        = ${WAN_ROOT}"
-echo "[WAN2.2] MODEL_DIR       = ${MODEL_DIR}"
-echo "[WAN2.2] WAN_AUTO_DOWNLOAD = ${AUTO_DOWNLOAD}"
-
-if [[ "${AUTO_DOWNLOAD}" == "true" ]]; then
-  if [ ! -d "${MODEL_DIR}" ] || [ -z "$(ls -A "${MODEL_DIR}" 2>/dev/null || true)" ]; then
-    echo "[WAN2.2] Model dir is empty, start downloading..."
-
-    if [ -n "${TOKEN}" ]; then
-      echo "[WAN2.2] HF token detected (hidden)"
-    else
-      echo "[WAN2.2] ERROR: no HF token set, gated repo will fail: ${MODEL_ID}" >&2
-      exit 2
-    fi
-
-    sudo -u ubuntu HF_HOME="/home/ubuntu/.cache/huggingface" \
-      bash -lc "hf_download.sh \"${MODEL_ID}\" \"${MODEL_DIR}\" \"${TOKEN}\""
-
-    echo "[WAN2.2] Download finished."
-  else
-    echo "[WAN2.2] Model dir not empty, skip download."
-  fi
-else
-  echo "[WAN2.2] WAN_AUTO_DOWNLOAD != true, skip download. Expect model is already present."
-fi
-
-# ==============================
-# 启动 ComfyUI
-# ==============================
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
@@ -364,15 +340,14 @@ RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# 把 ComfyUI/models 当成数据卷
-VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output", "/home/${UBUNTU_USER}/ComfyUI/models"]
+# 注意：这里不再把 /home/ubuntu/ComfyUI/models 声明成 VOLUME，
+# 否则运行时挂空卷会把 baked 模型盖掉
+VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 
-# 暴露端口：Nginx / ComfyUI / SSH
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-# 健康检查：直接探 ComfyUI HTTP 端口
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
