@@ -58,7 +58,7 @@ target "wan22-comfyui" {
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
-    HF_TOKEN = "${HF_TOKEN}"
+    HF_TOKEN = HF_TOKEN
   }
 }
 
@@ -96,6 +96,6 @@ target "wan22-comfyui-nunchaku" {
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
-    HF_TOKEN = "${HF_TOKEN}"
+    HF_TOKEN = HF_TOKEN
   }
 }
