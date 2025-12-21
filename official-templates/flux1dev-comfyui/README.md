@@ -8,13 +8,16 @@ Example:
 
 ```bash
 # 标准版
+HF_TOKEN=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 \
 docker buildx bake flux1dev-comfyui --push
 
 # Nunchaku 版
+HF_TOKEN=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 \
 docker buildx bake flux1dev-comfyui-nunchaku --push
 
 HF_TOKEN=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 \
-docker buildx bake flux1dev-all --no-cache --push
+docker buildx bake flux1dev-all \
+  --no-cache --push
 ```
 
 ## Exposed Ports

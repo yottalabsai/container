@@ -18,9 +18,6 @@ ARG TORCH_VISION_VERSION="0.19.1"   # stable 时使用
 ARG TORCH_CUDA="cu128"              # 默认 cu128 适配 CUDA 12.8
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
-# 默认启用 VAE（运行时可用 ENABLE_FLUX_VAE 覆盖）
-ARG ENABLE_FLUX_VAE="true"
-
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -135,7 +132,7 @@ print("CUDA arch list:", getattr(torch.cuda, "get_arch_list", lambda: "n/a")())
 PY
 
 # ==============================
-# comfy-builder: 安装 ComfyUI + Manager + (可选) Nunchaku + 下载脚本
+# comfy-builder: 安装 ComfyUI + Manager + (可选) Nunchaku + 下载脚本 + FLUX1-Dev 模型
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -143,6 +140,7 @@ ARG UBUNTU_USER
 ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
+ARG HF_TOKEN          # <- 从 docker-bake 传入的 HF_TOKEN
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -199,50 +197,38 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/models
 
 # -------------------------------
-# FLUX1-Dev 下载脚本（运行时调用）
-# 环境变量：HF_TOKEN / FLUX_MODEL_DIR / ENABLE_FLUX_VAE
+# FLUX1-Dev 下载脚本（构建 / 运行都可复用）
 # -------------------------------
 USER root
 RUN cat >/usr/local/bin/flux_download.sh <<'FLUX'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ==============================
-# Minimal FLUX1-Dev downloader
-# 环境变量：
-#   HF_TOKEN         - 必填，HuggingFace token
-#   FLUX_MODEL_DIR   - 可选，模型根目录，默认 /home/ubuntu/ComfyUI/models
-#   ENABLE_FLUX_VAE  - 可选，默认 true
-# ==============================
-
 HF_TOKEN="${HF_TOKEN:-}"
 FLUX_MODEL_DIR="${FLUX_MODEL_DIR:-/home/ubuntu/ComfyUI/models}"
-ENABLE_FLUX_VAE="${ENABLE_FLUX_VAE:-true}"
 
 if [[ -z "${HF_TOKEN}" ]]; then
   echo "[flux_download] HF_TOKEN is empty, cannot download FLUX models." >&2
   exit 1
 fi
 
-echo "[flux_download] ROOT=${FLUX_MODEL_DIR}, ENABLE_FLUX_VAE=${ENABLE_FLUX_VAE}"
+echo "[flux_download] ROOT=${FLUX_MODEL_DIR}"
 
-python - "$FLUX_MODEL_DIR" "$ENABLE_FLUX_VAE" "$HF_TOKEN" <<'PY'
+python - "$FLUX_MODEL_DIR" "$HF_TOKEN" <<'PY'
 import sys
 import shutil
 from pathlib import Path
 from huggingface_hub import snapshot_download
 
-if len(sys.argv) < 4:
-    print("[flux_download][py] Need FLUX_MODEL_DIR, ENABLE_FLUX_VAE, HF_TOKEN", file=sys.stderr)
+if len(sys.argv) < 3:
+    print("[flux_download][py] Need FLUX_MODEL_DIR and HF_TOKEN", file=sys.stderr)
     sys.exit(1)
 
 root_dir = Path(sys.argv[1])
-enable_flux_vae = sys.argv[2].lower() == "true"
-token = sys.argv[3] or None
+token = sys.argv[2] or None
 
 root_dir.mkdir(parents=True, exist_ok=True)
 
-# Repos & filenames
 UNET_REPO = "black-forest-labs/FLUX.1-dev"
 UNET_FILE = "flux1-dev.safetensors"
 
@@ -258,13 +244,11 @@ vae_path = root_dir / "vae" / VAE_FILE
 t5_path = root_dir / "text_encoders" / ENCODER_T5
 clip_path = root_dir / "text_encoders" / ENCODER_CLIP
 
-# Create dirs
 for p in [unet_path.parent, vae_path.parent, t5_path.parent, clip_path.parent]:
     p.mkdir(parents=True, exist_ok=True)
 
-# Check what we need
 need_unet = not unet_path.is_file()
-need_vae = enable_flux_vae and (not vae_path.is_file())
+need_vae = not vae_path.is_file()
 need_t5 = not t5_path.is_file()
 need_clip = not clip_path.is_file()
 
@@ -284,7 +268,6 @@ def dl(repo_id: str, allow_patterns, tmp_dir: Path):
         token=token,
     )
 
-# UNET
 if need_unet:
     tmp_unet = root_dir / "_tmp_unet"
     dl(UNET_REPO, [UNET_FILE], tmp_unet)
@@ -295,7 +278,6 @@ if need_unet:
     shutil.move(src.as_posix(), unet_path.as_posix())
     shutil.rmtree(tmp_unet, ignore_errors=True)
 
-# VAE
 if need_vae:
     tmp_vae = root_dir / "_tmp_vae"
     dl(VAE_REPO, [VAE_FILE], tmp_vae)
@@ -306,7 +288,6 @@ if need_vae:
     shutil.move(src.as_posix(), vae_path.as_posix())
     shutil.rmtree(tmp_vae, ignore_errors=True)
 
-# TEXT ENCODERS
 if need_t5 or need_clip:
     tmp_te = root_dir / "_tmp_text_encoders"
     patterns = []
@@ -334,14 +315,21 @@ if need_t5 or need_clip:
 
 print("[flux_download][py] FLUX1-Dev model installation complete.")
 PY
-
-# 权限收尾放在运行时脚本里做（这里用当前 FLUX_MODEL_DIR）
-chown -R ubuntu:ubuntu "${FLUX_MODEL_DIR}"
-
-echo "[flux_download] FLUX1-Dev model installation complete."
 FLUX
 
 RUN chmod +x /usr/local/bin/flux_download.sh
+
+# ★ 构建阶段调用 flux_download.sh，使用 ARG HF_TOKEN，把模型写进镜像
+RUN set -euo pipefail; \
+    FLUX_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models"; \
+    if [ -z "${HF_TOKEN}" ]; then \
+      echo "[FLUX1-Dev][build] ERROR: HF_TOKEN build arg is empty" >&2; \
+      exit 2; \
+    fi; \
+    echo "[FLUX1-Dev][build] ROOT=${FLUX_MODEL_DIR}"; \
+    HF_TOKEN="${HF_TOKEN}" FLUX_MODEL_DIR="${FLUX_MODEL_DIR}" flux_download.sh; \
+    chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${FLUX_MODEL_DIR}"
+
 USER ${UBUNTU_USER}
 
 # ==============================
@@ -351,11 +339,9 @@ FROM comfy-builder AS runtime
 
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
-ARG ENABLE_FLUX_VAE
 
 # 默认环境变量（运行时可用 env 覆盖）
 ENV COMFYUI_PORT=${COMFYUI_PORT} \
-    ENABLE_FLUX_VAE=${ENABLE_FLUX_VAE} \
     FLUX_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models"
 
 USER root
@@ -368,25 +354,13 @@ COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# post_start.sh：后台下载 FLUX + 启动 ComfyUI
+# post_start.sh：这里只负责启动 ComfyUI（模型已在构建阶段下载）
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
-
-# 后台下载 FLUX 模型（如果已存在则会跳过）
-if command -v flux_download.sh >/dev/null 2>&1; then
-  echo "[entry] spawn flux_download.sh in background ..."
-  sudo -u ubuntu \
-    HF_TOKEN="${HF_TOKEN:-}" \
-    FLUX_MODEL_DIR="${FLUX_MODEL_DIR:-/home/ubuntu/ComfyUI/models}" \
-    ENABLE_FLUX_VAE="${ENABLE_FLUX_VAE:-true}" \
-    bash -lc "flux_download.sh >> /home/ubuntu/flux_download.log 2>&1 &"
-else
-  echo "[entry] flux_download.sh not found, skip model bootstrap."
-fi
 
 # 以 ubuntu 用户运行 ComfyUI
 sudo -u ubuntu bash -lc "

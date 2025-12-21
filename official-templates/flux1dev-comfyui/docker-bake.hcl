@@ -12,11 +12,13 @@ variable "TORCH_VISION_VERSION"    { default = "0.19.1" }
 variable "TORCH_CUDA"              { default = "cu128" }
 variable "TORCH_NIGHTLY_INDEX_URL" { default = "https://download.pytorch.org/whl/nightly" }
 
-# 默认启用 VAE（运行时仍可用 ENABLE_FLUX_VAE 覆盖）
-variable "ENABLE_FLUX_VAE" { default = "true" }
-
 group "default"      { targets = ["flux1dev-comfyui"] }
 group "flux1dev-all" { targets = ["flux1dev-comfyui", "flux1dev-comfyui-nunchaku"] }
+
+variable "HF_TOKEN" {
+  default     = ""
+  description = "HuggingFace access token (REQUIRED)"
+}
 
 # ---- 标准版（不装 Nunchaku）----
 target "flux1dev-comfyui" {
@@ -50,7 +52,7 @@ target "flux1dev-comfyui" {
     TORCH_CUDA           = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
-    ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
+    HF_TOKEN = HF_TOKEN
   }
 }
 
@@ -86,6 +88,6 @@ target "flux1dev-comfyui-nunchaku" {
     TORCH_CUDA           = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
-    ENABLE_FLUX_VAE      = ENABLE_FLUX_VAE
+    HF_TOKEN = HF_TOKEN
   }
 }
