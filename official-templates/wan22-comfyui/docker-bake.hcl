@@ -22,6 +22,11 @@ variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/wh
 group "default"    { targets = ["wan22-comfyui"] }
 group "wan22-all"  { targets = ["wan22-comfyui", "wan22-comfyui-nunchaku"] }
 
+variable "HF_TOKEN" {
+  default     = ""
+  description = "HuggingFace access token (REQUIRED)"
+}
+
 # ==============================
 # Wan2.2-Animate-14B - 标准版
 # ==============================

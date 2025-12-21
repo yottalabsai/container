@@ -83,12 +83,14 @@ target "vllm-qwen" {
     PYTHON_VERSION = "${PYTHON_VERSION}"
     UBUNTU_USER    = "ubuntu"
 
+    # HF 模型 ID 传给 Dockerfile（用于构建阶段下载）
+    HF_MODEL_ID    = "${HF_MODEL_ID}"
+
     # optional build-time accel
     INSTALL_FLASHATTN  = "${INSTALL_FLASHATTN}"
     INSTALL_FLASHINFER = "${INSTALL_FLASHINFER}"
-
-    # NOTE:
-    # vLLM/HF 默认值现在主要在 Dockerfile 的 ENV 里。
-    # 如果你一定要通过 bake 注入默认值，也可以在 Dockerfile 改为 ARG->ENV 的映射。
   }
+
+  # 构建时通过 BuildKit secret 注入 HF_TOKEN
+  secrets = ["hf_token"]
 }

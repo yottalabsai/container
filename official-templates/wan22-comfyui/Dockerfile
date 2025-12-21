@@ -262,9 +262,9 @@ RUN mkdir -p \
 RUN set -euo pipefail && \
     echo "[WAN2.2][build] MODEL_ID=${WAN_MODEL_ID}" && \
     echo "[WAN2.2][build] WAN_ROOT=${WAN_ROOT}" && \
+    echo "[WAN2.2][build] HF_TOKEN='${HF_TOKEN}'" && \
     if [ -z "${HF_TOKEN:-}" ]; then \
-      echo "[WAN2.2][build] ERROR: HF_TOKEN is empty at build time" >&2; \
-      exit 2; \
+      echo "[WAN2.2][build] WARNING: HF_TOKEN is empty, will try anonymous download" >&2; \
     fi && \
     hf_download.sh "${WAN_MODEL_ID}" "${WAN_ROOT}" "${HF_TOKEN}" && \
     echo "[WAN2.2][build] Download finished. Tree under ${WAN_ROOT}:" && \

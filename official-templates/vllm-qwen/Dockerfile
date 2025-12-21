@@ -11,6 +11,9 @@ ARG UBUNTU_USER="ubuntu"
 ARG INSTALL_FLASHATTN="false"
 ARG INSTALL_FLASHINFER="false"
 
+# 模型 ID 也作为构建参数（配合 bake 里的 HF_MODEL_ID）
+ARG HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507"
+
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
 # ==============================
@@ -35,7 +38,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # vLLM runtime defaults (Pod 可覆盖)
     # ------------------------------
     VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507" \
-    HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507" \
+    HF_MODEL_ID="${HF_MODEL_ID}" \
     HF_TOKEN="" \
     VLLM_HOST="0.0.0.0" \
     VLLM_PORT="8000" \
@@ -127,13 +130,37 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
       python -m pip install --no-cache-dir flashinfer || true; fi
 
 # ==============================
+# 构建阶段下载模型（使用 BuildKit secret: hf_token）
+# ==============================
+RUN --mount=type=secret,id=hf_token \
+    set -euo pipefail && \
+    mkdir -p "${HF_HOME}" && \
+    MODEL_DIR="${HF_HOME}/${HF_MODEL_ID}" && \
+    echo "[build] HF_HOME=${HF_HOME}" && \
+    echo "[build] HF_MODEL_ID=${HF_MODEL_ID}" && \
+    echo "[build] MODEL_DIR=${MODEL_DIR}" && \
+    HF_TOKEN="$(cat /run/secrets/hf_token 2>/dev/null || true)" && \
+    if [[ -z "${HF_TOKEN}" ]]; then \
+      echo "[build] ERROR: HF_TOKEN is empty (secret hf_token missing or empty)" >&2; \
+      exit 2; \
+    fi && \
+    echo "[build] Downloading model at build time..." && \
+    huggingface-cli download \
+      "${HF_MODEL_ID}" \
+      --local-dir "${MODEL_DIR}" \
+      --local-dir-use-symlinks False \
+      --resume-download \
+      --token "${HF_TOKEN}" && \
+    echo "[build] Model download completed"
+
+# ==============================
 # Copy platform start.sh (from bake context)
 # ==============================
 COPY --from=scripts start.sh /start.sh
 RUN chmod +x /start.sh && mv /start.sh /start_platform.sh
 
 # ==============================
-# post_start.sh: runtime download + hardened vLLM start
+# post_start.sh: 只负责检查 & 启动 vLLM（不再下载）
 # ==============================
 RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -161,36 +188,18 @@ echo "[post_start] VLLM_EXTRA_ARGS=${VLLM_EXTRA_ARGS}"
 echo "[post_start] MODEL_DIR=${MODEL_DIR}"
 
 # ------------------------------
-# Runtime model download (idempotent)
+# Build-time model presence check
 # ------------------------------
-HF_ARGS=()
-if [ -n "${HF_TOKEN:-}" ]; then
-  echo "[post_start] Using HF_TOKEN"
-  HF_ARGS+=(--token "${HF_TOKEN}")
+if [[ ! -d "${MODEL_DIR}" ]]; then
+  echo "[post_start] ERROR: Model dir ${MODEL_DIR} not found."
+  echo "[post_start] You must build the image with model pre-downloaded."
+  exit 1
 fi
 
-if [ ! -d "${MODEL_DIR}" ]; then
-  echo "[post_start] Model not found, downloading ${HF_MODEL_ID} -> ${MODEL_DIR}"
-  huggingface-cli download \
-    "${HF_MODEL_ID}" \
-    --local-dir "${MODEL_DIR}" \
-    --local-dir-use-symlinks False \
-    --resume-download \
-    "${HF_ARGS[@]}"
-  echo "[post_start] Model download completed"
-else
-  echo "[post_start] Model already exists, skip download"
-fi
-
-# ------------------------------
-# Tokenizer sanity check (avoid tokenizer NoneType race)
-# If missing -> remove & re-download once
-# ------------------------------
 required=(
   "${MODEL_DIR}/config.json"
   "${MODEL_DIR}/tokenizer.json"
   "${MODEL_DIR}/tokenizer_config.json"
-  "${MODEL_DIR}/vocab.json"
 )
 
 missing=0
@@ -202,14 +211,8 @@ for f in "${required[@]}"; do
 done
 
 if [[ "${missing}" -eq 1 ]]; then
-  echo "[post_start] Tokenizer/config files incomplete. Re-downloading model..."
-  rm -rf "${MODEL_DIR}"
-  huggingface-cli download \
-    "${HF_MODEL_ID}" \
-    --local-dir "${MODEL_DIR}" \
-    --local-dir-use-symlinks False \
-    --resume-download \
-    "${HF_ARGS[@]}"
+  echo "[post_start] ERROR: Model directory is incomplete. Please rebuild image with a clean model download."
+  exit 1
 fi
 
 # ------------------------------
@@ -254,7 +257,7 @@ echo "[post_start] vLLM launched. Log: ${LOG}"
 EOF
 
 # ==============================
-# start wrapper: platform start + post_start + bashrc tips
+# start wrapper: platform start + post_start
 # ==============================
 RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -266,7 +269,7 @@ set -euo pipefail
 # 给平台服务一点点启动窗口（避免抢资源时偶发问题）
 sleep 1
 
-# 再启动 vLLM（含运行时下载 + 防并发/防多实例）
+# 再启动 vLLM（仅检查 + 启动，不再下载模型）
 /post_start.sh
 
 # 保持容器前台：把平台脚本拉到前台（或阻塞）
