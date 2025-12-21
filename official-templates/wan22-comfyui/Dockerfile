@@ -22,7 +22,7 @@ ARG WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
 ARG WAN_ROOT="/home/ubuntu/ComfyUI/models"
 
 # 构建时使用的 HF_TOKEN（通过 buildx 注入，不在镜像里写死）
-ARG HF_TOKEN=""
+#ARG HF_TOKEN=""
 
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH

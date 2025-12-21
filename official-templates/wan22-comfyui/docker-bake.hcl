@@ -16,7 +16,7 @@ variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
 variable "TORCH_CUDA"               { default = "cu121" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
-variable "HF_TOKEN" { default = "" }
+# variable "HF_TOKEN" { default = "" }
 
 # 组：
 # - default：只构建标准版
@@ -58,7 +58,7 @@ target "wan22-comfyui" {
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
-    HF_TOKEN = "${HF_TOKEN}"
+#     HF_TOKEN = "${HF_TOKEN}"
   }
 }
 
@@ -96,6 +96,6 @@ target "wan22-comfyui-nunchaku" {
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
 
-    HF_TOKEN = "${HF_TOKEN}"
+#     HF_TOKEN = "${HF_TOKEN}"
   }
 }
