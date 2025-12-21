@@ -21,6 +21,8 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 # Wan 模型（构建期就下好）
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 
+ARG HF_TOKEN=""
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -270,14 +272,24 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output \
       /home/${UBUNTU_USER}/ComfyUI/models
 
-# ========= 构建阶段下载 Wan 模型 =========
+# ========= 构建阶段下载 Wan 模型（HF_TOKEN 必填） =========
 RUN set -euo pipefail && \
+    # 硬性要求：HF_TOKEN 必须存在且非空
+    if [ -z "${HF_TOKEN:-}" ]; then \
+      echo "[WAN][build] ERROR: HF_TOKEN is empty."; \
+      echo "[WAN][build] Please pass HF_TOKEN via bake variable, e.g.:"; \
+      echo "[WAN][build]   HF_TOKEN=hf_xxx docker buildx bake wan21-all --no-cache --push"; \
+      exit 2; \
+    fi && \
+    \
     MODEL_NAME="$(basename "${WAN_MODEL_ID}")" && \
     MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}" && \
     echo "[WAN][build] MODEL_ID=${WAN_MODEL_ID}" && \
     echo "[WAN][build] WAN_ROOT=${WAN_ROOT}" && \
     echo "[WAN][build] MODEL_DIR=${MODEL_DIR}" && \
     mkdir -p "${MODEL_DIR}" && \
+    \
+    echo "[WAN][build] Start downloading model from HuggingFace..." && \
     hf_download.sh "${WAN_MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}" && \
     echo "[WAN][build] Download finished." && \
     \
@@ -320,6 +332,7 @@ RUN set -euo pipefail && \
     fi && \
     \
     echo "[WAN][build] Model linking done."
+
 
 # ==============================
 # runtime

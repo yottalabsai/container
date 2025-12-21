@@ -16,6 +16,11 @@ variable "TORCH_VISION_VERSION"     { default = "0.19.1" }
 variable "TORCH_CUDA"               { default = "cu128" }
 variable "TORCH_NIGHTLY_INDEX_URL"  { default = "https://download.pytorch.org/whl/nightly" }
 
+variable "HF_TOKEN" {
+  default     = ""
+  description = "HuggingFace access token (REQUIRED)"
+}
+
 # 组：
 group "default"    { targets = ["wan21-comfyui"] }
 group "wan21-all"  { targets = ["wan21-comfyui", "wan21-comfyui-nunchaku"] }
@@ -53,6 +58,8 @@ target "wan21-comfyui" {
     TORCH_VISION_VERSION    = TORCH_VISION_VERSION
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
+
+    HF_TOKEN = HF_TOKEN
   }
 }
 
@@ -89,5 +96,7 @@ target "wan21-comfyui-nunchaku" {
     TORCH_VISION_VERSION    = TORCH_VISION_VERSION
     TORCH_CUDA              = TORCH_CUDA
     TORCH_NIGHTLY_INDEX_URL = TORCH_NIGHTLY_INDEX_URL
+
+    HF_TOKEN = HF_TOKEN
   }
 }
