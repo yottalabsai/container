@@ -21,6 +21,9 @@ ARG WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
 # 关键：直接用 ComfyUI 的 models 根目录
 ARG WAN_ROOT="/home/ubuntu/ComfyUI/models"
 
+# 构建时使用的 HF_TOKEN（通过 buildx 注入，不在镜像里写死）
+ARG HF_TOKEN=""
+
 # ==============================
 # Base: CUDA + 系统依赖 + Python + SSH
 # ==============================
@@ -136,6 +139,7 @@ ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 ARG WAN_MODEL_ID
 ARG WAN_ROOT
+ARG HF_TOKEN
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -254,14 +258,12 @@ RUN mkdir -p \
       "${WAN_ROOT}"
 
 # ========= 构建阶段下载 Wan2.2-Animate-14B 模型 =========
-# 使用 BuildKit secret (id=hf_token) 读取 HF_TOKEN，避免通过 ARG/ENV 暴露
-RUN --mount=type=secret,id=hf_token \
-    set -euo pipefail && \
+# 直接下到 /home/ubuntu/ComfyUI/models，使其目录结构符合 ComfyUI 习惯
+RUN set -euo pipefail && \
     echo "[WAN2.2][build] MODEL_ID=${WAN_MODEL_ID}" && \
     echo "[WAN2.2][build] WAN_ROOT=${WAN_ROOT}" && \
-    HF_TOKEN="$(cat /run/secrets/hf_token 2>/dev/null || true)" && \
     if [ -z "${HF_TOKEN:-}" ]; then \
-      echo "[WAN2.2][build] ERROR: HF_TOKEN is empty (secret hf_token missing or empty)" >&2; \
+      echo "[WAN2.2][build] ERROR: HF_TOKEN is empty at build time" >&2; \
       exit 2; \
     fi && \
     hf_download.sh "${WAN_MODEL_ID}" "${WAN_ROOT}" "${HF_TOKEN}" && \

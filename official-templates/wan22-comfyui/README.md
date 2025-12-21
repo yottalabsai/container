@@ -25,6 +25,11 @@ docker buildx bake wan22-comfyui \
   --no-cache --push
   
 HF_TOKEN=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 \
+docker buildx bake wan22-comfyui-nunchaku \
+  --set wan22-comfyui-nunchaku.args.HF_TOKEN=$HF_TOKEN \
+  --no-cache --push
+  
+HF_TOKEN=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 \
 docker buildx bake wan22-comfyui \
   --no-cache --push
 
