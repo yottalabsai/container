@@ -11,12 +11,12 @@ cd containers/official-templates/wan22-comfyui
 
 HF_TOKEN=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 \
 docker buildx bake wan22-comfyui \
-  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --set HF_TOKEN=$HF_TOKEN \
   --no-cache --push
 
 HF_TOKEN=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 \
 docker buildx bake wan22-comfyui-nunchaku \
-  --set *.args.HF_TOKEN=$HF_TOKEN \
+  --set HF_TOKEN=$HF_TOKEN \
   --no-cache --push
   
 HF_TOKEN=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 \
