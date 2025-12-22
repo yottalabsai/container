@@ -328,7 +328,15 @@ RUN set -euo pipefail; \
     fi; \
     echo "[FLUX1-Dev][build] ROOT=${FLUX_MODEL_DIR}"; \
     HF_TOKEN="${HF_TOKEN}" FLUX_MODEL_DIR="${FLUX_MODEL_DIR}" flux_download.sh; \
-    chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${FLUX_MODEL_DIR}"
+    chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${FLUX_MODEL_DIR}"; \
+    \
+    # 兼容老工作流：t5xxl_fp16.safetensors -> t5xxl_fp8_e4m3fn_scaled.safetensors
+    TE_DIR="${FLUX_MODEL_DIR}/text_encoders"; \
+    if [ -f "${TE_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" ] && [ ! -e "${TE_DIR}/t5xxl_fp16.safetensors" ]; then \
+      echo "[FLUX1-Dev][build] create alias t5xxl_fp16.safetensors -> t5xxl_fp8_e4m3fn_scaled.safetensors"; \
+      cd "${TE_DIR}" && ln -s "t5xxl_fp8_e4m3fn_scaled.safetensors" "t5xxl_fp16.safetensors"; \
+    fi
+
 
 USER ${UBUNTU_USER}
 

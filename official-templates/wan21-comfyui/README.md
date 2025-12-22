@@ -22,8 +22,7 @@ docker buildx bake wan21-comfyui-nunchaku \
 docker buildx bake wan21-all --no-cache --push
 
 HF_TOKEN=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 \
-docker buildx bake wan21-all \
-  --no-cache --push
+docker buildx bake wan21-all --no-cache --push
 
 # 覆盖部分参数
 docker buildx bake wan21-comfyui --no-cache --push
