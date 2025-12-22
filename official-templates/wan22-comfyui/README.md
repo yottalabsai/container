@@ -10,21 +10,17 @@ Example:
 cd containers/official-templates/wan22-comfyui
   
 HF_TOKEN=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 \
-docker buildx bake wan22-comfyui \
-  --no-cache --push
+docker buildx bake wan22-comfyui --no-cache --push
 
   
 HF_TOKEN=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 \
-docker buildx bake wan22-comfyui-nunchaku \
-  --no-cache --push
+docker buildx bake wan22-comfyui-nunchaku --no-cache --push
 
   
 HF_TOKEN=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 \
-docker buildx bake wan22-all \
-  --no-cache --push
+docker buildx bake wan22-all --no-cache --push
 
-docker buildx bake wan22-comfyui \
-  --push \
+docker buildx bake wan22-comfyui --push 
 
 ```
 

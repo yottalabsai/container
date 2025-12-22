@@ -305,6 +305,61 @@ RUN set -euo pipefail && \
     ln -sfn "${MODEL_DIR}" "/home/${UBUNTU_USER}/ComfyUI/models/wan2.1" && \
     echo "[WAN][build] Symlink created: /home/${UBUNTU_USER}/ComfyUI/models/wan2.1 -> ${MODEL_DIR}"
 
+# ========= 补齐 Wan2.1 Fun Camera 1.3B 相关模型 =========
+RUN set -euo pipefail && \
+    MODELS_ROOT="/home/${UBUNTU_USER}/ComfyUI/models" && \
+    REPACK_DIR="${MODELS_ROOT}/wan21_repack" && \
+    echo "[WAN2.1-FUN][build] download Comfy-Org/Wan_2.1_ComfyUI_repackaged -> ${REPACK_DIR}" && \
+    if [ -z "${HF_TOKEN:-}" ]; then \
+      echo "[WAN2.1-FUN][build] WARNING: HF_TOKEN is empty, will try anonymous download (may fail if repo is gated)" >&2; \
+    fi && \
+    # 1) 把 Comfy-Org 的 repack 仓库完整拉下来
+    hf_download.sh "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "${REPACK_DIR}" "${HF_TOKEN}" && \
+    \
+    # 2) 确保标准目录存在
+    mkdir -p \
+      "${MODELS_ROOT}/diffusion_models" \
+      "${MODELS_ROOT}/vae" \
+      "${MODELS_ROOT}/text_encoders" \
+      "${MODELS_ROOT}/clip_vision" \
+      "${MODELS_ROOT}/loras" && \
+    \
+    echo "[WAN2.1-FUN][build] linking required safetensors ..." && \
+    \
+    # 2.1 text encoder: umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    if [ -f "${REPACK_DIR}/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" ]; then \
+      ln -sf "${REPACK_DIR}/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
+             "${MODELS_ROOT}/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"; \
+    fi && \
+    \
+    # 2.2 VAE: wan_2.1_vae.safetensors
+    if [ -f "${REPACK_DIR}/split_files/vae/wan_2.1_vae.safetensors" ]; then \
+      ln -sf "${REPACK_DIR}/split_files/vae/wan_2.1_vae.safetensors" \
+             "${MODELS_ROOT}/vae/wan_2.1_vae.safetensors"; \
+    fi && \
+    \
+    # 2.3 CLIP Vision: clip_vision_h.safetensors
+    if [ -f "${REPACK_DIR}/split_files/clip_vision/clip_vision_h.safetensors" ]; then \
+      ln -sf "${REPACK_DIR}/split_files/clip_vision/clip_vision_h.safetensors" \
+             "${MODELS_ROOT}/clip_vision/clip_vision_h.safetensors"; \
+    fi && \
+    \
+    # 2.4 Diffusion: wan2.1_fun_camera_v1.1.3B_bf16.safetensors
+    #   这里不死磕具体子目录，直接在 repack 仓库里搜一遍 camera 1.3B bf16
+    CAMERA_TARGET="${MODELS_ROOT}/diffusion_models/wan2.1_fun_camera_v1.1.3B_bf16.safetensors" && \
+    if [ ! -f "${CAMERA_TARGET}" ]; then \
+      CAMERA_SRC="$(find "${REPACK_DIR}" -maxdepth 4 -type f -name 'wan2.1_fun_camera*1.3B*bf16.safetensors' | head -n1 || true)" && \
+      if [ -n "${CAMERA_SRC}" ]; then \
+        echo "[WAN2.1-FUN][build] found camera model: ${CAMERA_SRC}"; \
+        ln -sf "${CAMERA_SRC}" "${CAMERA_TARGET}"; \
+      else \
+        echo "[WAN2.1-FUN][build][WARN] camera 1.3B bf16 file not found under repack dir"; \
+      fi; \
+    fi && \
+    \
+    echo "[WAN2.1-FUN][build] links created under ${MODELS_ROOT}"
+
+
 # ==============================
 # runtime
 # ==============================
