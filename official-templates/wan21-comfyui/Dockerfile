@@ -21,6 +21,7 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 # Wan 模型（构建期就下好）
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 
+# HF token：必须在 bake 里传进来
 ARG HF_TOKEN=""
 
 # ==============================
@@ -147,9 +148,9 @@ ARG NUNCHAKU_REF
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 ARG HF_TOKEN
 
-# 模型根目录（固定在 ubuntu 用户下面）
+# 模型根目录：直接放在 ComfyUI/models 下
 ENV WAN_MODEL_ID=${WAN_MODEL_ID} \
-    WAN_ROOT="/home/${UBUNTU_USER}/ComfyUI/models/wan"
+    WAN_ROOT="/home/${UBUNTU_USER}/ComfyUI/models"
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -179,7 +180,7 @@ RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" < 2 ]; then
+if [ "$#" -lt 2 ]; then
   echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
   exit 1
 fi
@@ -204,7 +205,6 @@ if len(sys.argv) < 4:
 
 repo_id, target_dir, token = sys.argv[1:4]
 
-# 开启进度条（仅在 TTY 终端下生效）
 os.environ.setdefault("HF_HUB_ENABLE_PROGRESS_BARS", "1")
 
 kwargs = dict(
@@ -262,7 +262,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构
+# 基础目录
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -272,9 +272,8 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/output \
       /home/${UBUNTU_USER}/ComfyUI/models
 
-# ========= 构建阶段下载 Wan 模型（HF_TOKEN 必填） =========
+# ========= 构建阶段下载 Wan 模型（HF_TOKEN 必填，完整 snapshot，不再拆散） =========
 RUN set -euo pipefail && \
-    # 硬性要求：HF_TOKEN 必须存在且非空
     if [ -z "${HF_TOKEN:-}" ]; then \
       echo "[WAN][build] ERROR: HF_TOKEN is empty."; \
       echo "[WAN][build] Please pass HF_TOKEN via bake variable, e.g.:"; \
@@ -289,50 +288,22 @@ RUN set -euo pipefail && \
     echo "[WAN][build] MODEL_DIR=${MODEL_DIR}" && \
     mkdir -p "${MODEL_DIR}" && \
     \
-    echo "[WAN][build] Start downloading model from HuggingFace..." && \
+    echo "[WAN][build] Start downloading model from HuggingFace (full snapshot)..." && \
     hf_download.sh "${WAN_MODEL_ID}" "${MODEL_DIR}" "${HF_TOKEN}" && \
-    echo "[WAN][build] Download finished." && \
     \
-    echo "[WAN][build] Linking models into ComfyUI/models/ ..." && \
-    mkdir -p \
-      /home/${UBUNTU_USER}/ComfyUI/models/diffusion_models \
-      /home/${UBUNTU_USER}/ComfyUI/models/text_encoders \
-      /home/${UBUNTU_USER}/ComfyUI/models/vae \
-      /home/${UBUNTU_USER}/ComfyUI/models/loras \
-      /home/${UBUNTU_USER}/ComfyUI/models/clip_vision && \
-    \
-    # diffusion_models/*
-    if [ -d "${MODEL_DIR}/diffusion_models" ]; then \
-      find "${MODEL_DIR}/diffusion_models" -maxdepth 1 -type f -name '*.safetensors' \
-        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/diffusion_models/ \; ; \
+    if [ ! -d "${MODEL_DIR}" ]; then \
+      echo "[WAN][build] ERROR: MODEL_DIR ${MODEL_DIR} does not exist after download" >&2; \
+      exit 3; \
     fi && \
-    \
-    # text_encoders/*
-    if [ -d "${MODEL_DIR}/text_encoders" ]; then \
-      find "${MODEL_DIR}/text_encoders" -maxdepth 1 -type f -name '*.safetensors' \
-        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/text_encoders/ \; ; \
+    if [ -z "$(ls -A "${MODEL_DIR}")" ]; then \
+      echo "[WAN][build] ERROR: MODEL_DIR ${MODEL_DIR} is empty after download" >&2; \
+      exit 4; \
     fi && \
+    echo "[WAN][build] Download finished, snapshot at ${MODEL_DIR}" && \
     \
-    # vae/*
-    if [ -d "${MODEL_DIR}/vae" ]; then \
-      find "${MODEL_DIR}/vae" -maxdepth 1 -type f -name '*.safetensors' \
-        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/vae/ \; ; \
-    fi && \
-    \
-    # loras/*
-    if [ -d "${MODEL_DIR}/loras" ]; then \
-      find "${MODEL_DIR}/loras" -maxdepth 1 -type f -name '*.safetensors' \
-        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/loras/ \; ; \
-    fi && \
-    \
-    # clip_vision/*（如果仓库里有，就顺便挂一下）
-    if [ -d "${MODEL_DIR}/clip_vision" ]; then \
-      find "${MODEL_DIR}/clip_vision" -maxdepth 1 -type f -name '*.safetensors' \
-        -exec ln -sf "{}" /home/${UBUNTU_USER}/ComfyUI/models/clip_vision/ \; ; \
-    fi && \
-    \
-    echo "[WAN][build] Model linking done."
-
+    # 小提示：给一个更短好记的 symlink，方便在 UI 里挑选
+    ln -sfn "${MODEL_DIR}" "/home/${UBUNTU_USER}/ComfyUI/models/wan2.1" && \
+    echo "[WAN][build] Symlink created: /home/${UBUNTU_USER}/ComfyUI/models/wan2.1 -> ${MODEL_DIR}"
 
 # ==============================
 # runtime
@@ -365,7 +336,7 @@ LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
 MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.1-T2V-1.3B}"
-WAN_ROOT="${WAN_ROOT:-/home/ubuntu/ComfyUI/models/wan}"
+WAN_ROOT="${WAN_ROOT:-/home/ubuntu/ComfyUI/models}"
 MODEL_NAME="$(basename "${MODEL_ID}")"
 MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}"
 
