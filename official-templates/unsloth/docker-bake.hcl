@@ -22,7 +22,7 @@ target "unsloth" {
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/unsloth-yotta:${TAG_SUFFIX}",
+    "${PUBLISHER}/unsloth-yotta:cu121-torch241-unsloth-${TAG_SUFFIX}",
   ]
 
   # 为了和你现有体系对齐，这里保留 contexts
@@ -33,6 +33,6 @@ target "unsloth" {
   }
 
   args = {
-    BASE_IMAGE = BASE_IMAGE
+    BASE_IMAGE = "${BASE_IMAGE}"
   }
 }
