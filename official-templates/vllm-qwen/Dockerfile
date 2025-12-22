@@ -13,6 +13,8 @@ ARG INSTALL_FLASHINFER="false"
 
 # 模型 ID 也作为构建参数（配合 bake 里的 HF_MODEL_ID）
 ARG HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507"
+# 构建期 HuggingFace Token
+ARG HF_TOKEN
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
@@ -39,7 +41,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     # ------------------------------
     VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507" \
     HF_MODEL_ID="${HF_MODEL_ID}" \
-    HF_TOKEN="" \
     VLLM_HOST="0.0.0.0" \
     VLLM_PORT="8000" \
     TP_SIZE="1" \
@@ -130,20 +131,24 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
       python -m pip install --no-cache-dir flashinfer || true; fi
 
 # ==============================
-# 构建阶段下载模型（使用 BuildKit secret: hf_token）
+# 构建阶段下载模型（使用构建参数 HF_TOKEN，拿不到就失败）
 # ==============================
-RUN --mount=type=secret,id=hf_token \
-    set -euo pipefail && \
+RUN set -euo pipefail && \
     mkdir -p "${HF_HOME}" && \
     MODEL_DIR="${HF_HOME}/${HF_MODEL_ID}" && \
     echo "[build] HF_HOME=${HF_HOME}" && \
     echo "[build] HF_MODEL_ID=${HF_MODEL_ID}" && \
     echo "[build] MODEL_DIR=${MODEL_DIR}" && \
-    HF_TOKEN="$(cat /run/secrets/hf_token 2>/dev/null || true)" && \
-    if [[ -z "${HF_TOKEN}" ]]; then \
-      echo "[build] ERROR: HF_TOKEN is empty (secret hf_token missing or empty)" >&2; \
+    \
+    # 1) 强制要求 HF_TOKEN 非空
+    if [[ -z "${HF_TOKEN:-}" ]]; then \
+      echo "[build] ERROR: HF_TOKEN is empty." >&2; \
+      echo "[build] Please pass HF_TOKEN via buildx bake, e.g.:" >&2; \
+      echo "[build]   HF_TOKEN=hf_xxx docker buildx bake vllm-qwen --no-cache --push" >&2; \
       exit 2; \
     fi && \
+    \
+    # 2) 下载模型（必须成功）
     echo "[build] Downloading model at build time..." && \
     huggingface-cli download \
       "${HF_MODEL_ID}" \
@@ -151,7 +156,18 @@ RUN --mount=type=secret,id=hf_token \
       --local-dir-use-symlinks False \
       --resume-download \
       --token "${HF_TOKEN}" && \
-    echo "[build] Model download completed"
+    \
+    # 3) 下载完成后再检查目录是否存在 & 非空，防止半拉子
+    if [[ ! -d "${MODEL_DIR}" ]]; then \
+      echo "[build] ERROR: MODEL_DIR ${MODEL_DIR} does not exist after download" >&2; \
+      exit 3; \
+    fi && \
+    if [[ -z "$(ls -A "${MODEL_DIR}")" ]]; then \
+      echo "[build] ERROR: MODEL_DIR ${MODEL_DIR} is empty after download" >&2; \
+      exit 4; \
+    fi && \
+    echo "[build] Model download completed: ${MODEL_DIR}"
+
 
 # ==============================
 # Copy platform start.sh (from bake context)

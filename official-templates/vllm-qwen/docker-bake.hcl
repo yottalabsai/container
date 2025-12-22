@@ -52,6 +52,11 @@ variable "INSTALL_FLASHINFER" {
   default = "false"
 }
 
+variable "HF_TOKEN" {
+  default     = ""
+  description = "HuggingFace access token (REQUIRED)"
+}
+
 # ==============================
 # Build Groups
 # ==============================
@@ -89,8 +94,8 @@ target "vllm-qwen" {
     # optional build-time accel
     INSTALL_FLASHATTN  = "${INSTALL_FLASHATTN}"
     INSTALL_FLASHINFER = "${INSTALL_FLASHINFER}"
+
+    HF_TOKEN = HF_TOKEN
   }
 
-  # 构建时通过 BuildKit secret 注入 HF_TOKEN
-  secrets = ["hf_token"]
 }

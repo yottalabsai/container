@@ -13,7 +13,6 @@ docker buildx bake vllm-qwen --no-cache --push
 
 HF_TOKEN=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  # 或者写到文件里
 docker buildx bake vllm-qwen \
-  --set *.secrets.hf_token=env=HF_TOKEN \
   --no-cache --push
 
 ```
