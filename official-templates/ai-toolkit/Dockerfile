@@ -70,7 +70,9 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y && \
       "python${PYTHON_VERSION}-venv" && \
     rm -rf /var/lib/apt/lists/*
 
+# 这里重点：同时创建 python3 和 python 软链
 RUN ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
+    ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
     curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
     python3 /tmp/get-pip.py && rm -f /tmp/get-pip.py
 
@@ -184,7 +186,7 @@ EOS
 # ====== 商业化元素 ======
 RUN chmod +x /post_start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nDocs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+    echo 'echo -e \"\nDocs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\"' >> /root/.bashrc
 
 # runtime entry
 COPY --from=scripts start.sh /start.sh
