@@ -11,8 +11,17 @@ cd containers/official-templates/vllm-qwen
 
 docker buildx bake vllm-qwen --no-cache --push
 
-HF_TOKEN=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 \ 
+HF_TOKEN=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 \
 docker buildx bake vllm-qwen --no-cache --push
+
+nohup sh -c '
+HF_TOKEN=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 \
+docker buildx bake \
+  vllm-qwen \
+  --no-cache \
+  --push \
+  --allow=fs.read=/root/projects/container/container-template
+' > build.log 2>&1 &
 
 ```
 

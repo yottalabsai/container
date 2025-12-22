@@ -222,8 +222,8 @@ RUN chmod +x /start.sh
 VOLUME ["/data"]
 
 # 暴露端口
-EXPOSE 22          # SSH
+EXPOSE 22
 EXPOSE ${AITK_PORT}
-EXPOSE 80          # nginx/反代预留
+EXPOSE 80
 
 ENTRYPOINT ["/start.sh"]
