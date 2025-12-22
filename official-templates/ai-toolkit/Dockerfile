@@ -24,6 +24,7 @@ SHELL ["/bin/bash","-o","pipefail","-c"]
 
 ENV \
  TZ=UTC \
+ DEBIAN_FRONTEND=noninteractive \
  LANG=C.UTF-8 \
  LC_ALL=C.UTF-8 \
  PIP_NO_CACHE_DIR=1 \
@@ -40,7 +41,11 @@ RUN apt-get update -y && \
       openssh-server openssh-client \
       sudo tmux vim zsh zip unzip less procps net-tools htop \
       software-properties-common dirmngr gnupg && \
-    git lfs install && rm -rf /var/lib/apt/lists/*
+    # 设置时区为 UTC，避免 tzdata 交互
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    dpkg-reconfigure -f noninteractive tzdata && \
+    git lfs install && \
+    rm -rf /var/lib/apt/lists/*
 
 # user
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" && \
@@ -48,8 +53,9 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" && \
 
 # locale
 RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
-    apt-get update -y && apt-get install -y locales && \
-    locale-gen
+    apt-get update -y && apt-get install -y --no-install-recommends locales && \
+    locale-gen && \
+    rm -rf /var/lib/apt/lists/*
 
 # SSH
 RUN sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
@@ -58,10 +64,11 @@ RUN sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/ss
 # Python 安装
 RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update -y && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
       "python${PYTHON_VERSION}" \
       "python${PYTHON_VERSION}-dev" \
-      "python${PYTHON_VERSION}-venv"
+      "python${PYTHON_VERSION}-venv" && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
     curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
@@ -85,31 +92,33 @@ WORKDIR /home/${UBUNTU_USER}
 
 RUN python -m pip install --upgrade pip wheel setuptools && \
     if [[ "${TORCH_CHANNEL}" == "nightly" ]]; then \
-       python -m pip install --pre torch torchvision torchaudio \
+       python -m pip install --no-cache-dir --pre torch torchvision torchaudio \
          --index-url "${TORCH_NIGHTLY_INDEX_URL}/${TORCH_CUDA}"; \
     else \
-       python -m pip install \
+       python -m pip install --no-cache-dir \
          "torch==${TORCH_VERSION}" \
          "torchvision==${TORCH_VISION_VERSION}" \
          "torchaudio==${TORCH_VERSION}" \
          --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"; \
     fi
 
-RUN python -m pip install jupyterlab notebook ipykernel
+RUN python -m pip install --no-cache-dir jupyterlab notebook ipykernel
 
 # Node.js 23
 USER root
 WORKDIR /tmp
 RUN curl -sL https://deb.nodesource.com/setup_23.x -o node.sh && \
     bash node.sh && \
-    apt-get install -y nodejs
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # 检查
 USER ${UBUNTU_USER}
 RUN python - <<'PY'
 import torch
-print("Torch:",torch.__version__)
-print("CUDA:",torch.cuda.is_available())
+print("Torch:", torch.__version__)
+print("CUDA:", torch.cuda.is_available())
 PY
 
 
@@ -124,12 +133,14 @@ USER ${UBUNTU_USER}
 
 RUN git clone --depth=1 https://github.com/ostris/ai-toolkit.git && \
     cd ai-toolkit && \
-    python -m pip install -r requirements.txt && \
+    python -m pip install --no-cache-dir -r requirements.txt && \
     cd ui && npm install
 
 USER root
-RUN python -m pip install "huggingface_hub[cli]" \
-                "GitPython>=3.1.44" toml
+RUN python -m pip install --no-cache-dir \
+      "huggingface_hub[cli]" \
+      "GitPython>=3.1.44" \
+      toml
 
 
 # ==============================
