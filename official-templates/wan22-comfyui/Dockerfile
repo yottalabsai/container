@@ -11,10 +11,10 @@ ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-# Torch / CUDA 相关参数（直接走 stable，不再玩 nightly）
+# Torch / CUDA 相关参数（直接走 stable）
 ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
-ARG TORCH_CUDA="cu121"  # cu121 在官方有 2.4.1 轮子；如果你有别的需求再覆盖
+ARG TORCH_CUDA="cu121"  # cu121 在官方有 2.4.1 轮子
 
 # Wan2.2-Animate 模型（构建阶段下载）
 ARG WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
@@ -40,7 +40,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    # 针对 5090 / Blackwell
     TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
     HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
@@ -179,7 +178,7 @@ TOKEN="${3:-}"
 
 mkdir -p "${TARGET_DIR}"
 
-echo "[hf_download] Downloading \${REPO_ID} -> \${TARGET_DIR}"
+echo "[hf_download] Downloading ${REPO_ID} -> ${TARGET_DIR}"
 
 python - "$REPO_ID" "$TARGET_DIR" "$TOKEN" <<'PY'
 import sys
@@ -257,18 +256,97 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/models \
       "${WAN_ROOT}"
 
-# ========= 构建阶段下载 Wan2.2-Animate-14B 模型 =========
-# 直接下到 /home/ubuntu/ComfyUI/models，使其目录结构符合 ComfyUI 习惯
+# ========= 构建阶段下载 Wan2.2-Animate-14B + I2V / VAE / Text Encoder / LoRA =========
 RUN set -euo pipefail && \
     echo "[WAN2.2][build] MODEL_ID=${WAN_MODEL_ID}" && \
     echo "[WAN2.2][build] WAN_ROOT=${WAN_ROOT}" && \
-    echo "[WAN2.2][build] HF_TOKEN='${HF_TOKEN}'" && \
+    mkdir -p "${WAN_ROOT}" && \
     if [ -z "${HF_TOKEN:-}" ]; then \
-      echo "[WAN2.2][build] WARNING: HF_TOKEN is empty, will try anonymous download" >&2; \
+      echo "[WAN2.2][build] WARNING: HF_TOKEN is empty, will try anonymous download (may fail if gated)" >&2; \
     fi && \
-    hf_download.sh "${WAN_MODEL_ID}" "${WAN_ROOT}" "${HF_TOKEN}" && \
-    echo "[WAN2.2][build] Download finished. Tree under ${WAN_ROOT}:" && \
-    ls -R "${WAN_ROOT}"
+    \
+    # 1) 主仓：Wan-AI/Wan2.2-Animate-14B（有就下，失败也不阻塞）
+    echo "[WAN2.2][build] Downloading base repo: ${WAN_MODEL_ID}" && \
+    hf_download.sh "${WAN_MODEL_ID}" "${WAN_ROOT}/wan2.2_animate_raw" "${HF_TOKEN}" || \
+      echo "[WAN2.2][build] WARN: base repo download failed or partial, continuing with Comfy-Org repack..." >&2 && \
+    \
+    # 2) 从 Comfy-Org/Wan_2.2_ComfyUI_Repackaged 精确拉取所需文件并放到标准目录
+    echo "[WAN2.2][build] Downloading I2V / VAE / text encoder / loras from Comfy-Org/Wan_2.2_ComfyUI_Repackaged" && \
+    HF_TOKEN_ENV="${HF_TOKEN:-}" python - <<'PY'
+import os
+from pathlib import Path
+import shutil
+from huggingface_hub import snapshot_download
+
+token = os.environ.get("HF_TOKEN_ENV") or None
+
+models_root = Path("/home/ubuntu/ComfyUI/models").resolve()
+repo_id = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+
+patterns = [
+    # diffusion (i2v)
+    "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+    "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+    # 你要是想顺带把 t2v / ti2v 也拉进来，可以加更多 pattern
+    # "split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+    # "split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+    # "split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+
+    # text encoder
+    "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+
+    # VAEs
+    "split_files/vae/wan2.2_vae.safetensors",
+    "split_files/vae/wan_2.1_vae.safetensors",
+
+    # LoRAs
+    "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+    "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+]
+
+print("[WAN2.2-extra][py] snapshot_download:", repo_id)
+local_root = Path(
+    snapshot_download(
+        repo_id=repo_id,
+        allow_patterns=patterns,
+        token=token,
+    )
+).resolve()
+
+mapping = {
+    # diffusion
+    "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors":
+        models_root / "diffusion_models" / "wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
+    "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors":
+        models_root / "diffusion_models" / "wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
+
+    # text encoder
+    "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors":
+        models_root / "text_encoders" / "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+
+    # VAE
+    "split_files/vae/wan2.2_vae.safetensors":
+        models_root / "vae" / "wan2.2_vae.safetensors",
+    "split_files/vae/wan_2.1_vae.safetensors":
+        models_root / "vae" / "wan_2.1_vae.safetensors",
+
+    # LoRA
+    "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors":
+        models_root / "loras" / "wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
+    "split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors":
+        models_root / "loras" / "wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors",
+}
+
+for rel, dst in mapping.items():
+    src = (local_root / rel).resolve()
+    if not src.is_file():
+        raise SystemExit(f"[WAN2.2-extra][py] ERROR: missing expected file in snapshot: {src}")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    print(f"[WAN2.2-extra][py] installed {rel} -> {dst}")
+
+print("[WAN2.2-extra][py] all extra files installed into ComfyUI/models")
+PY
 
 # ==============================
 # runtime
