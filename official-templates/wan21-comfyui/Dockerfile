@@ -148,9 +148,12 @@ ARG NUNCHAKU_REF
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 ARG HF_TOKEN
 
-# 模型根目录：直接放在 ComfyUI/models 下
-ENV WAN_MODEL_ID=${WAN_MODEL_ID} \
-    WAN_ROOT="/home/${UBUNTU_USER}/ComfyUI/models"
+# 统一模型根目录（默认放 /data，下盘大）
+ARG MODELS_ROOT="/data/comfyui/models"
+
+ENV MODELS_ROOT=${MODELS_ROOT} \
+    WAN_MODEL_ID=${WAN_MODEL_ID} \
+    WAN_ROOT="${MODELS_ROOT}"
 
 WORKDIR /home/${UBUNTU_USER}
 
@@ -180,7 +183,7 @@ RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 2 ]; then
+if [ "$#" < 2 ]; then
   echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
   exit 1
 fi
@@ -239,6 +242,10 @@ HF
 
 RUN chmod +x /usr/local/bin/hf_download.sh
 
+# 在镜像里预建 /data/comfyui/models，并授权给 ubuntu
+RUN mkdir -p "${MODELS_ROOT}" && \
+    chown -R ${UBUNTU_USER}:${UBUNTU_USER} "$(dirname "${MODELS_ROOT}")"
+
 # 回到 ubuntu 用户继续后续步骤
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
@@ -262,7 +269,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 基础目录
+# 基础目录：这里不再真实建 ComfyUI/models，而是软链到 MODELS_ROOT
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -270,7 +277,8 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/models/clip \
       /home/${UBUNTU_USER}/ComfyUI/input \
       /home/${UBUNTU_USER}/output \
-      /home/${UBUNTU_USER}/ComfyUI/models
+      "${MODELS_ROOT}" && \
+    ln -sfn "${MODELS_ROOT}" "/home/${UBUNTU_USER}/ComfyUI/models"
 
 # ========= 构建阶段下载 Wan 模型（HF_TOKEN 必填，完整 snapshot，不再拆散） =========
 RUN set -euo pipefail && \
@@ -301,22 +309,22 @@ RUN set -euo pipefail && \
     fi && \
     echo "[WAN][build] Download finished, snapshot at ${MODEL_DIR}" && \
     \
-    # 小提示：给一个更短好记的 symlink，方便在 UI 里挑选
+    # 给一个更短好记的 symlink，ComfyUI 里好选
     ln -sfn "${MODEL_DIR}" "/home/${UBUNTU_USER}/ComfyUI/models/wan2.1" && \
     echo "[WAN][build] Symlink created: /home/${UBUNTU_USER}/ComfyUI/models/wan2.1 -> ${MODEL_DIR}"
 
 # ========= 补齐 Wan2.1 Fun Camera 1.3B 相关模型 =========
 RUN set -euo pipefail && \
-    MODELS_ROOT="/home/${UBUNTU_USER}/ComfyUI/models" && \
     REPACK_DIR="${MODELS_ROOT}/wan21_repack" && \
     echo "[WAN2.1-FUN][build] download Comfy-Org/Wan_2.1_ComfyUI_repackaged -> ${REPACK_DIR}" && \
     if [ -z "${HF_TOKEN:-}" ]; then \
       echo "[WAN2.1-FUN][build] WARNING: HF_TOKEN is empty, will try anonymous download (may fail if repo is gated)" >&2; \
     fi && \
-    # 1) 把 Comfy-Org 的 repack 仓库完整拉下来
+    \
+    # 1) 把 Comfy-Org 的 repack 仓库完整拉下来到 /data/comfyui/models/wan21_repack
     hf_download.sh "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "${REPACK_DIR}" "${HF_TOKEN}" && \
     \
-    # 2) 确保标准目录存在
+    # 2) 确保标准目录存在（都在 MODELS_ROOT 下）
     mkdir -p \
       "${MODELS_ROOT}/diffusion_models" \
       "${MODELS_ROOT}/vae" \
@@ -345,7 +353,6 @@ RUN set -euo pipefail && \
     fi && \
     \
     # 2.4 Diffusion: wan2.1_fun_camera_v1.1.3B_bf16.safetensors
-    #   这里不死磕具体子目录，直接在 repack 仓库里搜一遍 camera 1.3B bf16
     CAMERA_TARGET="${MODELS_ROOT}/diffusion_models/wan2.1_fun_camera_v1.1.3B_bf16.safetensors" && \
     if [ ! -f "${CAMERA_TARGET}" ]; then \
       CAMERA_SRC="$(find "${REPACK_DIR}" -maxdepth 4 -type f -name 'wan2.1_fun_camera*1.3B*bf16.safetensors' | head -n1 || true)" && \
@@ -358,7 +365,6 @@ RUN set -euo pipefail && \
     fi && \
     \
     echo "[WAN2.1-FUN][build] links created under ${MODELS_ROOT}"
-
 
 # ==============================
 # runtime
@@ -391,7 +397,7 @@ LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
 MODEL_ID="${WAN_MODEL_ID:-Wan-AI/Wan2.1-T2V-1.3B}"
-WAN_ROOT="${WAN_ROOT:-/home/ubuntu/ComfyUI/models}"
+WAN_ROOT="${WAN_ROOT:-/data/comfyui/models}"
 MODEL_NAME="$(basename "${MODEL_ID}")"
 MODEL_DIR="${WAN_ROOT}/${MODEL_NAME}"
 

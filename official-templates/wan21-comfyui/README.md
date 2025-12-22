@@ -11,12 +11,10 @@ cd containers/official-templates/wan21-comfyui
 
 # 构建标准版
 HF_TOKEN=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 \
-docker buildx bake wan21-comfyui \
-  --no-cache --push
+docker buildx bake wan21-comfyui --no-cache --push
 
 HF_TOKEN=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 \
-docker buildx bake wan21-comfyui-nunchaku \
-  --no-cache --push
+docker buildx bake wan21-comfyui-nunchaku --no-cache --push
 
 # 构建两个变体一起
 docker buildx bake wan21-all --no-cache --push
