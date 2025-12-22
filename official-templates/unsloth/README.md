@@ -33,6 +33,8 @@ docker buildx bake unsloth   --set unsloth.platform=linux/amd64
 cd containers/official-templates/unsloth
 
 docker buildx bake unsloth   --set TAG_SUFFIX=2025122201   --no-cache --push
+
+docker buildx bake unsloth --no-cache --push
 ```
 
 > 如果只是本地测试，把 `--push` 去掉即可。
