@@ -11,9 +11,8 @@ cd containers/official-templates/vllm-qwen
 
 docker buildx bake vllm-qwen --no-cache --push
 
-HF_TOKEN=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  # 或者写到文件里
-docker buildx bake vllm-qwen \
-  --no-cache --push
+HF_TOKEN=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 \ 
+docker buildx bake vllm-qwen --no-cache --push
 
 ```
 

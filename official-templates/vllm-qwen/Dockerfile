@@ -42,7 +42,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507" \
     HF_MODEL_ID="${HF_MODEL_ID}" \
     VLLM_HOST="0.0.0.0" \
-    VLLM_PORT="8000" \
+    VLLM_PORT="8001" \
     TP_SIZE="1" \
     MAX_MODEL_LEN="32768" \
     GPU_MEM_UTIL="0.92" \
@@ -55,7 +55,7 @@ WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
 # ==============================
-# System deps
+# System deps (UTC 固定时区)
 # ==============================
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -70,11 +70,14 @@ RUN apt-get update -y && \
     && git lfs install \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen && update-locale \
+    && ln -sf /usr/share/zoneinfo/UTC /etc/localtime \
+    && echo "Etc/UTC" > /etc/timezone \
+    && dpkg-reconfigure -f noninteractive tzdata \
     && mkdir -p /var/run/sshd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# root SSH 目录（fix start.sh authorized_keys）
+# root SSH 目录（给平台注入 key 用）
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 # ==============================
@@ -101,7 +104,8 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
     ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
     (curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-      /usr/bin/python /tmp/get-pip.py || true)
+      /usr/bin/python /tmp/get-pip.py || true) && \
+    rm -f /tmp/get-pip.py
 
 RUN python -m pip --version || \
     (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
@@ -125,13 +129,15 @@ RUN python -m pip install --no-cache-dir \
 
 # Flash 加速（按需）
 RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
-      python -m pip install --no-cache-dir flash-attn || true; fi
+      python -m pip install --no-cache-dir flash-attn || true; \
+    fi
 
 RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
-      python -m pip install --no-cache-dir flashinfer || true; fi
+      python -m pip install --no-cache-dir flashinfer || true; \
+    fi
 
 # ==============================
-# 构建阶段下载模型（使用构建参数 HF_TOKEN，拿不到就失败）
+# 构建阶段下载模型（使用 HF_TOKEN）
 # ==============================
 RUN set -euo pipefail && \
     mkdir -p "${HF_HOME}" && \
@@ -157,7 +163,7 @@ RUN set -euo pipefail && \
       --resume-download \
       --token "${HF_TOKEN}" && \
     \
-    # 3) 下载完成后再检查目录是否存在 & 非空，防止半拉子
+    # 3) 下载完成后检查目录
     if [[ ! -d "${MODEL_DIR}" ]]; then \
       echo "[build] ERROR: MODEL_DIR ${MODEL_DIR} does not exist after download" >&2; \
       exit 3; \
@@ -168,12 +174,14 @@ RUN set -euo pipefail && \
     fi && \
     echo "[build] Model download completed: ${MODEL_DIR}"
 
-
 # ==============================
 # Copy platform start.sh (from bake context)
 # ==============================
-COPY --from=scripts start.sh /start.sh
-RUN chmod +x /start.sh && mv /start.sh /start_platform.sh
+COPY --from=scripts start.sh /start_platform.sh
+RUN chmod +x /start_platform.sh
+
+# 拷贝品牌文案
+COPY --from=logo yotta.txt /etc/yotta.txt
 
 # ==============================
 # post_start.sh: 只负责检查 & 启动 vLLM（不再下载）
@@ -232,7 +240,7 @@ if [[ "${missing}" -eq 1 ]]; then
 fi
 
 # ------------------------------
-# Ensure single vLLM instance (avoid port drift 8000->8002)
+# Ensure single vLLM instance
 # ------------------------------
 pkill -f "vllm.entrypoints.openai.api_server" || true
 sleep 1
@@ -241,7 +249,7 @@ sleep 1
 # Port conflict handling (HTTP port)
 # ------------------------------
 if lsof -i :"${VLLM_PORT}" >/dev/null 2>&1; then
-  echo "[post_start] ERROR: Port ${VLLM_PORT} already in use. Set VLLM_PORT to another value (default is 8000)."
+  echo "[post_start] ERROR: Port ${VLLM_PORT} already in use. Set VLLM_PORT to another value (default is 8001)."
   lsof -i :"${VLLM_PORT}" || true
   exit 1
 fi
@@ -256,7 +264,6 @@ fi
 
 echo "[post_start] Starting vLLM with model path: ${MODEL_DIR}"
 
-export VLLM_PORT="${VLLM_INTERNAL_PORT:-29500}"
 nohup python -m vllm.entrypoints.openai.api_server \
   --host "${VLLM_HOST}" \
   --port "${VLLM_PORT}" \
@@ -282,13 +289,13 @@ set -euo pipefail
 # 先跑平台原生启动（SSH/Nginx/用户注入等）
 /start_platform.sh &
 
-# 给平台服务一点点启动窗口（避免抢资源时偶发问题）
+# 给平台服务一点点启动窗口
 sleep 1
 
 # 再启动 vLLM（仅检查 + 启动，不再下载模型）
 /post_start.sh
 
-# 保持容器前台：把平台脚本拉到前台（或阻塞）
+# 保持容器前台
 wait -n
 EOF
 
@@ -302,7 +309,7 @@ RUN chmod +x /post_start.sh /start.sh && \
 # ==============================
 # Ports & Entrypoint
 # ==============================
-EXPOSE 22 8000
+EXPOSE 22 8001
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/start.sh"]

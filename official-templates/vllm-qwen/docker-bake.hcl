@@ -88,14 +88,11 @@ target "vllm-qwen" {
     PYTHON_VERSION = "${PYTHON_VERSION}"
     UBUNTU_USER    = "ubuntu"
 
-    # HF 模型 ID 传给 Dockerfile（用于构建阶段下载）
-    HF_MODEL_ID    = "${HF_MODEL_ID}"
+    HF_MODEL_ID = "${HF_MODEL_ID}"
 
-    # optional build-time accel
     INSTALL_FLASHATTN  = "${INSTALL_FLASHATTN}"
     INSTALL_FLASHINFER = "${INSTALL_FLASHINFER}"
 
     HF_TOKEN = HF_TOKEN
   }
-
 }
