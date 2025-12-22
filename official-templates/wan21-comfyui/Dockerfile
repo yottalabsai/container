@@ -183,7 +183,7 @@ RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" < 2 ]; then
+if [ "$#" -lt 2 ]; then
   echo "Usage: hf_download.sh <REPO_ID> <TARGET_DIR> [TOKEN]" >&2
   exit 1
 fi
