@@ -113,9 +113,12 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
 
 # 暴露端口
-EXPOSE 22       # SSH
-EXPOSE 80       # Nginx
-EXPOSE 8888     # Jupyter
+# SSH
+EXPOSE 22
+# Nginx
+EXPOSE 80
+# Jupyter
+EXPOSE 8888
 
 # 切到 ubuntu 用户
 USER ubuntu
