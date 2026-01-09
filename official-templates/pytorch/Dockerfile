@@ -4,8 +4,12 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
+# 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
 ARG PYTHON_VERSION="3.11.14"
+
+# PyTorch 2.9：这里用 nightly cu128（按你原来的方式）
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+
 ARG NCCL_TESTS_VERSION="v2.13.11"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -44,7 +48,7 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# Python 3.11 (build from source)
+# Python 3.11 (build from source, with ensurepip)
 # ===============================
 RUN set -eux; \
     PY_MM="$(echo "${PYTHON_VERSION}" | awk -F. '{print $1"."$2}')"; \
@@ -71,27 +75,24 @@ RUN set -eux; \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# PyTorch 2.9 (nightly cu128)
+# PyTorch (nightly cu128)
 # ===============================
 RUN python -m pip install --no-cache-dir ${TORCH}
 
 # ===============================
-# Jupyter
+# Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
 # ===============================
 RUN python -m pip install --no-cache-dir \
-      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
+      huggingface-hub datasets
 
 # ===============================
-# NCCL tests (auto MPI)
+# NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
 # ===============================
 RUN set -eux; \
     git clone --branch "${NCCL_TESTS_VERSION}" --depth 1 \
       https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests; \
-    if command -v mpicc >/dev/null 2>&1; then \
-      make -C /opt/nccl-tests -j"$(nproc)" MPI=1; \
-    else \
-      make -C /opt/nccl-tests -j"$(nproc)" MPI=0; \
-    fi; \
+    make -C /opt/nccl-tests -j"$(nproc)" MPI=0; \
     ln -sf /opt/nccl-tests/build/* /usr/local/bin/; \
     rm -rf /opt/nccl-tests/.git
 
@@ -104,7 +105,7 @@ RUN useradd -ms /bin/bash ubuntu && \
     echo "ubuntu:ubuntu" | chpasswd
 
 # ===============================
-# SSH config
+# SSH config (start.sh 负责启动 sshd；这里确保配置允许密码登录)
 # ===============================
 RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -116,10 +117,10 @@ RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/
 RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 
 # ===============================
-# start.sh (from buildx context)
+# start.sh (from buildx bake context "scripts")
 # ===============================
 COPY --from=scripts start.sh /start.sh
-RUN chmod +x /start.sh
+RUN chmod 755 /start.sh
 
 # ===============================
 # nginx / branding
@@ -132,12 +133,12 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # ===============================
-# Ports
+# Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
 # ===============================
 EXPOSE 22 80 8888
 
 # ===============================
-# Entrypoint
+# Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
 # ===============================
 USER root
 WORKDIR /root
