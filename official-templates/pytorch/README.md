@@ -9,7 +9,7 @@ Example:
 ```bash
 cd containers/official-templates/pytorch
 
-docker buildx bake 280-py311-cuda1281-cudnn-devel-ubuntu2204 --set 280-py311-cuda1281-cudnn-devel-ubuntu2204.push=true
+docker buildx bake pytorch280 --no-cache --push
 ```
 
 ## Exposed Ports
