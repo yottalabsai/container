@@ -7,11 +7,11 @@ group "default" {
 
 group "cuda" {
   targets   = ["pytorch290"]
-  platforms = ["linux/amd64", "linux/arm64"]
+  platforms = ["linux/amd64"]
 }
 
 target "pytorch290" {
-  platforms  = ["linux/amd64", "linux/arm64"]
+  platforms  = ["linux/amd64"]
   dockerfile = "Dockerfile"
 
   tags = [
