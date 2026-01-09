@@ -9,7 +9,9 @@ Example:
 ```bash
 cd containers/official-templates/pytorch
 
-docker buildx bake pytorch280 --no-cache --push
+docker buildx bake pytorch290 --no-cache --push
+
+docker buildx bake pytorch290 --push
 ```
 
 ## Exposed Ports
