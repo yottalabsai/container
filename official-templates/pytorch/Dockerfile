@@ -26,6 +26,7 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git acl wget curl bash libgl1 software-properties-common \
       locales tzdata \
+      python3-pip \
       openssh-server nginx sudo \
       tmux vim zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd \
@@ -47,8 +48,7 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
         "python${PYTHON_VERSION}-venv" && \
       ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
       ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3 && \
-      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
-      python get-pip.py && rm -f get-pip.py ; \
+      python -m pip install --upgrade pip ; \
     else \
       echo "PYTHON_VERSION not set, using system python3" && \
       python3 -m ensurepip --upgrade || true ; \
