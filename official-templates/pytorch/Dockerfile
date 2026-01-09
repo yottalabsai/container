@@ -30,7 +30,7 @@ RUN apt-get update -y && \
       tmux vim zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd \
       build-essential pkg-config \
-      openmpi-bin libopenmpi-dev \
+      openmpi-bin libopenmpi-dev libmpi-dev \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     mkdir -p /var/run/sshd && \
     apt-get autoremove -y && \
@@ -73,13 +73,14 @@ RUN python -m pip install --upgrade --no-cache-dir \
       "huggingface_hub[cli]" \
       datasets
 
-# ===== ADD: NCCL tests (build from source) =====
-# 构建产物会软链到 /usr/local/bin，直接用 all_reduce_perf 等命令
+# ===== NCCL tests (no MPI, safest) =====
 RUN set -eux; \
-    git clone --branch "${NCCL_TESTS_VERSION}" --depth 1 https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests; \
-    make -C /opt/nccl-tests -j"$(nproc)" MPI=1; \
+    git clone --branch "${NCCL_TESTS_VERSION}" --depth 1 \
+      https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests; \
+    make -C /opt/nccl-tests -j"$(nproc)" MPI=0; \
     ln -sf /opt/nccl-tests/build/* /usr/local/bin/; \
     rm -rf /opt/nccl-tests/.git
+
 
 # 创建 ubuntu 用户 + sudo 权限
 RUN useradd -ms /bin/bash ubuntu && \
