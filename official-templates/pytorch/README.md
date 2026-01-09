@@ -12,6 +12,15 @@ cd containers/official-templates/pytorch
 docker buildx bake pytorch290 --no-cache --push
 
 docker buildx bake pytorch290 --push
+
+nohup docker buildx bake \
+  --allow=fs.read=/root/projects/container/container-template \
+  pytorch290 \
+  --no-cache \
+  --push \
+  > bake-pytorch290.log 2>&1 &
+
+
 ```
 
 ## Exposed Ports
