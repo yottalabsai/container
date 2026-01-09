@@ -30,7 +30,7 @@ RUN apt-get update -y && \
       tmux vim zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd \
       build-essential pkg-config \
-      openmpi-bin libopenmpi-dev libmpi-dev \
+      openmpi-bin libopenmpi-dev \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     mkdir -p /var/run/sshd && \
     apt-get autoremove -y && \
