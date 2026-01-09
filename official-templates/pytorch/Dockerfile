@@ -72,10 +72,9 @@ RUN sed -i \
       /etc/ssh/sshd_config
 
 # ===============================
-# Copy container-template (start.sh 不修改)
-# ===============================
-# 这里假设 buildx bake 已经给了 contexts
-COPY --chmod=755 scripts/start.sh /start.sh
+# buildx bake 已经给了 contexts
+COPY --from=scripts start.sh /start.sh
+RUN chmod +x /start.sh
 
 # ===============================
 # Ports
