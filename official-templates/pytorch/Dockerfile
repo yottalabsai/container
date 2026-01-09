@@ -4,6 +4,9 @@ FROM ${BASE_IMAGE}
 ARG TORCH=""
 ARG PYTHON_VERSION="3.11"
 
+# ===== ADD: nccl-tests version (optional) =====
+ARG NCCL_TESTS_VERSION="v2.13.11"
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -17,6 +20,7 @@ WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
 # 系统依赖 + SSH + Nginx + 工具
+# ===== ADD: jq tree rsync netcat-openbsd + build-essential/pkg-config + OpenMPI (for nccl-tests) =====
 RUN apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
@@ -24,6 +28,9 @@ RUN apt-get update -y && \
       locales tzdata \
       openssh-server nginx sudo \
       tmux vim zsh zip unzip less procps net-tools htop \
+      jq tree rsync netcat-openbsd \
+      build-essential pkg-config \
+      openmpi-bin libopenmpi-dev \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && locale-gen && \
     mkdir -p /var/run/sshd && \
     apt-get autoremove -y && \
@@ -59,6 +66,20 @@ RUN if [ -n "${TORCH}" ]; then \
 # 安装 Jupyter 相关
 RUN python -m pip install --upgrade --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+
+# ===== ADD: Hugging Face CLI + datasets-cli =====
+# huggingface-cli / hf 来自 huggingface_hub；datasets-cli 来自 datasets
+RUN python -m pip install --upgrade --no-cache-dir \
+      "huggingface_hub[cli]" \
+      datasets
+
+# ===== ADD: NCCL tests (build from source) =====
+# 构建产物会软链到 /usr/local/bin，直接用 all_reduce_perf 等命令
+RUN set -eux; \
+    git clone --branch "${NCCL_TESTS_VERSION}" --depth 1 https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests; \
+    make -C /opt/nccl-tests -j"$(nproc)" MPI=1; \
+    ln -sf /opt/nccl-tests/build/* /usr/local/bin/; \
+    rm -rf /opt/nccl-tests/.git
 
 # 创建 ubuntu 用户 + sudo 权限
 RUN useradd -ms /bin/bash ubuntu && \

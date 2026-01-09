@@ -10,7 +10,7 @@ ARG AITK_PORT="8675"
 ARG TORCH_CHANNEL="stable"
 ARG TORCH_VERSION="2.7.0"
 ARG TORCH_VISION_VERSION="0.22.0"
-ARG TORCH_CUDA="cu128"
+ARG TORCH_CUDA="cu126"
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
 # ==============================
