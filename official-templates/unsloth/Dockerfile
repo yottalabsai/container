@@ -75,6 +75,7 @@ RUN set -eux; \
 
 # ---- COPY 官方模板 start.sh（来自 container-template/start.sh）----
 COPY --from=scripts start.sh /start.sh
+COPY --from=scripts yotta.txt /etc/yotta.txt
 RUN chmod 755 /start.sh
 
 # ---- 关键兜底：平台覆盖 PID1/ENTRYPOINT 时自动启动 sshd ----
