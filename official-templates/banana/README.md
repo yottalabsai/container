@@ -22,6 +22,8 @@ From this folder:
 
 ```bash
 docker buildx bake
+
+docker buildx bake banana --no-cache --push
 ```
 
 Or classic build:
