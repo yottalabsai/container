@@ -1,4 +1,4 @@
-# ==============================
+
 # Unsloth LLM Fine-tuning 镜像（official-templates/unsloth）
 # - 底座：官方 unsloth/unsloth
 # - 叠加：工具 + SSH + nccl-tests + branding
@@ -18,12 +18,11 @@ USER root
 WORKDIR /workspace
 
 # ---- 关键补丁：修复某些 base 镜像中 /var/lib/apt/lists 权限异常导致的 apt-get update 失败 ----
-# 你遇到的：/var/lib/apt/lists/partial missing + Permission denied
 RUN set -eux; \
     mkdir -p /var/lib/apt/lists/partial; \
-    chmod -R 755 /var/lib/apt/lists || true
+    chmod 755 /var/lib/apt/lists /var/lib/apt/lists/partial
 
-# ---- 实用工具 + SSH 依赖 ----
+# ---- 实用工具 + SSH 依赖 + MPI 开发库（nccl-tests 需要）----
 RUN set -eux; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends \
@@ -54,14 +53,9 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # ---- HuggingFace CLI / Datasets CLI ----
-# huggingface-cli 来自 huggingface_hub；datasets-cli 来自 datasets
 RUN set -eux; \
-    python3 -m pip install --no-cache-dir -U pip setuptools wheel; \
-    python3 -m pip install --no-cache-dir \
-      huggingface_hub \
-      datasets
-
-# ---- nccl-tests（照你原来“编译安装”的风格）----
+    pip install --no-cache-dir huggingface_hub datasets
+# ---- nccl-tests（不使用 MPI，更简单）----
 ARG NCCL_TESTS_VERSION="v2.13.11"
 ARG INSTALL_NCCL_TESTS="1"
 RUN set -eux; \
@@ -75,49 +69,50 @@ RUN set -eux; \
 
 # ---- SSH 配置：默认更安全（推荐商用：key-only）----
 RUN set -eux; \
-    sed -i \
-      -e 's@^#\?PermitRootLogin .*@PermitRootLogin prohibit-password@g' \
-      -e 's@^#\?PasswordAuthentication .*@PasswordAuthentication no@g' \
-      -e 's@^#\?PubkeyAuthentication .*@PubkeyAuthentication yes@g' \
-      -e 's@^#\?UsePAM .*@UsePAM yes@g' \
-      /etc/ssh/sshd_config
+    sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config; \
+    sed -i 's/^#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config; \
+    sed -i 's/^#PermitRootLogin prohibit-password/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
 
 # ---- COPY 官方模板 start.sh（来自 container-template/start.sh）----
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
-# ---- 关键兜底：平台覆盖 PID1/ENTRYPOINT 时，你进入容器通常是打开一个 shell ----
-# 这时 /start.sh 不会执行，所以在 bash 启动时自动确保 sshd 起来
+# ---- 关键兜底：平台覆盖 PID1/ENTRYPOINT 时自动启动 sshd ----
 RUN cat >> /etc/bash.bashrc <<'EOS'
-
-# ---- Yotta: auto-start sshd when a shell is opened (platform may override PID1) ----
+# Yotta: auto-start sshd when opening a shell (if platform overrides PID1)
 if [ "${SSH_ENABLE:-1}" != "0" ] && command -v sshd >/dev/null 2>&1; then
-  if ! pgrep -x sshd >/dev/null 2>&1; then
-    mkdir -p /var/run/sshd
-    [ -f /etc/ssh/ssh_host_rsa_key ] || ssh-keygen -A >/dev/null 2>&1 || true
-    /usr/sbin/sshd -p "${SSH_PORT:-22}" >/dev/null 2>&1 || true
+  if ! pgrep -x sshd > /dev/null 2>&1; then
+    sudo /usr/sbin/sshd -p 22 2>/dev/null || true
   fi
 fi
-# ------------------------------------------------------------------------------------
 EOS
 
-# ---- 你的“商业化元素” ----
-# 1) 更通用：/etc/profile.d 对 login shell / ssh / exec 更稳
+# ---- Yotta 商业化元素 ----
+# 1) 创建 branding 文本
+RUN echo "YottaLabs AI - Unsloth Training Platform" > /etc/yotta.txt
+
+# 2) /etc/profile.d - 对所有登录场景生效 (login shell / ssh / exec)
 RUN printf '%s\n' \
+  '#!/bin/bash' \
   'cat /etc/yotta.txt 2>/dev/null || true' \
-  'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' \
+  'echo -e "\n==================================="' \
+  'echo -e "Unsloth Fine-tuning Container"' \
+  'echo -e "Documentation: \033[1;34mhttps://www.yottalabs.ai/\033[0m"' \
+  'echo -e "===================================\n"' \
   > /etc/profile.d/yotta.sh && chmod +x /etc/profile.d/yotta.sh
 
-# 2) 按你要求：追加到 root bashrc（仅对 root 的交互 bash 生效）
+# 3) /root/.bashrc - 对 root 交互式 bash 生效
 RUN touch /root/.bashrc && \
-    echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
+    echo '' >> /root/.bashrc && \
+    echo '# Yotta Branding' >> /root/.bashrc && \
+    echo 'cat /etc/yotta.txt 2>/dev/null || true' >> /root/.bashrc && \
+    echo 'echo -e "\n==================================="' >> /root/.bashrc && \
+    echo 'echo -e "Unsloth Fine-tuning Container"' >> /root/.bashrc && \
+    echo 'echo -e "Documentation: \033[1;34mhttps://www.yottalabs.ai/\033[0m"' >> /root/.bashrc && \
+    echo 'echo -e "===================================\n"' >> /root/.bashrc
 
-# ---- 你要求的 chmod（允许脚本不存在：避免 build fail）----
-RUN chmod +x /post_start.sh /start.sh 2>/dev/null || true
-
+# ---- 暴露端口 ----
 EXPOSE 22 8888
 
-# 正常情况下走官方模板的 start.sh
-# 平台若覆盖 ENTRYPOINT/CMD，上面的 bash.bashrc 兜底会在你打开 shell 时拉起 sshd
+# ---- 默认入口 ----
 ENTRYPOINT ["/start.sh"]
