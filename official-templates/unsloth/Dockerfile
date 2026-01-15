@@ -1,197 +1,116 @@
-# ==============================
-# Unsloth LLM Fine-tuning 镜像（Yotta 扩展版）
-# 底座：官方 unsloth/unsloth
-# ==============================
-ARG BASE_IMAGE="unsloth/unsloth:latest"
+ARG BASE_IMAGE=pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+FROM ${BASE_IMAGE}
 
-FROM ${BASE_IMAGE} AS base
+SHELL ["/bin/bash", "-lc"]
 
-SHELL ["/bin/bash","-o","pipefail","-c"]
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# 这里不再动 PyTorch / Unsloth 本体，只叠加工具 + branding
-
-# ==============================
-# runtime: 小工具 + Branding + 启动体验
-# ==============================
-FROM base AS runtime
-
-USER root
-WORKDIR /workspace
-
-# 实用小工具
+# -----------------------------------------------------------------------------
+# System packages
+# -----------------------------------------------------------------------------
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
-      vim \
-      htop \
-      tmux \
-      nano \
-      iputils-ping \
-      lsof \
-      tree \
-      jq \
-      net-tools \
-      netcat-openbsd \
-      rsync \
-      openssh-server \
-      ca-certificates \
-      git \
-      curl && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+      ca-certificates curl wget git \
+      build-essential pkg-config \
+      openssh-server sudo \
+      nginx \
+      vim jq tree htop tmux rsync \
+      netcat-openbsd procps net-tools \
+      iproute2 \
+      python3 python3-pip python3-venv \
+    && mkdir -p /var/run/sshd \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Python CLI 工具：huggingface-cli / datasets-cli
-RUN python -m pip install --no-cache-dir -U \
+# -----------------------------------------------------------------------------
+# Python packages (Unsloth + CLI tools)
+# NOTE: Unsloth install varies by CUDA/Torch; adjust if you pin different stack.
+# -----------------------------------------------------------------------------
+RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
+    python3 -m pip install --no-cache-dir \
       huggingface_hub \
-      datasets
+      datasets \
+      accelerate \
+      safetensors \
+      bitsandbytes \
+      transformers \
+      peft \
+      trl \
+      sentencepiece
 
-# nccl-tests：优先用系统包；如果源里没有则从源码构建（不依赖 MPI）
-RUN set -eux; \
-    apt-get update -y; \
-    if apt-cache show nccl-tests >/dev/null 2>&1; then \
-      apt-get install -y --no-install-recommends nccl-tests; \
-    else \
-      apt-get install -y --no-install-recommends build-essential; \
-      rm -rf /tmp/nccl-tests && git clone --depth 1 https://github.com/NVIDIA/nccl-tests.git /tmp/nccl-tests; \
-      make -C /tmp/nccl-tests MPI=0; \
-      cp -a /tmp/nccl-tests/build/* /usr/local/bin/; \
-      rm -rf /tmp/nccl-tests; \
-    fi; \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+# (Optional) Unsloth itself
+# If you have a pinned/known-good version, replace "unsloth" with "unsloth==x.y.z"
+RUN python3 -m pip install --no-cache-dir unsloth || true
 
-# /yotta 工具目录 + 简单系统信息脚本
-RUN mkdir -p /yotta/tools && \
-    echo "#!/usr/bin/env bash" > /yotta/tools/info.sh && \
-    echo "echo '[Yotta] GPU:'; nvidia-smi || true" >> /yotta/tools/info.sh && \
-    echo "echo '[Yotta] Python:'; python -V" >> /yotta/tools/info.sh && \
-    echo "echo '[Yotta] Unsloth import test:'" >> /yotta/tools/info.sh && \
-    echo "python - << 'PY'" >> /yotta/tools/info.sh && \
-    echo "import unsloth" >> /yotta/tools/info.sh && \
-    echo "print('  module:', unsloth)" >> /yotta/tools/info.sh && \
-    echo "print('  version:', getattr(unsloth, '__version__', 'unknown'))" >> /yotta/tools/info.sh && \
-    echo "PY" >> /yotta/tools/info.sh && \
-    chmod +x /yotta/tools/info.sh && \
-    ln -s /yotta/tools/info.sh /usr/local/bin/yotta-info
+# -----------------------------------------------------------------------------
+# NCCL tests (best effort)
+# - Some bases may already include NCCL runtime; this builds nccl-tests binaries.
+# -----------------------------------------------------------------------------
+ARG INSTALL_NCCL_TESTS=1
+RUN if [[ "${INSTALL_NCCL_TESTS}" == "1" ]]; then \
+      set -eux; \
+      mkdir -p /opt/nccl-tests && \
+      git clone --depth 1 https://github.com/NVIDIA/nccl-tests /opt/nccl-tests/src && \
+      make -C /opt/nccl-tests/src MPI=0 -j"$(nproc)" && \
+      ln -sf /opt/nccl-tests/src/build/* /usr/local/bin/ || true; \
+    fi
 
-ENV PATH="/yotta/tools:${PATH}"
+# -----------------------------------------------------------------------------
+# SSH hardening defaults (key-based by default)
+# -----------------------------------------------------------------------------
+RUN sed -i \
+      -e 's@^#\?PermitRootLogin .*@PermitRootLogin prohibit-password@g' \
+      -e 's@^#\?PasswordAuthentication .*@PasswordAuthentication no@g' \
+      -e 's@^#\?PubkeyAuthentication .*@PubkeyAuthentication yes@g' \
+      -e 's@^#\?UsePAM .*@UsePAM yes@g' \
+      /etc/ssh/sshd_config
 
-# Branding 文案
-RUN echo "YottaLabs AI - Unsloth Training Platform" > /etc/yotta.txt
+# -----------------------------------------------------------------------------
+# Copy official start script (same behavior as pytorch template)
+# -----------------------------------------------------------------------------
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
 
-# ==============================
-# SSH：容器启动时拉起 sshd（可通过环境变量控制）
-# - SSH_ENABLE=1/0 (默认 1)
-# - SSH_PASSWORD=...   （设置后开启密码登录）
-# - SSH_PORT=22
-# ==============================
-RUN mkdir -p /var/run/sshd && \
-    sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
-    sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config && \
-    echo 'UseDNS no' >> /etc/ssh/sshd_config && \
-    echo 'ClientAliveInterval 60' >> /etc/ssh/sshd_config && \
-    echo 'ClientAliveCountMax 3' >> /etc/ssh/sshd_config
+# -----------------------------------------------------------------------------
+# CRITICAL: Fallback auto-start sshd when platform overrides ENTRYPOINT/CMD
+# This matches your real situation: PID1 is platform script, you enter via shell.
+# When a shell opens, we ensure sshd is running.
+# -----------------------------------------------------------------------------
+RUN cat >> /etc/bash.bashrc <<'EOS'
 
-EXPOSE 22
-
-RUN cat >/yotta/entrypoint.sh <<'EOS'
-#!/usr/bin/env bash
-set -euo pipefail
-
-: "${SSH_ENABLE:=1}"
-: "${SSH_PORT:=22}"
-
-# 允许编排器在启动后执行一些自检/欢迎信息
-if [ -x /post_start.sh ]; then
-  /post_start.sh || true
-fi
-
-if [ "${SSH_ENABLE}" != "0" ] && command -v sshd >/dev/null 2>&1; then
-  mkdir -p /var/run/sshd
-
-  # 生成 host key（首次启动）
-  if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
-    ssh-keygen -A
+# ---- Yotta: auto-start sshd when a shell is opened (platform may override PID1) ----
+if [ "${SSH_ENABLE:-1}" != "0" ] && command -v sshd >/dev/null 2>&1; then
+  if ! pgrep -x sshd >/dev/null 2>&1; then
+    mkdir -p /var/run/sshd
+    # Generate host keys if missing
+    [ -f /etc/ssh/ssh_host_rsa_key ] || ssh-keygen -A >/dev/null 2>&1 || true
+    /usr/sbin/sshd -p "${SSH_PORT:-22}" >/dev/null 2>&1 || true
   fi
-
-  # 如果设置了 SSH_PASSWORD，则允许密码登录（更方便但更不安全）
-  if [ -n "${SSH_PASSWORD:-}" ]; then
-    echo "root:${SSH_PASSWORD}" | chpasswd
-    sed -i 's/^PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-  fi
-
-  # 以后台方式启动 sshd
-  /usr/sbin/sshd -p "${SSH_PORT}"
-  echo "[Yotta] sshd started on port ${SSH_PORT} (SSH_ENABLE=${SSH_ENABLE})"
 fi
-
-# 交给镜像原本的 CMD（我们不强行改你的工作流）
-exec "$@"
+# ------------------------------------------------------------------------------------
 EOS
 
-RUN chmod +x /yotta/entrypoint.sh
+# -----------------------------------------------------------------------------
+# Your branding / commercialization elements
+# -----------------------------------------------------------------------------
+# If you have /yotta/tools/info.sh or /etc/yotta.txt baked into image, keep it.
+RUN printf '%s\n' \
+  'cat /etc/yotta.txt 2>/dev/null || true' \
+  'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' \
+  > /etc/profile.d/yotta.sh && chmod +x /etc/profile.d/yotta.sh
 
-# 交互 shell：不改官方 CMD，只作为可选入口
-RUN cat >/start.sh <<'EOS'
-#!/usr/bin/env bash
-set -e
-
-echo "[Unsloth x Yotta] interactive shell."
-
-# 官方镜像里一般有 venv，能用就用，不能用就算了
-if [ -f "/opt/venv/bin/activate" ]; then
-  source /opt/venv/bin/activate || true
-fi
-
-echo
-echo "==============================="
-echo "  Unsloth Training Shell (Yotta)"
-echo "==============================="
-echo
-echo "Try:"
-echo "  yotta-info"
-echo
-echo "  python - << 'PY'"
-echo "  from unsloth import FastLanguageModel"
-echo '  model, tokenizer = FastLanguageModel.from_pretrained('
-echo '      model_name=\"unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit\",'
-echo '      max_seq_length=2048,'
-echo '      dtype=None,'
-echo '      load_in_4bit=True,'
-echo '  )'
-echo "  PY"
-echo
-
-bash
-EOS
-
-# 预留给编排器用的 post_start.sh（如果以后想在外面调用）
-RUN cat >/post_start.sh <<'EOS'
-#!/usr/bin/env bash
-set -e
-
-echo "[Unsloth x Yotta] container started."
-
-echo "[INFO] Python: $(python --version)"
-echo "[INFO] Torch:  $(python - <<'P'
-import torch
-print(torch.__version__)
-P
-)"
-echo "[INFO] CUDA available: $(python - <<'P'
-import torch
-print(torch.cuda.is_available())
-P
-)"
-EOS
-
-# 商业化元素：登录提示 + docs
-RUN chmod +x /post_start.sh /start.sh && \
+# Keep your exact bashrc injections too (as requested)
+RUN touch /root/.bashrc && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
-    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc && \
-    echo '' >> /etc/bash.bashrc && \
-    echo 'echo -e "\033[1;35mWelcome to Yotta Unsloth Training Environment!\033[0m"' >> /etc/bash.bashrc && \
-    echo 'echo -e "Type: \033[1;36myotta-info\033[0m for quick system info."' >> /etc/bash.bashrc
+    echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# 入口：先拉起 sshd（可用 SSH_ENABLE/SSH_PASSWORD/SSH_PORT 控制），然后把控制权交回镜像原本的 CMD。
-# 需要用我们自带 shell 时，可运行：
-#   docker run --entrypoint /start.sh ...
-ENTRYPOINT ["/yotta/entrypoint.sh"]
+# -----------------------------------------------------------------------------
+# Ports (SSH / Jupyter / Nginx)
+# -----------------------------------------------------------------------------
+EXPOSE 22 8888 80
+
+# Default behavior: run official start.sh (when ENTRYPOINT/CMD is respected)
+# If platform overrides, bash.bashrc fallback will still start sshd when you open a shell.
+ENTRYPOINT ["/start.sh"]
