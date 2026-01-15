@@ -1,3 +1,17 @@
+# official-templates/unsloth/Dockerfile
+#
+# IMPORTANT:
+# - This Dockerfile expects build context to be repo root (so it can COPY container-template/start.sh)
+#   Example:
+#     docker build -f official-templates/unsloth/Dockerfile -t unsloth-ssh .
+#
+# Goals:
+# - Install tools: vim, jq, tree, htop, tmux, rsync
+# - Install/enable SSH (openssh-server) + robust autostart (even if platform overrides entrypoint)
+# - Install huggingface-cli, datasets-cli
+# - Build nccl-tests
+# - Add Yotta branding into shells
+
 ARG BASE_IMAGE=pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
 FROM ${BASE_IMAGE}
 
@@ -16,7 +30,6 @@ RUN apt-get update -y && \
       ca-certificates curl wget git \
       build-essential pkg-config \
       openssh-server sudo \
-      nginx \
       vim jq tree htop tmux rsync \
       netcat-openbsd procps net-tools \
       iproute2 \
@@ -25,8 +38,9 @@ RUN apt-get update -y && \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# Python packages (Unsloth + CLI tools)
-# NOTE: Unsloth install varies by CUDA/Torch; adjust if you pin different stack.
+# Python packages: CLI tools + common LLM stack deps
+# - huggingface-cli comes from huggingface_hub
+# - datasets-cli comes from datasets
 # -----------------------------------------------------------------------------
 RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
     python3 -m pip install --no-cache-dir \
@@ -34,19 +48,17 @@ RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
       datasets \
       accelerate \
       safetensors \
-      bitsandbytes \
       transformers \
       peft \
       trl \
-      sentencepiece
+      sentencepiece \
+      bitsandbytes
 
-# (Optional) Unsloth itself
-# If you have a pinned/known-good version, replace "unsloth" with "unsloth==x.y.z"
+# Optional: Unsloth (best-effort; may depend on CUDA/Torch combo)
 RUN python3 -m pip install --no-cache-dir unsloth || true
 
 # -----------------------------------------------------------------------------
-# NCCL tests (best effort)
-# - Some bases may already include NCCL runtime; this builds nccl-tests binaries.
+# NCCL tests (best-effort compile)
 # -----------------------------------------------------------------------------
 ARG INSTALL_NCCL_TESTS=1
 RUN if [[ "${INSTALL_NCCL_TESTS}" == "1" ]]; then \
@@ -58,25 +70,27 @@ RUN if [[ "${INSTALL_NCCL_TESTS}" == "1" ]]; then \
     fi
 
 # -----------------------------------------------------------------------------
-# SSH hardening defaults (key-based by default)
+# SSH defaults: key-based login on by default, password auth off
 # -----------------------------------------------------------------------------
 RUN sed -i \
-      -e 's@^#\?PermitRootLogin .*@PermitRootLogin prohibit-password@g' \
-      -e 's@^#\?PasswordAuthentication .*@PasswordAuthentication no@g' \
-      -e 's@^#\?PubkeyAuthentication .*@PubkeyAuthentication yes@g' \
-      -e 's@^#\?UsePAM .*@UsePAM yes@g' \
-      /etc/ssh/sshd_config
+  -e 's@^#\?PermitRootLogin .*@PermitRootLogin prohibit-password@g' \
+  -e 's@^#\?PasswordAuthentication .*@PasswordAuthentication no@g' \
+  -e 's@^#\?PubkeyAuthentication .*@PubkeyAuthentication yes@g' \
+  /etc/ssh/sshd_config
+
 
 # -----------------------------------------------------------------------------
-# Copy official start script (same behavior as pytorch template)
+# Copy official start script (from repo root): container-template/start.sh
+# This matches "official-templates/pytorch/Dockerfile" pattern you referenced.
 # -----------------------------------------------------------------------------
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
+COPY --from=scripts start.sh /start.sh
+RUN chmod 755 /start.sh
 
 # -----------------------------------------------------------------------------
-# CRITICAL: Fallback auto-start sshd when platform overrides ENTRYPOINT/CMD
-# This matches your real situation: PID1 is platform script, you enter via shell.
-# When a shell opens, we ensure sshd is running.
+# CRITICAL FALLBACK:
+# Your platform may override ENTRYPOINT/CMD and run its own PID1 script.
+# In that case, start.sh won't run. But you still open a shell to get in.
+# So: auto-start sshd from /etc/bash.bashrc whenever a shell is opened.
 # -----------------------------------------------------------------------------
 RUN cat >> /etc/bash.bashrc <<'EOS'
 
@@ -93,24 +107,26 @@ fi
 EOS
 
 # -----------------------------------------------------------------------------
-# Your branding / commercialization elements
+# Branding / commercialization elements
+# - /etc/profile.d applies broadly (ssh, bash, login shells)
+# - also inject into root bashrc as you requested
 # -----------------------------------------------------------------------------
-# If you have /yotta/tools/info.sh or /etc/yotta.txt baked into image, keep it.
 RUN printf '%s\n' \
   'cat /etc/yotta.txt 2>/dev/null || true' \
   'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' \
   > /etc/profile.d/yotta.sh && chmod +x /etc/profile.d/yotta.sh
 
-# Keep your exact bashrc injections too (as requested)
 RUN touch /root/.bashrc && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
 # -----------------------------------------------------------------------------
-# Ports (SSH / Jupyter / Nginx)
+# Expose ports commonly used in templates
 # -----------------------------------------------------------------------------
-EXPOSE 22 8888 80
+EXPOSE 22 8888
 
-# Default behavior: run official start.sh (when ENTRYPOINT/CMD is respected)
-# If platform overrides, bash.bashrc fallback will still start sshd when you open a shell.
+# -----------------------------------------------------------------------------
+# Default entrypoint: start.sh (if platform respects it)
+# If platform overrides, /etc/bash.bashrc fallback will still start sshd when you open a shell.
+# -----------------------------------------------------------------------------
 ENTRYPOINT ["/start.sh"]
