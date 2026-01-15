@@ -21,13 +21,40 @@ WORKDIR /workspace
 # 实用小工具
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
+      vim \
       htop \
+      tmux \
       nano \
       iputils-ping \
       lsof \
       tree \
       jq \
-      net-tools && \
+      net-tools \
+      netcat-openbsd \
+      rsync \
+      openssh-server \
+      ca-certificates \
+      git \
+      curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Python CLI 工具：huggingface-cli / datasets-cli
+RUN python -m pip install --no-cache-dir -U \
+      huggingface_hub \
+      datasets
+
+# nccl-tests：优先用系统包；如果源里没有则从源码构建（不依赖 MPI）
+RUN set -eux; \
+    apt-get update -y; \
+    if apt-cache show nccl-tests >/dev/null 2>&1; then \
+      apt-get install -y --no-install-recommends nccl-tests; \
+    else \
+      apt-get install -y --no-install-recommends build-essential; \
+      rm -rf /tmp/nccl-tests && git clone --depth 1 https://github.com/NVIDIA/nccl-tests.git /tmp/nccl-tests; \
+      make -C /tmp/nccl-tests MPI=0; \
+      cp -a /tmp/nccl-tests/build/* /usr/local/bin/; \
+      rm -rf /tmp/nccl-tests; \
+    fi; \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # /yotta 工具目录 + 简单系统信息脚本
@@ -48,6 +75,59 @@ ENV PATH="/yotta/tools:${PATH}"
 
 # Branding 文案
 RUN echo "YottaLabs AI - Unsloth Training Platform" > /etc/yotta.txt
+
+# ==============================
+# SSH：容器启动时拉起 sshd（可通过环境变量控制）
+# - SSH_ENABLE=1/0 (默认 1)
+# - SSH_PASSWORD=...   （设置后开启密码登录）
+# - SSH_PORT=22
+# ==============================
+RUN mkdir -p /var/run/sshd && \
+    sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+    sed -i 's/^#\?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config && \
+    echo 'UseDNS no' >> /etc/ssh/sshd_config && \
+    echo 'ClientAliveInterval 60' >> /etc/ssh/sshd_config && \
+    echo 'ClientAliveCountMax 3' >> /etc/ssh/sshd_config
+
+EXPOSE 22
+
+RUN cat >/yotta/entrypoint.sh <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${SSH_ENABLE:=1}"
+: "${SSH_PORT:=22}"
+
+# 允许编排器在启动后执行一些自检/欢迎信息
+if [ -x /post_start.sh ]; then
+  /post_start.sh || true
+fi
+
+if [ "${SSH_ENABLE}" != "0" ] && command -v sshd >/dev/null 2>&1; then
+  mkdir -p /var/run/sshd
+
+  # 生成 host key（首次启动）
+  if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
+    ssh-keygen -A
+  fi
+
+  # 如果设置了 SSH_PASSWORD，则允许密码登录（更方便但更不安全）
+  if [ -n "${SSH_PASSWORD:-}" ]; then
+    echo "root:${SSH_PASSWORD}" | chpasswd
+    sed -i 's/^PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+  fi
+
+  # 以后台方式启动 sshd
+  /usr/sbin/sshd -p "${SSH_PORT}"
+  echo "[Yotta] sshd started on port ${SSH_PORT} (SSH_ENABLE=${SSH_ENABLE})"
+fi
+
+# 交给镜像原本的 CMD（我们不强行改你的工作流）
+exec "$@"
+EOS
+
+RUN chmod +x /yotta/entrypoint.sh
 
 # 交互 shell：不改官方 CMD，只作为可选入口
 RUN cat >/start.sh <<'EOS'
@@ -111,7 +191,7 @@ RUN chmod +x /post_start.sh /start.sh && \
     echo 'echo -e "\033[1;35mWelcome to Yotta Unsloth Training Environment!\033[0m"' >> /etc/bash.bashrc && \
     echo 'echo -e "Type: \033[1;36myotta-info\033[0m for quick system info."' >> /etc/bash.bashrc
 
-# 注意：不 override 官方 ENTRYPOINT / CMD
-# 直接 docker run 仍然使用 unsloth/unsloth 的默认行为（Jupyter / SSH 等）
+# 入口：先拉起 sshd（可用 SSH_ENABLE/SSH_PASSWORD/SSH_PORT 控制），然后把控制权交回镜像原本的 CMD。
 # 需要用我们自带 shell 时，可运行：
 #   docker run --entrypoint /start.sh ...
+ENTRYPOINT ["/yotta/entrypoint.sh"]
