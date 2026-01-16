@@ -4,15 +4,23 @@
 FROM unsloth/unsloth AS base
 
 # =========================================================
+# logo stage (你要的写法：COPY --from=logo yotta.txt /etc/yotta.txt)
+# =========================================================
+FROM scratch AS logo
+COPY container-template/yotta.txt yotta.txt
+
+# =========================================================
+# scripts stage（保持 start.sh 原样，不改内容）
+# =========================================================
+FROM scratch AS scripts
+COPY container-template/start.sh start.sh
+
+# =========================================================
 # Final image
 # =========================================================
 FROM base
 
-# -------------------------------
-# Environment
-# -------------------------------
-# 让 /opt/venv/bin 在所有用户的 PATH 前面（解决 sudo -u unsloth 找不到 jupyter）
-ENV PATH="/opt/venv/bin:${PATH}"
+USER root
 
 # 你只要求 JUPYTER_PASSWORD 确保存在（值可被平台/运行时覆盖）
 ENV JUPYTER_PASSWORD="unsloth"
@@ -21,7 +29,6 @@ ENV JUPYTER_PASSWORD="unsloth"
 # System tools you asked for
 # vim, jq, tree, htop, tmux, rsync, etc.
 # -------------------------------
-USER root
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -34,13 +41,15 @@ RUN set -eux; \
 
 # -------------------------------
 # Python CLIs (huggingface-cli, datasets-cli)
-# 注意：我们用 venv 的 pip 安装，确保 CLI 进 /opt/venv/bin
+# 官方镜像不保证 /opt/venv，因此用 python3/pip3 兜底安装
 # -------------------------------
 RUN set -eux; \
-    /opt/venv/bin/python -m pip install --no-cache-dir -U pip; \
-    /opt/venv/bin/python -m pip install --no-cache-dir \
-      "huggingface_hub[cli]" \
-      "datasets"
+    if command -v python3 >/dev/null 2>&1; then PY=python3; \
+    elif command -v python >/dev/null 2>&1; then PY=python; \
+    else echo "python not found" >&2; exit 1; fi; \
+    "$PY" -m pip --version || (apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*); \
+    "$PY" -m pip install --no-cache-dir -U pip; \
+    "$PY" -m pip install --no-cache-dir "huggingface_hub[cli]" "datasets"
 
 # -------------------------------
 # Your start.sh (MUST NOT MODIFY CONTENT) + mode only
@@ -56,7 +65,6 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
 # Optional: create ubuntu user (some platforms expect it)
-# 不会影响官方 unsloth 用户；只是补一个 ubuntu 以兼容你平台/习惯
 # -------------------------------
 RUN set -eux; \
     if ! id ubuntu >/dev/null 2>&1; then \
@@ -73,7 +81,6 @@ RUN set -eux; \
 #   /usr/sbin/sshd -D && /start.sh
 # -D blocks forever -> /start.sh never runs
 # Solution: wrap /usr/sbin/sshd so "-D" daemonizes then exits 0
-# NO heredoc (builder incompatible) -> use printf
 # -------------------------------
 RUN set -eux; \
     if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
@@ -97,13 +104,6 @@ RUN set -eux; \
       chmod 755 /usr/sbin/sshd; \
     fi
 
-# -------------------------------
-# Expose ports (for local docker run; platform may ignore)
-# -------------------------------
 EXPOSE 22 8888
 
-# -------------------------------
-# Keep default CMD minimal.
-# 平台会覆盖 CMD（你已经遇到），我们不依赖 CMD 来启动服务。
-# -------------------------------
 CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform should run: sshd -D && /start.sh' && sleep infinity"]
