@@ -36,22 +36,22 @@ RUN set -eux; \
 RUN set -eux; \
     if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
       mv /usr/sbin/sshd /usr/sbin/sshd.real; \
-      cat >/usr/sbin/sshd <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ " $* " == *" -D "* ]]; then
-  args=()
-  for a in "$@"; do
-    [[ "$a" == "-D" ]] && continue
-    args+=("$a")
-  done
-  /usr/sbin/sshd.real "${args[@]}" &
-  exit 0
-fi
-
-exec /usr/sbin/sshd.real "$@"
-EOF
+      printf '%s\n' \
+'#!/usr/bin/env bash' \
+'set -euo pipefail' \
+'' \
+'if [[ " $* " == *" -D "* ]]; then' \
+'  args=()' \
+'  for a in "$@"; do' \
+'    [[ "$a" == "-D" ]] && continue' \
+'    args+=("$a")' \
+'  done' \
+'  /usr/sbin/sshd.real "${args[@]}" &' \
+'  exit 0' \
+'fi' \
+'' \
+'exec /usr/sbin/sshd.real "$@"' \
+      > /usr/sbin/sshd; \
       chmod 755 /usr/sbin/sshd; \
     fi
 
