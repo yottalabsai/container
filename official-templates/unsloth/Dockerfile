@@ -7,7 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    JUPYTER_PORT=7861
 
 WORKDIR /workspace
 
@@ -40,7 +41,7 @@ RUN set -eux; \
     rm -rf /tmp/apt-lists
 
 # =========================================================
-# Python 3.11 (NO get-pip.py)
+# Python 3.11 (no get-pip.py)
 # =========================================================
 RUN set -eux; \
     mkdir -p /tmp/apt-lists/partial; \
@@ -54,7 +55,7 @@ RUN set -eux; \
       --retries 10 --timeout 60
 
 # =========================================================
-# Python tools (pip hardened)
+# Python tools (Unsloth stack)
 # =========================================================
 RUN set -eux; \
     python3.11 -m pip install --no-cache-dir \
@@ -99,7 +100,7 @@ RUN set -eux; \
     chown -R ubuntu:ubuntu /home/ubuntu /workspace
 
 # =========================================================
-# Nginx proxy & static files
+# Nginx static content & config
 # =========================================================
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
@@ -118,10 +119,8 @@ COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # =========================================================
-# Entrypoint: ssh + jupyter
+# Entrypoint
 # =========================================================
-ENV JUPYTER_PORT=7861
-
 RUN cat >/entry.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -134,13 +133,14 @@ if [[ -n "${PUBLIC_KEY:-}" ]]; then
   chmod 600 /home/ubuntu/.ssh/authorized_keys
 fi
 
-# Run platform script (do not depend on it)
+# Start platform script (may start nginx; we don't rely on it)
 /start.sh || true &
 
-# Ensure sshd
+# Ensure services
 /usr/sbin/sshd
+nginx
 
-# Jupyter token logic (compat JUPYTER_PASSWORD)
+# Jupyter token (compat JUPYTER_PASSWORD)
 TOKEN="${JUPYTER_TOKEN:-${JUPYTER_PASSWORD:-}}"
 if [[ -z "${TOKEN}" ]]; then
   TOKEN="$(python3.11 - <<'PY'
@@ -154,7 +154,7 @@ fi
 exec sudo -u ubuntu -H bash -lc \
   "python3.11 -m jupyter lab \
     --ip=0.0.0.0 \
-    --port=${JUPYTER_PORT:-7861} \
+    --port=${JUPYTER_PORT} \
     --no-browser \
     --ServerApp.token='${TOKEN}' \
     --ServerApp.password='' \
@@ -163,7 +163,7 @@ EOF
 
 RUN chmod 755 /entry.sh
 
-EXPOSE 22 7861
+EXPOSE 22 80 7861
 
 ENTRYPOINT ["/usr/bin/tini","-g","--"]
 CMD ["/entry.sh"]
