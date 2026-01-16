@@ -1,6 +1,7 @@
 # Unsloth-ready CUDA 12.8 image
 # Includes: PyTorch cu128 + Unsloth + JupyterLab + SSH
-# Tools: vim, jq, tree, htop, nccl-tests, tmux, rsync, huggingface-cli, datasets-cli
+# Tools: vim, jq, tree, htop, tmux, rsync, huggingface-cli, datasets-cli
+# NCCL: libnccl2/libnccl-dev + build nccl-tests (all_reduce_perf etc.)
 # Branding: yotta.txt printed in root interactive bash
 
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
@@ -29,20 +30,33 @@ RUN set -eux; \
       software-properties-common \
       # tools
       vim jq tree htop tmux rsync \
-      # nccl tests (repo package name on Ubuntu)
-      nccl-tests \
-      # (optional but handy)
-      pciutils iproute2 net-tools lsof procps; \
-    add-apt-repository -y ppa:deadsnakes/ppa; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-      python3.11 python3.11-venv python3.11-dev; \
+      pciutils iproute2 net-tools lsof procps \
+      # for building nccl-tests
+      make g++ \
+      # nccl runtime/dev libs (package names exist in NVIDIA CUDA repo)
+      libnccl2 libnccl-dev; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
-# Python venv
+# Build nccl-tests from source
+# Output: /opt/nccl-tests/build/* (eg all_reduce_perf)
+# -------------------------------
+ARG NCCL_TESTS_REF=master
+RUN set -eux; \
+    git clone --depth 1 --branch "${NCCL_TESTS_REF}" https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests; \
+    make -C /opt/nccl-tests -j"$(nproc)" CUDA_HOME=/usr/local/cuda; \
+    ln -sf /opt/nccl-tests/build/all_reduce_perf /usr/local/bin/all_reduce_perf || true; \
+    ln -sf /opt/nccl-tests/build/all_gather_perf /usr/local/bin/all_gather_perf || true; \
+    ln -sf /opt/nccl-tests/build/reduce_scatter_perf /usr/local/bin/reduce_scatter_perf || true; \
+    ln -sf /opt/nccl-tests/build/broadcast_perf /usr/local/bin/broadcast_perf || true
+
+# -------------------------------
+# Python 3.11 + venv
 # -------------------------------
 RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends python3.11 python3.11-venv python3.11-dev; \
+    rm -rf /var/lib/apt/lists/*; \
     python3.11 -m venv "${VENV_PATH}"; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir -U pip setuptools wheel
 
