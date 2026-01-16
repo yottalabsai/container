@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.6
+
 # ===============================
 # logo + scripts stages
 # ===============================
@@ -40,10 +42,11 @@ RUN set -eux; \
 # Platform workaround:
 # Wrap sshd so "-D" does not block start.sh
 # -------------------------------
-RUN set -eux; \
-    if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
-      mv /usr/sbin/sshd /usr/sbin/sshd.real; \
-      cat > /usr/sbin/sshd <<'EOF'
+RUN <<'EOF'
+set -eux
+if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then
+  mv /usr/sbin/sshd /usr/sbin/sshd.real
+  cat > /usr/sbin/sshd <<'EOSSHD'
 #!/usr/bin/env bash
 set -euo pipefail
 REAL="/usr/sbin/sshd.real"
@@ -64,9 +67,10 @@ if [[ " $* " == *" -D "* ]]; then
 fi
 
 exec "$REAL" "$@"
+EOSSHD
+  chmod 755 /usr/sbin/sshd
+fi
 EOF
-      chmod 755 /usr/sbin/sshd; \
-    fi
 
 # -------------------------------
 # Python 3.11 + venv (deadsnakes)
@@ -105,7 +109,7 @@ RUN set -eux; \
       jupyterlab jupyter_server ipykernel \
       huggingface_hub datasets
 
-# Unsloth pip-install extra deps (只加不删)
+# Unsloth pip-install extra deps (only add, do not remove)
 RUN set -eux; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir xformers --no-deps; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir triton
@@ -121,7 +125,7 @@ RUN set -eux; \
 # -------------------------------
 RUN set -eux; \
     if ! id unsloth >/dev/null 2>&1; then useradd -m -s /bin/bash -u 1000 unsloth; fi; \
-    if ! id ubuntu >/dev/null 2>&1; then useradd -m -s /bin/bash -u 1001 ubuntu; fi; \
+    if ! id ubuntu  >/dev/null 2>&1; then useradd -m -s /bin/bash -u 1001 ubuntu;  fi; \
     usermod -aG sudo unsloth; \
     usermod -aG sudo ubuntu; \
     echo "unsloth ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-unsloth; \
@@ -149,10 +153,11 @@ COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # -------------------------------
-# entry.sh (keep as before)  <-- 这里同样修正 heredoc
+# entry.sh
 # -------------------------------
-RUN set -eux; \
-    cat > /entry.sh <<'EOF'
+RUN <<'EOF'
+set -eux
+cat > /entry.sh <<'EOENTRY'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -167,8 +172,9 @@ fi
 
 exec sudo -u unsloth -H bash -lc \
   '/opt/venv/bin/jupyter lab --ip=0.0.0.0 --port=${JUPYTER_PORT:-8888} --no-browser --ServerApp.token="" --ServerApp.password="" --ServerApp.allow_origin="*" --ServerApp.root_dir=/workspace'
+EOENTRY
+chmod 755 /entry.sh
 EOF
-RUN chmod 755 /entry.sh
 
 EXPOSE 8888 22 80
 
