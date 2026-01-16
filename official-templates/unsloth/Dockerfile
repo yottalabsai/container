@@ -1,107 +1,145 @@
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
+# Unsloth-style base container (Jupyter + SSH + notebooks) on CUDA runtime
+# - Env vars supported:
+#   - JUPYTER_PASSWORD (already in your env): Jupyter login password (plain text)
+#   - JUPYTER_PORT: Jupyter port inside container (default 8888)
+#   - SSH_KEY: public key content for /home/unsloth/.ssh/authorized_keys
+#   - USER_PASSWORD: password for "unsloth" user (sudo password)
+#
+# Run example:
+# docker run -d \
+#   -e JUPYTER_PASSWORD="mypassword" \
+#   -e JUPYTER_PORT=8888 \
+#   -e "SSH_KEY=$(cat ~/.ssh/id_rsa.pub)" \
+#   -e USER_PASSWORD="unsloth2024" \
+#   -p 8888:8888 -p 2222:22 \
+#   -v $(pwd)/work:/workspace/work \
+#   --gpus all \
+#   your-image:latest
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ENV DEBIAN_FRONTEND=noninteractive \
-    TZ=UTC \
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1 \
     JUPYTER_PORT=8888 \
-    JUPYTER_IP=0.0.0.0
+    JUPYTER_PASSWORD=unsloth \
+    USER_PASSWORD=unsloth
 
-WORKDIR /workspace
-
-# ===============================
-# System packages
-# ===============================
+# ---- System deps ----
 RUN set -eux; \
-    apt-get update -y; \
-    apt-get install -y --no-install-recommends --allow-change-held-packages \
-      ca-certificates curl wget git git-lfs locales tzdata \
-      build-essential pkg-config ninja-build \
-      ffmpeg libgl1 libglib2.0-0 \
-      vim jq tree htop tmux rsync \
-      zip unzip less procps net-tools lsof sudo \
-      iproute2 iputils-ping dnsutils \
-      nginx openssh-server openssh-client \
-      libnccl2 libnccl-dev \
-      python3 python3-venv python3-pip \
-      software-properties-common \
-      tini; \
-    git lfs install; \
-    ln -sf /usr/share/zoneinfo/UTC /etc/localtime; \
-    echo "C.UTF-8 UTF-8" > /etc/locale.gen; \
-    locale-gen; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl wget git \
+      sudo openssh-server nginx \
+      tini \
+      build-essential \
+      software-properties-common; \
+    add-apt-repository -y ppa:deadsnakes/ppa; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      python3.11 python3.11-venv python3.11-dev python3-pip; \
     rm -rf /var/lib/apt/lists/*
 
-# ===============================
-# User
-# ===============================
+# ---- Python venv (avoid system pip issues) ----
+ENV VENV_PATH=/opt/venv
 RUN set -eux; \
-    groupadd -g 1001 user; \
-    useradd -m -u 1001 -g 1001 -s /bin/bash user; \
-    echo "user ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/user; \
-    chmod 0440 /etc/sudoers.d/user
+    python3.11 -m venv "${VENV_PATH}"; \
+    "${VENV_PATH}/bin/pip" install --no-cache-dir -U pip setuptools wheel; \
+    "${VENV_PATH}/bin/pip" install --no-cache-dir \
+      jupyterlab jupyter_server \
+      ipykernel; \
+    # (Optional) basics you likely want in ML notebooks
+    "${VENV_PATH}/bin/pip" install --no-cache-dir \
+      numpy pandas matplotlib
 
-# ===============================
-# SSH 修复
-# ===============================
+ENV PATH="${VENV_PATH}/bin:${PATH}"
+
+# ---- User (match Unsloth container semantics) ----
 RUN set -eux; \
-    mkdir -p /run/sshd; \
-    chmod 0755 /run/sshd; \
-    sed -i 's/^#\?Port .*/Port 22/' /etc/ssh/sshd_config; \
-    sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config; \
-    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config; \
-    sed -i 's/^#\?UsePAM .*/UsePAM yes/' /etc/ssh/sshd_config; \
-    echo "AllowUsers user" >> /etc/ssh/sshd_config
+    groupadd -g 1000 unsloth || true; \
+    useradd -m -u 1000 -g 1000 -s /bin/bash unsloth || true; \
+    echo "unsloth ALL=(ALL) ALL" > /etc/sudoers.d/unsloth; \
+    chmod 0440 /etc/sudoers.d/unsloth; \
+    mkdir -p /home/unsloth/.ssh /workspace/work /workspace/unsloth-notebooks; \
+    chmod 700 /home/unsloth/.ssh; \
+    chown -R unsloth:unsloth /home/unsloth /workspace
 
-# ===============================
-# Python tools (no conda)
-# ===============================
+# ---- SSHD setup ----
 RUN set -eux; \
-    python3 -m pip install --no-cache-dir -U pip setuptools wheel; \
-    python3 -m pip install --no-cache-dir \
-      jupyterlab notebook ipykernel \
-      huggingface_hub datasets accelerate bitsandbytes unsloth
+    mkdir -p /var/run/sshd; \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config; \
+    sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/g' /etc/ssh/sshd_config; \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/g' /etc/ssh/sshd_config; \
+    echo "AllowUsers unsloth" >> /etc/ssh/sshd_config
 
-# ===============================
-# Branding
-# ===============================
-COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /home/user/.bashrc
+# ---- Nginx (optional, harmless if unused) ----
+RUN set -eux; \
+    rm -f /etc/nginx/sites-enabled/default || true; \
+    cat >/etc/nginx/sites-available/default <<'NGINX'
+server {
+    listen 80 default_server;
+    server_name _;
+    location / {
+        return 200 "ok\n";
+    }
+}
+NGINX
+RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
 
-# ===============================
-# Permissions
-# ===============================
-RUN chown -R user:user /workspace /home/user
+# ---- Unsloth example notebooks ----
+# This is the canonical path from the official docs: /workspace/unsloth-notebooks/
+RUN set -eux; \
+    git clone --depth 1 https://github.com/unslothai/notebooks /workspace/unsloth-notebooks || true; \
+    chown -R unsloth:unsloth /workspace/unsloth-notebooks
 
-# ===============================
-# Ports
-# ===============================
-EXPOSE 22 8888
+# ---- Entrypoint ----
+RUN set -eux; \
+    cat >/entry.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
 
-# ===============================
-# Entrypoint
-# ===============================
+# 1) Install SSH public key if provided (official env name: SSH_KEY)
+if [[ -n "${SSH_KEY:-}" ]]; then
+  install -d -m 700 -o unsloth -g unsloth /home/unsloth/.ssh
+  echo "${SSH_KEY}" > /home/unsloth/.ssh/authorized_keys
+  chown unsloth:unsloth /home/unsloth/.ssh/authorized_keys
+  chmod 600 /home/unsloth/.ssh/authorized_keys
+fi
+
+# 2) Set user password for sudo (official env name: USER_PASSWORD)
+echo "unsloth:${USER_PASSWORD:-unsloth}" | chpasswd
+
+# 3) Start sshd + nginx
+/usr/sbin/sshd
+nginx || true
+
+# 4) Jupyter password hash from plain JUPYTER_PASSWORD
+JUPYTER_PW="${JUPYTER_PASSWORD:-unsloth}"
+HASH="$(python3.11 - <<PY
+from jupyter_server.auth import passwd
+print(passwd("${JUPYTER_PW}"))
+PY
+)"
+
+# 5) Launch Jupyter Lab as non-root
+exec sudo -u unsloth -H bash -lc \
+  "jupyter lab \
+    --ip=0.0.0.0 \
+    --port=${JUPYTER_PORT:-8888} \
+    --no-browser \
+    --ServerApp.token='' \
+    --ServerApp.password='${HASH}' \
+    --ServerApp.allow_origin='*' \
+    --ServerApp.root_dir=/workspace"
+EOF
+    chmod +x /entry.sh
+
+# ---- Ports ----
+EXPOSE 8888 22 80
+
+# ---- Tini for clean signal handling ----
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/bin/bash", "-lc", "\
-set -e; \
-/usr/sbin/sshd; \
-nginx || true; \
-mkdir -p /home/user/.jupyter; \
-if [ -n \"${JUPYTER_PASSWORD:-}\" ]; then \
-python3 - <<'PY'\n\
-from jupyter_server.auth import passwd\n\
-import os\n\
-print('c.ServerApp.password = %r' % passwd(os.environ['JUPYTER_PASSWORD']))\n\
-print('c.ServerApp.token = \"\"')\n\
-PY \
-> /home/user/.jupyter/jupyter_server_config.py; \
-chown -R user:user /home/user/.jupyter; \
-fi; \
-exec sudo -u user -E jupyter lab \
-  --ip=0.0.0.0 \
-  --port=8888 \
-  --no-browser \
-  --ServerApp.allow_remote_access=True \
-  --ServerApp.root_dir=/workspace \
-"]
+CMD ["/entry.sh"]
