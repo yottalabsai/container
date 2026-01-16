@@ -1,23 +1,5 @@
-# =========================================================
-# Base: Official Unsloth image
-# =========================================================
 FROM unsloth/unsloth AS base
 
-# =========================================================
-# logo stage (按你要求：COPY --from=logo yotta.txt /etc/yotta.txt)
-# =========================================================
-FROM scratch AS logo
-COPY container-template/yotta.txt yotta.txt
-
-# =========================================================
-# scripts stage（start.sh 必须原样，不改内容）
-# =========================================================
-FROM scratch AS scripts
-COPY container-template/start.sh start.sh
-
-# =========================================================
-# Final image
-# =========================================================
 FROM base
 
 USER root
@@ -25,9 +7,6 @@ USER root
 ENV JUPYTER_PASSWORD="unsloth"
 ENV PATH="/usr/local/sbin:/usr/local/bin:${PATH}"
 
-# -------------------------------
-# Base tools + nginx + service
-# -------------------------------
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -39,9 +18,6 @@ RUN set -eux; \
       nginx sysvinit-utils; \
     rm -rf /var/lib/apt/lists/*
 
-# -------------------------------
-# service shim: make "service nginx start" always work
-# -------------------------------
 RUN set -eux; \
     printf '%s\n' \
 '#!/usr/bin/env bash' \
@@ -61,13 +37,9 @@ RUN set -eux; \
       > /usr/local/sbin/service; \
     chmod 755 /usr/local/sbin/service
 
-# -------------------------------
-# Compatibility: start.sh expects python3.11
-# Provide python3.11 alias to existing python3/python
-# -------------------------------
 RUN set -eux; \
     if command -v python3.11 >/dev/null 2>&1; then \
-      echo "python3.11 exists"; \
+      :; \
     else \
       if command -v python3 >/dev/null 2>&1; then \
         target="$(command -v python3)"; \
@@ -80,9 +52,6 @@ RUN set -eux; \
     fi; \
     python3.11 -V
 
-# -------------------------------
-# Ensure pip + install CLI tools
-# -------------------------------
 RUN set -eux; \
     if command -v python3 >/dev/null 2>&1; then PY=python3; \
     elif command -v python >/dev/null 2>&1; then PY=python; \
@@ -91,57 +60,32 @@ RUN set -eux; \
     "$PY" -m pip install --no-cache-dir -U pip; \
     "$PY" -m pip install --no-cache-dir "huggingface_hub[cli]" "datasets"
 
-# -------------------------------
-# Jupyter availability:
-# - start.sh 可能直接调用 "jupyter"
-# - 不假设 /opt/venv/bin/jupyter 一定存在
-# - 找不到就用 pip 装 jupyterlab 并建立 /usr/local/bin/jupyter
-# -------------------------------
 RUN set -eux; \
-    # pick python
     if command -v python3 >/dev/null 2>&1; then PY=python3; \
     elif command -v python >/dev/null 2>&1; then PY=python; \
     else echo "python not found" >&2; exit 1; fi; \
-    # already in PATH?
     if command -v jupyter >/dev/null 2>&1; then \
-      echo "jupyter already in PATH"; \
+      :; \
     else \
-      # common locations
       if [ -x /opt/venv/bin/jupyter ]; then \
         ln -sf /opt/venv/bin/jupyter /usr/local/bin/jupyter; \
-      elif [ -x /usr/local/bin/jupyter ]; then \
-        :; \
       elif [ -x /usr/bin/jupyter ]; then \
         ln -sf /usr/bin/jupyter /usr/local/bin/jupyter; \
       else \
-        # last resort: install jupyterlab
         "$PY" -m pip install --no-cache-dir "jupyterlab"; \
-        # try to locate installed jupyter script
         JPATH="$("$PY" -c 'import shutil; p=shutil.which("jupyter"); print(p or "")')"; \
-        if [ -n "$JPATH" ] && [ -x "$JPATH" ]; then \
-          ln -sf "$JPATH" /usr/local/bin/jupyter; \
-        fi; \
+        [ -n "$JPATH" ] && [ -x "$JPATH" ] && ln -sf "$JPATH" /usr/local/bin/jupyter; \
       fi; \
     fi; \
-    # verify
-    command -v jupyter >/dev/null 2>&1 || { echo "jupyter still not found" >&2; exit 1; }; \
+    command -v jupyter >/dev/null 2>&1; \
     jupyter --version
 
-# -------------------------------
-# start.sh (必须原样)
-# -------------------------------
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
-# -------------------------------
-# branding (你要求必须原样)
-# -------------------------------
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
-# -------------------------------
-# Optional: create ubuntu user
-# -------------------------------
 RUN set -eux; \
     if ! id ubuntu >/dev/null 2>&1; then \
       useradd -m -s /bin/bash ubuntu; \
@@ -152,32 +96,35 @@ RUN set -eux; \
     mkdir -p /workspace/work; \
     chown -R ubuntu:ubuntu /workspace || true
 
-# -------------------------------
-# CRITICAL: platform injects "sshd -D && /start.sh"
-# -D blocks forever -> /start.sh never runs
-# Wrap sshd: if -D, daemonize then exit 0
-# -------------------------------
 RUN set -eux; \
-    if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
-      mv /usr/sbin/sshd /usr/sbin/sshd.real; \
-      printf '%s\n' \
-'#!/usr/bin/env bash' \
-'set -euo pipefail' \
-'if [[ " $* " == *" -D "* ]]; then' \
-'  args=()' \
-'  for a in "$@"; do' \
-'    [[ "$a" == "-D" ]] && continue' \
-'    args+=("$a")' \
-'  done' \
-'  /usr/sbin/sshd.real "${args[@]}" &' \
-'  exit 0' \
-'fi' \
-'exec /usr/sbin/sshd.real "$@"' \
-      > /usr/sbin/sshd; \
-      chmod 755 /usr/sbin/sshd; \
-    fi
+    mkdir -p /run/sshd; \
+    ssh-keygen -A; \
+    sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin yes/' /etc/ssh/sshd_config; \
+    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+RUN set -eux; \
+    cat > /entrypoint.sh <<'EOF' \
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p /run/sshd
+ssh-keygen -A >/dev/null 2>&1 || true
+
+if command -v /usr/sbin/sshd >/dev/null 2>&1; then
+  /usr/sbin/sshd || true
+elif command -v sshd >/dev/null 2>&1; then
+  sshd || true
+fi
+
+if [ -x /start.sh ]; then
+  exec /start.sh
+fi
+
+exec bash -lc "sleep infinity"
+EOF
+    chmod 755 /entrypoint.sh
 
 EXPOSE 22 8888 80
 
-# 平台会覆盖 CMD；我们不依赖 CMD 启动
-CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform should run: sshd -D && /start.sh' && sleep infinity"]
+ENTRYPOINT ["/usr/bin/tini","--","/entrypoint.sh"]
+CMD []
