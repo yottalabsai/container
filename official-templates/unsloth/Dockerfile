@@ -27,10 +27,9 @@ USER root
 
 RUN set -eux; \
     mkdir -p /var/lib/apt/lists/partial; \
-    chmod 755 /var/lib/apt/lists; \
-    chmod 755 /var/lib/apt/lists/partial; \
+    chmod 755 /var/lib/apt/lists /var/lib/apt/lists/partial; \
     apt-get update -y; \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git git-lfs locales tzdata \
       build-essential pkg-config ninja-build \
       ffmpeg libgl1 libglib2.0-0 \
