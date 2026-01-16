@@ -4,13 +4,13 @@
 FROM unsloth/unsloth AS base
 
 # =========================================================
-# logo stage (你要的写法：COPY --from=logo yotta.txt /etc/yotta.txt)
+# logo stage (按你要求：COPY --from=logo yotta.txt /etc/yotta.txt)
 # =========================================================
 FROM scratch AS logo
 COPY container-template/yotta.txt yotta.txt
 
 # =========================================================
-# scripts stage（保持 start.sh 原样，不改内容）
+# scripts stage（start.sh 必须原样，不改内容）
 # =========================================================
 FROM scratch AS scripts
 COPY container-template/start.sh start.sh
@@ -22,12 +22,11 @@ FROM base
 
 USER root
 
-# 你要求：JUPYTER_PASSWORD 通过环境变量存在（值可被平台覆盖）
 ENV JUPYTER_PASSWORD="unsloth"
+ENV PATH="/usr/local/sbin:/usr/local/bin:${PATH}"
 
 # -------------------------------
-# Tools + nginx + service support
-# 关键：让 start.sh 里如果用 service nginx start 不会炸
+# Base tools + nginx + service
 # -------------------------------
 RUN set -eux; \
     apt-get update; \
@@ -41,9 +40,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
-# service shim (兜底)
-# 有些镜像即使装了 sysvinit-utils，也可能没有 nginx init script
-# 这个 shim 只保证 "service nginx start/stop/restart/status" 可用
+# service shim: make "service nginx start" always work
 # -------------------------------
 RUN set -eux; \
     printf '%s\n' \
@@ -64,36 +61,86 @@ RUN set -eux; \
       > /usr/local/sbin/service; \
     chmod 755 /usr/local/sbin/service
 
-# 确保 PATH 里优先用我们这个 service（不破坏系统自带的）
-ENV PATH="/usr/local/sbin:${PATH}"
+# -------------------------------
+# Compatibility: start.sh expects python3.11
+# Provide python3.11 alias to existing python3/python
+# -------------------------------
+RUN set -eux; \
+    if command -v python3.11 >/dev/null 2>&1; then \
+      echo "python3.11 exists"; \
+    else \
+      if command -v python3 >/dev/null 2>&1; then \
+        target="$(command -v python3)"; \
+      elif command -v python >/dev/null 2>&1; then \
+        target="$(command -v python)"; \
+      else \
+        echo "No python found in base image" >&2; exit 1; \
+      fi; \
+      ln -sf "$target" /usr/local/bin/python3.11; \
+    fi; \
+    python3.11 -V
 
 # -------------------------------
-# Python CLIs (huggingface-cli, datasets-cli)
-# 官方镜像不保证 /opt/venv，所以动态选 python
+# Ensure pip + install CLI tools
 # -------------------------------
 RUN set -eux; \
     if command -v python3 >/dev/null 2>&1; then PY=python3; \
     elif command -v python >/dev/null 2>&1; then PY=python; \
     else echo "python not found" >&2; exit 1; fi; \
-    "$PY" -m pip --version || (apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*); \
+    "$PY" -m pip --version >/dev/null 2>&1 || (apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*); \
     "$PY" -m pip install --no-cache-dir -U pip; \
     "$PY" -m pip install --no-cache-dir "huggingface_hub[cli]" "datasets"
 
 # -------------------------------
-# Your start.sh (MUST NOT MODIFY CONTENT) + mode only
+# Jupyter availability:
+# - start.sh 可能直接调用 "jupyter"
+# - 不假设 /opt/venv/bin/jupyter 一定存在
+# - 找不到就用 pip 装 jupyterlab 并建立 /usr/local/bin/jupyter
+# -------------------------------
+RUN set -eux; \
+    # pick python
+    if command -v python3 >/dev/null 2>&1; then PY=python3; \
+    elif command -v python >/dev/null 2>&1; then PY=python; \
+    else echo "python not found" >&2; exit 1; fi; \
+    # already in PATH?
+    if command -v jupyter >/dev/null 2>&1; then \
+      echo "jupyter already in PATH"; \
+    else \
+      # common locations
+      if [ -x /opt/venv/bin/jupyter ]; then \
+        ln -sf /opt/venv/bin/jupyter /usr/local/bin/jupyter; \
+      elif [ -x /usr/local/bin/jupyter ]; then \
+        :; \
+      elif [ -x /usr/bin/jupyter ]; then \
+        ln -sf /usr/bin/jupyter /usr/local/bin/jupyter; \
+      else \
+        # last resort: install jupyterlab
+        "$PY" -m pip install --no-cache-dir "jupyterlab"; \
+        # try to locate installed jupyter script
+        JPATH="$("$PY" -c 'import shutil; p=shutil.which("jupyter"); print(p or "")')"; \
+        if [ -n "$JPATH" ] && [ -x "$JPATH" ]; then \
+          ln -sf "$JPATH" /usr/local/bin/jupyter; \
+        fi; \
+      fi; \
+    fi; \
+    # verify
+    command -v jupyter >/dev/null 2>&1 || { echo "jupyter still not found" >&2; exit 1; }; \
+    jupyter --version
+
+# -------------------------------
+# start.sh (必须原样)
 # -------------------------------
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # -------------------------------
-# Your branding snippet (你要求必须原样)
+# branding (你要求必须原样)
 # -------------------------------
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
-# Optional: create ubuntu user (你之前问过“我不是有 ubuntu 吗”)
-# 不会影响官方 unsloth 用户；只是补一个 ubuntu 以兼容平台/习惯
+# Optional: create ubuntu user
 # -------------------------------
 RUN set -eux; \
     if ! id ubuntu >/dev/null 2>&1; then \
@@ -106,10 +153,9 @@ RUN set -eux; \
     chown -R ubuntu:ubuntu /workspace || true
 
 # -------------------------------
-# CRITICAL: Platform injects command like:
-#   /usr/sbin/sshd -D && /start.sh
+# CRITICAL: platform injects "sshd -D && /start.sh"
 # -D blocks forever -> /start.sh never runs
-# Solution: wrap /usr/sbin/sshd so "-D" daemonizes then exits 0
+# Wrap sshd: if -D, daemonize then exit 0
 # -------------------------------
 RUN set -eux; \
     if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
@@ -117,7 +163,6 @@ RUN set -eux; \
       printf '%s\n' \
 '#!/usr/bin/env bash' \
 'set -euo pipefail' \
-'' \
 'if [[ " $* " == *" -D "* ]]; then' \
 '  args=()' \
 '  for a in "$@"; do' \
@@ -127,7 +172,6 @@ RUN set -eux; \
 '  /usr/sbin/sshd.real "${args[@]}" &' \
 '  exit 0' \
 'fi' \
-'' \
 'exec /usr/sbin/sshd.real "$@"' \
       > /usr/sbin/sshd; \
       chmod 755 /usr/sbin/sshd; \
@@ -135,5 +179,5 @@ RUN set -eux; \
 
 EXPOSE 22 8888 80
 
-# 平台会覆盖 CMD；我们不依赖 CMD 启动服务
+# 平台会覆盖 CMD；我们不依赖 CMD 启动
 CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform should run: sshd -D && /start.sh' && sleep infinity"]
