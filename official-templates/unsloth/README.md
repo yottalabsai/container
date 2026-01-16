@@ -1,5 +1,7 @@
 # Unsloth LLM Fine-tuning Container (Yotta Edition)
 
+### A GPU-optimized environment for efficient LLM fine-tuning, focused on fast LoRA/QLoRA workflows with minimal memory usage.
+
 基于官方 `unsloth/unsloth` 镜像，叠加 Yotta 工具层，用于大模型微调（SFT / DPO / GRPO 等）。
 
 ## Build Instructions

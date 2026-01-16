@@ -89,6 +89,7 @@ EOS
 
 # ---- Yotta 商业化元素 ----
 # 1) 创建 branding 文本
+COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo "YottaLabs AI - Unsloth Training Platform" > /etc/yotta.txt
 
 # 2) /etc/profile.d - 对所有登录场景生效 (login shell / ssh / exec)
