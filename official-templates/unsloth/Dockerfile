@@ -1,4 +1,13 @@
 # ===============================
+# logo + scripts stages
+# ===============================
+FROM scratch AS logo
+COPY container-template/yotta.txt yotta.txt
+
+FROM scratch AS scripts
+COPY container-template/start.sh start.sh
+
+# ===============================
 # main stage
 # ===============================
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
@@ -29,21 +38,22 @@ RUN set -eux; \
 
 # -------------------------------
 # Platform workaround:
-# Platform runs: sshd -D && /start.sh
-# "-D" blocks forever, so /start.sh never runs.
-# Wrap sshd so "-D" daemonizes and exits 0.
+# Wrap sshd so "-D" does not block start.sh
 # -------------------------------
 RUN set -eux; \
     if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
       mv /usr/sbin/sshd /usr/sbin/sshd.real; \
-      cat > /usr/sbin/sshd <<'EOF'; \
+      cat > /usr/sbin/sshd <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 REAL="/usr/sbin/sshd.real"
+
+# If platform passes -D, strip it so sshd daemonizes and returns
 if [[ "${1:-}" == "-D" ]]; then
   shift
   exec "$REAL" "$@"
 fi
+
 if [[ " $* " == *" -D "* ]]; then
   args=()
   for a in "$@"; do
@@ -52,14 +62,14 @@ if [[ " $* " == *" -D "* ]]; then
   done
   exec "$REAL" "${args[@]}"
 fi
+
 exec "$REAL" "$@"
 EOF
       chmod 755 /usr/sbin/sshd; \
     fi
 
 # -------------------------------
-# Python 3.11 + venv
-# Ubuntu 22.04 默认不带 python3.11，使用 deadsnakes PPA
+# Python 3.11 + venv (deadsnakes)
 # -------------------------------
 RUN set -eux; \
     add-apt-repository -y ppa:deadsnakes/ppa; \
@@ -70,13 +80,13 @@ RUN set -eux; \
     python3.11 -m venv "${VENV_PATH}"; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir -U pip setuptools wheel
 
-# 让 start.sh 里 "python3.11 -m jupyter ..." 一定命中 venv
+# Ensure python3.11 / pip usable globally
 RUN set -eux; \
     ln -sf "${VENV_PATH}/bin/python3.11" /usr/local/bin/python3.11; \
     ln -sf "${VENV_PATH}/bin/python" /usr/local/bin/python || true; \
     ln -sf "${VENV_PATH}/bin/pip" /usr/local/bin/pip || true
 
-# 同时把 venv 放进系统默认 PATH（包含 sudo secure_path）
+# Put venv into default PATH (incl sudo secure_path)
 RUN set -eux; \
     echo 'export PATH=/opt/venv/bin:$PATH' >/etc/profile.d/venv.sh; \
     chmod 644 /etc/profile.d/venv.sh; \
@@ -84,7 +94,7 @@ RUN set -eux; \
     chmod 0440 /etc/sudoers.d/99-secure-path
 
 # -------------------------------
-# Python packages: Unsloth + Jupyter + CLI tools
+# Python packages: Unsloth + Jupyter + tools
 # -------------------------------
 RUN set -eux; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir \
@@ -95,19 +105,19 @@ RUN set -eux; \
       jupyterlab jupyter_server ipykernel \
       huggingface_hub datasets
 
-# Unsloth pip-install 需要的额外项（只加不删）
+# Unsloth pip-install extra deps (只加不删)
 RUN set -eux; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir xformers --no-deps; \
     "${VENV_PATH}/bin/pip" install --no-cache-dir triton
 
-# 便捷：把 jupyter/hf/datasets cli 做成全局可用
+# Convenience symlinks
 RUN set -eux; \
     ln -sf "${VENV_PATH}/bin/jupyter" /usr/local/bin/jupyter || true; \
     ln -sf "${VENV_PATH}/bin/huggingface-cli" /usr/local/bin/huggingface-cli || true; \
     ln -sf "${VENV_PATH}/bin/datasets-cli" /usr/local/bin/datasets-cli || true
 
 # -------------------------------
-# Users（兼容你 /entry.sh 里用的 unsloth，也兼容 start.sh 里 chown ubuntu）
+# Users (keep both unsloth + ubuntu)
 # -------------------------------
 RUN set -eux; \
     if ! id unsloth >/dev/null 2>&1; then useradd -m -s /bin/bash -u 1000 unsloth; fi; \
@@ -127,22 +137,22 @@ RUN set -eux; \
     mkdir -p /var/run/sshd
 
 # -------------------------------
-# Branding（保持你的 --from=logo + echo cat 逻辑）
+# Branding
 # -------------------------------
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
-# start.sh：必须原样保留（你明确要求不改）
+# start.sh must remain unchanged
 # -------------------------------
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # -------------------------------
-# 备用 entry（你之前用来手动起 jupyter 的方式也保留）
+# entry.sh (keep as before)  <-- 这里同样修正 heredoc
 # -------------------------------
 RUN set -eux; \
-    cat >/entry.sh <<'EOF'
+    cat > /entry.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -158,7 +168,7 @@ fi
 exec sudo -u unsloth -H bash -lc \
   '/opt/venv/bin/jupyter lab --ip=0.0.0.0 --port=${JUPYTER_PORT:-8888} --no-browser --ServerApp.token="" --ServerApp.password="" --ServerApp.allow_origin="*" --ServerApp.root_dir=/workspace'
 EOF
-RUN chmod +x /entry.sh
+RUN chmod 755 /entry.sh
 
 EXPOSE 8888 22 80
 
