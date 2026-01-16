@@ -1,5 +1,5 @@
 # =========================================================
-# Base image (CUDA 12.8.1 + cuDNN, Ubuntu 22.04)
+# Base image
 # =========================================================
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
@@ -19,7 +19,7 @@ WORKDIR /workspace
 USER root
 RUN set -eux; \
     apt-get update -y; \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git git-lfs locales tzdata \
       build-essential pkg-config ninja-build \
       ffmpeg libgl1 libglib2.0-0 \
@@ -38,7 +38,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # =========================================================
-# Ubuntu platform user
+# Ubuntu user
 # =========================================================
 RUN set -eux; \
     useradd -m -s /bin/bash ubuntu; \
@@ -47,7 +47,7 @@ RUN set -eux; \
     chmod 0440 /etc/sudoers.d/ubuntu
 
 # =========================================================
-# Python 3.11 (official Unsloth baseline)
+# Python 3.11
 # =========================================================
 RUN set -eux; \
     add-apt-repository ppa:deadsnakes/ppa -y; \
@@ -59,7 +59,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # =========================================================
-# Make Python 3.11 the default
+# Default Python -> 3.11
 # =========================================================
 RUN set -eux; \
     update-alternatives --install /usr/bin/python python /usr/bin/python3.11 311; \
@@ -68,7 +68,7 @@ RUN set -eux; \
     python3.11 -m pip install --no-cache-dir -U pip setuptools wheel
 
 # =========================================================
-# Python tools (Unsloth + Jupyter)
+# Python tools (Unsloth)
 # =========================================================
 RUN set -eux; \
     python -m pip install --no-cache-dir \
@@ -82,26 +82,26 @@ RUN set -eux; \
       unsloth
 
 # =========================================================
-# Jupyter runtime env (used by start.sh)
+# Jupyter env
 # =========================================================
 ENV JUPYTER_PORT=8888 \
     JUPYTER_IP=0.0.0.0
 
 # =========================================================
-# nginx (README landing only, MUST listen on 80)
+# nginx + README
 # =========================================================
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 
 # =========================================================
-# Branding (apply to ubuntu user)
+# Branding
 # =========================================================
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc
 
 # =========================================================
-# start.sh (DO NOT MODIFY)
+# start.sh
 # =========================================================
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
@@ -114,9 +114,6 @@ RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
 # =========================================================
 # Ports
 # =========================================================
-# 22   -> SSH (ubuntu)
-# 80   -> nginx (README)
-# 8888 -> JupyterLab / Unsloth
 EXPOSE 22 80 8888
 
 # =========================================================
