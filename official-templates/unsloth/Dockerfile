@@ -1,4 +1,13 @@
-FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
+# ===============================
+# logo stage (required for COPY --from=logo yotta.txt ...)
+# ===============================
+FROM scratch AS logo
+COPY yotta.txt /yotta.txt
+
+# ===============================
+# main stage
+# ===============================
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -12,7 +21,7 @@ ENV TZ=UTC \
     VENV_PATH=/opt/venv
 
 # -------------------------------
-# System deps + tools you requested
+# System deps + tools
 # -------------------------------
 RUN set -eux; \
     apt-get update; \
@@ -29,8 +38,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
-# Build nccl-tests from source
-# Output: /opt/nccl-tests/build/* (eg all_reduce_perf)
+# Build nccl-tests (needs nvcc from devel image)
 # -------------------------------
 ARG NCCL_TESTS_REF=master
 RUN set -eux; \
@@ -100,7 +108,7 @@ RUN set -eux; \
 # -------------------------------
 # Branding
 # -------------------------------
-COPY --from=logo yotta.txt /etc/yotta.txt
+COPY --from=logo /yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
