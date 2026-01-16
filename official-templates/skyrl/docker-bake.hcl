@@ -6,8 +6,8 @@
 
 variable "PUBLISHER"  { default = "yottalabsai" }
 variable "TAG_SUFFIX" { default = "20260115" }
-
 variable "BASE_IMAGE" { default = "novaskyai/skyrl-train-ray-2.51.1-py3.12-cu12.8-megatron" }
+variable "JUPYTER_PASSWORD" { default = "ubuntu" }
 
 group "default" {
   targets = ["skyrl"]
@@ -31,5 +31,6 @@ target "skyrl" {
 
   args = {
     BASE_IMAGE = "${BASE_IMAGE}"
+    JUPYTER_PASSWORD = "${JUPYTER_PASSWORD}"
   }
 }

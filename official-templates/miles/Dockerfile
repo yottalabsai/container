@@ -7,15 +7,20 @@
 ARG BASE_IMAGE="radixark/miles:latest"
 FROM ${BASE_IMAGE} AS base
 
-SHELL ["/bin/bash","-o","pipefail","-c"]
-
+# ---- 环境变量配置 ----
+ENV DEBIAN_FRONTEND=noninteractive \
+    SHELL=/bin/bash \
+    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
+    JUPYTER_PASSWORD=ubuntu 
 # ==============================
 # runtime: 工具 + Branding + SSH
 # ==============================
 FROM base AS runtime
 
 USER root
-WORKDIR /workspace
+WORKDIR /
+RUN mkdir -p /workspace && chmod 777 /workspace
 
 # ---- 关键补丁：修复某些 base 镜像中 /var/lib/apt/lists 权限异常导致的 apt-get update 失败 ----
 RUN set -eux; \
@@ -56,6 +61,18 @@ RUN set -eux; \
 # ---- Python 依赖更新 ----
 RUN set -eux; \
     python3 -m pip install --no-cache-dir -U pip setuptools wheel
+
+# ---- Jupyter + 常用 CLI ----
+RUN python3 -m pip install --no-cache-dir \
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
+      huggingface-hub datasets
+
+# ---- 动态检测 Python 版本并创建 python3.11 符号链接（兼容 start.sh）----
+RUN set -eux; \
+    PYTHON_BIN=$(which python3); \
+    echo "Detected Python: $PYTHON_BIN"; \
+    ln -sf "$PYTHON_BIN" /usr/bin/python3.11; \
+    python3.11 --version
 
 # ---- SSH 配置：默认更安全（推荐商用：key-only）----
 RUN set -eux; \
@@ -113,6 +130,8 @@ RUN chmod +x /post_start.sh /start.sh 2>/dev/null || true
 
 # ---- 暴露端口 ----
 EXPOSE 22 80 8888
+USER root
+WORKDIR /root
 
 # ---- 默认入口 ----
 ENTRYPOINT ["/start.sh"]
