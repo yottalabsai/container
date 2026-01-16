@@ -57,3 +57,26 @@ Logs:
 
 - `/workspace/logs/gateway.out.log`
 - `/workspace/logs/gateway.err.log`
+
+```bash
+curl http://127.0.0.1:8080/healthz
+
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role":"user","content":"hello"}
+    ]
+  }'
+
+curl -N http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "gpt-4o-mini",
+    "stream": true,
+    "messages": [
+      {"role":"user","content":"write a haiku about gateways"}
+    ]
+  }'
+```
