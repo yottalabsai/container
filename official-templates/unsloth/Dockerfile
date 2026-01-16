@@ -1,5 +1,5 @@
 # =========================================================
-# Base: Official Unsloth image (includes /workspace/unsloth-notebooks)
+# Base: Official Unsloth image
 # =========================================================
 FROM unsloth/unsloth AS base
 
@@ -22,26 +22,54 @@ FROM base
 
 USER root
 
-# 你只要求 JUPYTER_PASSWORD 确保存在（值可被平台/运行时覆盖）
+# 你要求：JUPYTER_PASSWORD 通过环境变量存在（值可被平台覆盖）
 ENV JUPYTER_PASSWORD="unsloth"
 
 # -------------------------------
-# System tools you asked for
-# vim, jq, tree, htop, tmux, rsync, etc.
+# Tools + nginx + service support
+# 关键：让 start.sh 里如果用 service nginx start 不会炸
 # -------------------------------
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       ca-certificates curl wget git \
       sudo openssh-server \
+      tini \
       vim jq tree htop tmux rsync \
       pciutils iproute2 net-tools lsof procps \
-      tini; \
+      nginx sysvinit-utils; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
+# service shim (兜底)
+# 有些镜像即使装了 sysvinit-utils，也可能没有 nginx init script
+# 这个 shim 只保证 "service nginx start/stop/restart/status" 可用
+# -------------------------------
+RUN set -eux; \
+    printf '%s\n' \
+'#!/usr/bin/env bash' \
+'set -euo pipefail' \
+'svc="${1:-}"; cmd="${2:-}"' \
+'if [[ "$svc" == "nginx" ]]; then' \
+'  case "$cmd" in' \
+'    start)   nginx ;;' \
+'    stop)    nginx -s quit || true ;;' \
+'    restart) nginx -s reload || (nginx -s quit || true; nginx) ;;' \
+'    status)  pgrep -x nginx >/dev/null && echo "nginx is running" || (echo "nginx is not running"; exit 3) ;;' \
+'    *) echo "usage: service nginx {start|stop|restart|status}" >&2; exit 2 ;;' \
+'  esac' \
+'  exit 0' \
+'fi' \
+'exec /usr/sbin/service "$@"' \
+      > /usr/local/sbin/service; \
+    chmod 755 /usr/local/sbin/service
+
+# 确保 PATH 里优先用我们这个 service（不破坏系统自带的）
+ENV PATH="/usr/local/sbin:${PATH}"
+
+# -------------------------------
 # Python CLIs (huggingface-cli, datasets-cli)
-# 官方镜像不保证 /opt/venv，因此用 python3/pip3 兜底安装
+# 官方镜像不保证 /opt/venv，所以动态选 python
 # -------------------------------
 RUN set -eux; \
     if command -v python3 >/dev/null 2>&1; then PY=python3; \
@@ -64,7 +92,8 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
-# Optional: create ubuntu user (some platforms expect it)
+# Optional: create ubuntu user (你之前问过“我不是有 ubuntu 吗”)
+# 不会影响官方 unsloth 用户；只是补一个 ubuntu 以兼容平台/习惯
 # -------------------------------
 RUN set -eux; \
     if ! id ubuntu >/dev/null 2>&1; then \
@@ -104,6 +133,7 @@ RUN set -eux; \
       chmod 755 /usr/sbin/sshd; \
     fi
 
-EXPOSE 22 8888
+EXPOSE 22 8888 80
 
+# 平台会覆盖 CMD；我们不依赖 CMD 启动服务
 CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform should run: sshd -D && /start.sh' && sleep infinity"]
