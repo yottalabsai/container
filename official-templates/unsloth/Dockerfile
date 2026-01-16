@@ -18,6 +18,8 @@ WORKDIR /workspace
 USER root
 
 RUN set -eux; \
+    mkdir -p /tmp/apt-lists/partial; \
+    chmod -R 755 /tmp/apt-lists; \
     apt-get -o Dir::State::lists=/tmp/apt-lists update -y; \
     apt-get -o Dir::State::lists=/tmp/apt-lists install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git git-lfs locales tzdata \
@@ -30,13 +32,6 @@ RUN set -eux; \
       software-properties-common \
       libnccl2 libnccl-dev \
       tini; \
-    git lfs install; \
-    ln -sf /usr/share/zoneinfo/UTC /etc/localtime; \
-    echo "Etc/UTC" > /etc/timezone; \
-    dpkg-reconfigure -f noninteractive tzdata; \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen; \
-    locale-gen; \
-    update-locale; \
     rm -rf /tmp/apt-lists
 
 
