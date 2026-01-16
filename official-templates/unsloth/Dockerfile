@@ -95,7 +95,7 @@ RUN set -eux; \
 # -------------------------------
 # Branding (as you requested)
 # -------------------------------
-COPY yotta.txt /etc/yotta.txt
+COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
