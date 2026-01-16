@@ -20,7 +20,7 @@ ENV TZ=UTC \
     VENV_PATH=/opt/venv
 
 # -------------------------------
-# System packages + tools
+# System packages
 # -------------------------------
 RUN set -eux; \
     apt-get update; \
@@ -37,8 +37,7 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
-# Platform workaround:
-# Wrap sshd so "-D" does not block start.sh
+# sshd wrapper (unchanged)
 # -------------------------------
 RUN <<'EOF'
 set -eux
@@ -48,13 +47,6 @@ if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then
 #!/usr/bin/env bash
 set -euo pipefail
 REAL="/usr/sbin/sshd.real"
-
-# If platform passes -D, strip it so sshd daemonizes and returns
-if [[ "${1:-}" == "-D" ]]; then
-  shift
-  exec "$REAL" "$@"
-fi
-
 if [[ " $* " == *" -D "* ]]; then
   args=()
   for a in "$@"; do
@@ -63,7 +55,6 @@ if [[ " $* " == *" -D "* ]]; then
   done
   exec "$REAL" "${args[@]}"
 fi
-
 exec "$REAL" "$@"
 EOSSHD
   chmod 755 /usr/sbin/sshd
@@ -71,7 +62,7 @@ fi
 EOF
 
 # -------------------------------
-# Python 3.11 + venv (deadsnakes)
+# Python 3.11 + venv
 # -------------------------------
 RUN set -eux; \
     add-apt-repository -y ppa:deadsnakes/ppa; \
@@ -80,73 +71,64 @@ RUN set -eux; \
       python3.11 python3.11-venv python3.11-dev; \
     rm -rf /var/lib/apt/lists/*; \
     python3.11 -m venv "${VENV_PATH}"; \
-    "${VENV_PATH}/bin/pip" install --no-cache-dir -U pip setuptools wheel
+    "${VENV_PATH}/bin/pip" install -U pip setuptools wheel
 
-# Ensure python3.11 / pip usable globally
-RUN set -eux; \
-    ln -sf "${VENV_PATH}/bin/python3.11" /usr/local/bin/python3.11; \
-    ln -sf "${VENV_PATH}/bin/python" /usr/local/bin/python || true; \
+RUN ln -sf "${VENV_PATH}/bin/python3.11" /usr/local/bin/python3.11 && \
+    ln -sf "${VENV_PATH}/bin/python" /usr/local/bin/python || true && \
     ln -sf "${VENV_PATH}/bin/pip" /usr/local/bin/pip || true
 
-# Put venv into default PATH (incl sudo secure_path)
-RUN set -eux; \
-    echo 'export PATH=/opt/venv/bin:$PATH' >/etc/profile.d/venv.sh; \
-    chmod 644 /etc/profile.d/venv.sh; \
-    echo 'Defaults secure_path="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' >/etc/sudoers.d/99-secure-path; \
-    chmod 0440 /etc/sudoers.d/99-secure-path
+RUN echo 'export PATH=/opt/venv/bin:$PATH' >/etc/profile.d/venv.sh && \
+    chmod 644 /etc/profile.d/venv.sh && \
+    echo 'Defaults secure_path="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' \
+      >/etc/sudoers.d/99-secure-path
 
 # -------------------------------
-# Python packages: Unsloth + Jupyter + tools
+# Python packages (Unsloth)
 # -------------------------------
 RUN set -eux; \
-    "${VENV_PATH}/bin/pip" install --no-cache-dir \
+    pip install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cu128 \
       torch torchvision torchaudio; \
-    "${VENV_PATH}/bin/pip" install --no-cache-dir -U \
+    pip install --no-cache-dir \
       unsloth \
       jupyterlab jupyter_server ipykernel \
-      huggingface_hub datasets
+      huggingface_hub datasets; \
+    pip install --no-cache-dir xformers --no-deps; \
+    pip install --no-cache-dir triton
 
-# Unsloth pip-install extra deps (only add, do not remove)
-RUN set -eux; \
-    "${VENV_PATH}/bin/pip" install --no-cache-dir xformers --no-deps; \
-    "${VENV_PATH}/bin/pip" install --no-cache-dir triton
-
-# Convenience symlinks
-RUN set -eux; \
-    ln -sf "${VENV_PATH}/bin/jupyter" /usr/local/bin/jupyter || true; \
-    ln -sf "${VENV_PATH}/bin/huggingface-cli" /usr/local/bin/huggingface-cli || true; \
-    ln -sf "${VENV_PATH}/bin/datasets-cli" /usr/local/bin/datasets-cli || true
+RUN ln -sf "${VENV_PATH}/bin/jupyter" /usr/local/bin/jupyter || true
 
 # -------------------------------
-# Users (keep both unsloth + ubuntu)
+# Users
 # -------------------------------
 RUN set -eux; \
-    if ! id unsloth >/dev/null 2>&1; then useradd -m -s /bin/bash -u 1000 unsloth; fi; \
-    if ! id ubuntu  >/dev/null 2>&1; then useradd -m -s /bin/bash -u 1001 ubuntu;  fi; \
+    useradd -m -s /bin/bash -u 1000 unsloth || true; \
+    useradd -m -s /bin/bash -u 1001 ubuntu  || true; \
     usermod -aG sudo unsloth; \
     usermod -aG sudo ubuntu; \
     echo "unsloth ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-unsloth; \
     echo "ubuntu  ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-ubuntu; \
     chmod 0440 /etc/sudoers.d/90-unsloth /etc/sudoers.d/90-ubuntu; \
     mkdir -p /workspace /workspace/work /workspace/unsloth-notebooks; \
-    chown -R unsloth:unsloth /workspace || true
+    chown -R unsloth:unsloth /workspace
 
-# -------------------------------
-# ✅ 把你本地文件烤进镜像的 /workspace/unsloth-notebooks
-# 要求：构建上下文里存在 ./unsloth-notebooks/ 目录
-# -------------------------------
-COPY --chown=unsloth:unsloth unsloth-notebooks/ /workspace/unsloth-notebooks/
+# =========================================================
+# ✅ 关键修正点：不直接 COPY unsloth-notebooks
+#    而是 COPY 整个构建上下文，然后“有就拷，没有就算”
+# =========================================================
+COPY . /__build_context__
 
-# （保险）再修一次权限，避免某些 Docker 版本/缓存导致 ownership 异常
 RUN set -eux; \
-    chown -R unsloth:unsloth /workspace/unsloth-notebooks || true
+    if [ -d /__build_context__/unsloth-notebooks ]; then \
+      cp -a /__build_context__/unsloth-notebooks/. /workspace/unsloth-notebooks/; \
+      chown -R unsloth:unsloth /workspace/unsloth-notebooks; \
+    fi; \
+    rm -rf /__build_context__
 
 # -------------------------------
-# sshd minimal dirs
+# sshd dirs
 # -------------------------------
-RUN set -eux; \
-    mkdir -p /var/run/sshd
+RUN mkdir -p /var/run/sshd
 
 # -------------------------------
 # Branding
@@ -155,7 +137,7 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
-# start.sh must remain unchanged
+# start.sh (must not change)
 # -------------------------------
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
@@ -164,22 +146,15 @@ RUN chmod 755 /start.sh
 # entry.sh
 # -------------------------------
 RUN <<'EOF'
-set -eux
 cat > /entry.sh <<'EOENTRY'
 #!/usr/bin/env bash
 set -euo pipefail
-
-if [[ -n "${SSH_KEY:-}" ]]; then
-  install -d -m 700 -o unsloth -g unsloth /home/unsloth/.ssh
-  echo "${SSH_KEY}" > /home/unsloth/.ssh/authorized_keys
-  chown unsloth:unsloth /home/unsloth/.ssh/authorized_keys
-  chmod 600 /home/unsloth/.ssh/authorized_keys
-fi
-
 (/usr/sbin/sshd || true)
-
 exec sudo -u unsloth -H bash -lc \
-  '/opt/venv/bin/jupyter lab --ip=0.0.0.0 --port=${JUPYTER_PORT:-8888} --no-browser --ServerApp.token="" --ServerApp.password="" --ServerApp.allow_origin="*" --ServerApp.root_dir=/workspace'
+  'jupyter lab --ip=0.0.0.0 --port=${JUPYTER_PORT:-8888} --no-browser \
+   --ServerApp.token="" --ServerApp.password="" \
+   --ServerApp.allow_origin="*" \
+   --ServerApp.root_dir=/workspace'
 EOENTRY
 chmod 755 /entry.sh
 EOF
