@@ -22,7 +22,7 @@ target "unsloth" {
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/unsloth-yotta:cu121-torch241-unsloth",
+    "${PUBLISHER}/unsloth:0.6.9-py3.11-cuda12.1-cudnn-devel-ubuntu22.04",
   ]
 
   # 为了和你现有体系对齐，这里保留 contexts

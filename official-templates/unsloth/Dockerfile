@@ -1,119 +1,155 @@
-
-# Unsloth LLM Fine-tuning 镜像（official-templates/unsloth）
-# - 底座：官方 unsloth/unsloth
-# - 叠加：工具 + SSH + nccl-tests + branding
 # ==============================
-
-ARG BASE_IMAGE="unsloth/unsloth:latest"
-FROM ${BASE_IMAGE} AS base
+# Base (CUDA + Ubuntu 22.04)
+# ==============================
+ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
+FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
 
 # ==============================
-# runtime: 工具 + Branding + SSH
+# Env (UTC + noninteractive)
 # ==============================
-FROM base AS runtime
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1
 
-USER root
 WORKDIR /workspace
 
-# ---- 关键补丁：修复某些 base 镜像中 /var/lib/apt/lists 权限异常导致的 apt-get update 失败 ----
-RUN set -eux; \
-    mkdir -p /var/lib/apt/lists/partial; \
-    chmod 755 /var/lib/apt/lists /var/lib/apt/lists/partial
-
-# ---- 实用工具 + SSH 依赖 + MPI 开发库（nccl-tests 需要）----
-RUN set -eux; \
-    apt-get update -y; \
+# ==============================
+# System packages
+# - 包含你点名的工具：vim/jq/tree/htop/tmux/rsync
+# - sshd + nginx（虽然不 expose 80，但你要它在容器里启动就给你启动）
+# - python + pip：用于 huggingface-cli/datasets-cli/unsloth/jupyterlab
+# - NCCL：用于 nccl-tests
+# ==============================
+RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
-      vim \
-      htop \
-      tmux \
-      nano \
-      iputils-ping \
-      lsof \
-      tree \
-      jq \
-      net-tools \
-      netcat-openbsd \
-      procps \
-      iproute2 \
-      rsync \
-      openssh-server \
-      sudo \
-      ca-certificates \
-      curl \
-      wget \
-      git \
-      build-essential \
-      pkg-config \
-    ; \
-    mkdir -p /var/run/sshd; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+      # base
+      ca-certificates curl wget git git-lfs locales tzdata \
+      # build
+      build-essential pkg-config ninja-build \
+      # runtime libs
+      ffmpeg libgl1 libglib2.0-0 \
+      # ops tools (你点名的 + 常用排障)
+      vim jq tree htop tmux rsync \
+      zip unzip less procps net-tools lsof sudo \
+      iproute2 iputils-ping dnsutils \
+      # services
+      nginx openssh-server openssh-client \
+      # python
+      python3 python3-pip python3-venv \
+      # nccl
+      libnccl2 libnccl-dev \
+      # pid1
+      tini \
+    && git lfs install \
+    && ln -sf /usr/share/zoneinfo/UTC /etc/localtime \
+    && echo "Etc/UTC" > /etc/timezone \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen && update-locale \
+    && rm -rf /var/lib/apt/lists/*
 
-# ---- HuggingFace CLI / Datasets CLI ----
-RUN set -eux; \
-    pip install --no-cache-dir huggingface_hub datasets
-# ---- nccl-tests（不使用 MPI，更简单）----
-ARG NCCL_TESTS_VERSION="v2.13.11"
-ARG INSTALL_NCCL_TESTS="1"
-RUN set -eux; \
-    if [[ "${INSTALL_NCCL_TESTS}" == "1" ]]; then \
-      rm -rf /tmp/nccl-tests; \
-      git clone --depth 1 --branch "${NCCL_TESTS_VERSION}" https://github.com/NVIDIA/nccl-tests /tmp/nccl-tests; \
-      make -C /tmp/nccl-tests MPI=0 -j"$(nproc)"; \
-      cp -a /tmp/nccl-tests/build/* /usr/local/bin/ || true; \
-      rm -rf /tmp/nccl-tests; \
-    fi
+# ==============================
+# Python CLIs (你点名的)
+# - huggingface-cli 来自 huggingface_hub[cli]
+# - datasets-cli 来自 datasets
+# - 同时装 unsloth + jupyterlab（默认提供“Unsloth 入口服务”）
+# ==============================
+RUN python3 -m pip install --no-cache-dir -U pip && \
+    python3 -m pip install --no-cache-dir \
+      "huggingface_hub[cli]" \
+      "datasets" \
+      "jupyterlab" \
+      "unsloth"
 
-# ---- SSH 配置：默认更安全（推荐商用：key-only）----
-RUN set -eux; \
-    sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config; \
-    sed -i 's/^#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config; \
-    sed -i 's/^#PermitRootLogin prohibit-password/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+# ==============================
+# Build nccl-tests (你点名的)
+# - 可执行放到 /usr/local/bin/nccl-tests/
+# ==============================
+RUN git clone --depth 1 https://github.com/NVIDIA/nccl-tests.git /tmp/nccl-tests && \
+    make -C /tmp/nccl-tests -j"$(nproc)" && \
+    mkdir -p /usr/local/bin/nccl-tests && \
+    cp -a /tmp/nccl-tests/build/* /usr/local/bin/nccl-tests/ && \
+    rm -rf /tmp/nccl-tests
 
-# ---- COPY 官方模板 start.sh（来自 container-template/start.sh）----
-COPY --from=scripts start.sh /start.sh
-RUN chmod 755 /start.sh
+# ==============================
+# 商用安全：SSH key-only + 禁 root 登录
+# ==============================
+RUN mkdir -p /var/run/sshd && \
+    sed -ri 's/^#?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config && \
+    sed -ri 's/^#?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config && \
+    sed -ri 's/^#?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config && \
+    sed -ri 's/^#?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
 
-# ---- 关键兜底：平台覆盖 PID1/ENTRYPOINT 时自动启动 sshd ----
-RUN cat >> /etc/bash.bashrc <<'EOS'
-# Yotta: auto-start sshd when opening a shell (if platform overrides PID1)
-if [ "${SSH_ENABLE:-1}" != "0" ] && command -v sshd >/dev/null 2>&1; then
-  if ! pgrep -x sshd > /dev/null 2>&1; then
-    sudo /usr/sbin/sshd -p 22 2>/dev/null || true
-  fi
+# 创建非 root 用户（推荐商用）
+ARG APP_USER=app
+ARG APP_UID=1000
+ARG APP_GID=1000
+RUN groupadd -g ${APP_GID} ${APP_USER} && \
+    useradd -m -u ${APP_UID} -g ${APP_GID} -s /bin/bash ${APP_USER} && \
+    usermod -aG sudo ${APP_USER} && \
+    echo "${APP_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${APP_USER} && \
+    chmod 0440 /etc/sudoers.d/${APP_USER} && \
+    mkdir -p /home/${APP_USER}/.ssh && \
+    chmod 700 /home/${APP_USER}/.ssh && \
+    chown -R ${APP_USER}:${APP_USER} /home/${APP_USER}/.ssh
+
+# ==============================
+# Runtime config
+# - 只关注 SSH(22) + Unsloth 端口（这里用 Jupyter 默认端口 7861）
+# - 你可以用环境变量 UNSLOTH_PORT/UNSLOTH_CMD 覆盖默认行为
+# ==============================
+ENV UNSLOTH_PORT=7861
+# 默认把“Unsloth 服务”定义为 Jupyter（最常见用法）
+ENV UNSLOTH_CMD="jupyter lab --ip=0.0.0.0 --port=${UNSLOTH_PORT} --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password='' --NotebookApp.allow_origin='*'"
+
+# ==============================
+# Start script: 容器拉起就启动服务
+# - 注入 PUBLIC_KEY -> /home/app/.ssh/authorized_keys
+# - 启动 sshd
+# - 启动 nginx（不 expose 80，但你要它“启动”我就启动）
+# - 启动 UNSLOTH_CMD（默认 Jupyter）
+# ==============================
+RUN cat >/start.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_USER="${APP_USER:-app}"
+APP_HOME="/home/${APP_USER}"
+
+# 1) 写入 SSH 公钥（商用：只允许 key）
+if [[ -n "${PUBLIC_KEY:-}" ]]; then
+  echo "[start] Installing PUBLIC_KEY for ${APP_USER}"
+  install -d -m 700 -o "${APP_USER}" -g "${APP_USER}" "${APP_HOME}/.ssh"
+  echo "${PUBLIC_KEY}" > "${APP_HOME}/.ssh/authorized_keys"
+  chown "${APP_USER}:${APP_USER}" "${APP_HOME}/.ssh/authorized_keys"
+  chmod 600 "${APP_HOME}/.ssh/authorized_keys"
+else
+  echo "[start] PUBLIC_KEY not set -> SSH login will fail (key-only)."
 fi
-EOS
 
-# ---- Yotta 商业化元素 ----
-# 1) 创建 branding 文本
-COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo "YottaLabs AI - Unsloth Training Platform" > /etc/yotta.txt
+# 2) 启动 sshd
+echo "[start] starting sshd..."
+/usr/sbin/sshd
 
-# 2) /etc/profile.d - 对所有登录场景生效 (login shell / ssh / exec)
-RUN printf '%s\n' \
-  '#!/bin/bash' \
-  'cat /etc/yotta.txt 2>/dev/null || true' \
-  'echo -e "\n==================================="' \
-  'echo -e "Unsloth Fine-tuning Container"' \
-  'echo -e "Documentation: \033[1;34mhttps://www.yottalabs.ai/\033[0m"' \
-  'echo -e "===================================\n"' \
-  > /etc/profile.d/yotta.sh && chmod +x /etc/profile.d/yotta.sh
+# 3) 启动 nginx（你要求“服务拉起就启动”）
+echo "[start] starting nginx..."
+nginx
 
-# 3) /root/.bashrc - 对 root 交互式 bash 生效
-RUN touch /root/.bashrc && \
-    echo '' >> /root/.bashrc && \
-    echo '# Yotta Branding' >> /root/.bashrc && \
-    echo 'cat /etc/yotta.txt 2>/dev/null || true' >> /root/.bashrc && \
-    echo 'echo -e "\n==================================="' >> /root/.bashrc && \
-    echo 'echo -e "Unsloth Fine-tuning Container"' >> /root/.bashrc && \
-    echo 'echo -e "Documentation: \033[1;34mhttps://www.yottalabs.ai/\033[0m"' >> /root/.bashrc && \
-    echo 'echo -e "===================================\n"' >> /root/.bashrc
+# 4) 启动 Unsloth 服务（默认 Jupyter）
+echo "[start] starting UNSLOTH_CMD..."
+echo "[start] UNSLOTH_CMD=${UNSLOTH_CMD}"
+exec bash -lc "${UNSLOTH_CMD}"
+EOF
+RUN chmod +x /start.sh
 
-# ---- 暴露端口 ----
-EXPOSE 22 8888
+# ==============================
+# Ports (只暴露你要的两个)
+# ==============================
+EXPOSE 22 7861
 
-# ---- 默认入口 ----
-ENTRYPOINT ["/start.sh"]
+ENTRYPOINT ["/usr/bin/tini","-g","--"]
+CMD ["/start.sh"]
