@@ -5,6 +5,13 @@ FROM scratch AS logo
 COPY yotta.txt /yotta.txt
 
 # ===============================
+# scripts stage (start.sh must be preserved as-is)
+# ===============================
+FROM scratch AS scripts
+# 这里假设你的构建上下文里有 container-template/start.sh（你说的 /container-template/start.sh）
+COPY container-template/start.sh /start.sh
+
+# ===============================
 # main stage
 # ===============================
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
@@ -28,6 +35,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git \
       sudo openssh-server \
+      nginx \
       tini \
       build-essential \
       software-properties-common \
@@ -77,7 +85,19 @@ RUN set -eux; \
       numpy pandas matplotlib
 
 # -------------------------------
-# User: unsloth
+# Make "python3.11 -m jupyter" work for start.sh WITHOUT changing start.sh
+# start.sh uses: nohup python3.11 -m jupyter lab ...
+# So we ensure python3.11 resolves to venv python3.11 (and thus sees jupyter).
+# -------------------------------
+RUN set -eux; \
+    ln -sf "${VENV_PATH}/bin/python3.11" /usr/local/bin/python3.11; \
+    ln -sf "${VENV_PATH}/bin/python" /usr/local/bin/python || true; \
+    ln -sf "${VENV_PATH}/bin/jupyter" /usr/local/bin/jupyter || true; \
+    ln -sf "${VENV_PATH}/bin/huggingface-cli" /usr/local/bin/huggingface-cli || true; \
+    ln -sf "${VENV_PATH}/bin/datasets-cli" /usr/local/bin/datasets-cli || true
+
+# -------------------------------
+# User: unsloth  (keep existing)
 # -------------------------------
 RUN set -eux; \
     groupadd -g 1000 unsloth || true; \
@@ -89,6 +109,16 @@ RUN set -eux; \
     chown -R unsloth:unsloth /home/unsloth /workspace
 
 # -------------------------------
+# User: ubuntu (required by start.sh: sudo chown ubuntu:ubuntu /workspace)
+# -------------------------------
+RUN set -eux; \
+    groupadd -g 1001 ubuntu || true; \
+    useradd -m -u 1001 -g 1001 -s /bin/bash ubuntu || true; \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu; \
+    chmod 0440 /etc/sudoers.d/ubuntu; \
+    chown -R ubuntu:ubuntu /workspace || true
+
+# -------------------------------
 # SSHD setup
 # -------------------------------
 RUN set -eux; \
@@ -96,7 +126,7 @@ RUN set -eux; \
     sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/g' /etc/ssh/sshd_config; \
     sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/g' /etc/ssh/sshd_config; \
     sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/g' /etc/ssh/sshd_config; \
-    echo "AllowUsers unsloth" >> /etc/ssh/sshd_config
+    echo "AllowUsers unsloth ubuntu" >> /etc/ssh/sshd_config
 
 # -------------------------------
 # Unsloth notebooks (best-effort)
@@ -106,13 +136,19 @@ RUN set -eux; \
     chown -R unsloth:unsloth /workspace/unsloth-notebooks || true
 
 # -------------------------------
-# Branding
+# Branding  (keep your exact lines style)
 # -------------------------------
 COPY --from=logo /yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
-# Entrypoint
+# start.sh (MUST be preserved as-is)
+# -------------------------------
+COPY --from=scripts /start.sh /start.sh
+RUN chmod 755 /start.sh
+
+# -------------------------------
+# Entrypoint (keep existing /entry.sh)
 # -------------------------------
 RUN set -eux; \
     cat >/entry.sh <<'EOF'
@@ -148,7 +184,8 @@ exec sudo -u unsloth -H bash -lc \
 EOF
 RUN chmod +x /entry.sh
 
-EXPOSE 8888 22
+EXPOSE 8888 22 80
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/entry.sh"]
+# 默认改成 /start.sh，更兼容你平台“覆盖 CMD”场景；/entry.sh 仍然保留可手动跑
+CMD ["/start.sh"]
