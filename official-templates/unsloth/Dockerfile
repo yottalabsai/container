@@ -100,7 +100,7 @@ RUN set -eux; \
 # -------------------------------
 # Branding
 # -------------------------------
-COPY yotta.txt /etc/yotta.txt
+COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
