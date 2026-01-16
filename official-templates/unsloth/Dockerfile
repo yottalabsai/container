@@ -19,41 +19,40 @@ WORKDIR /workspace
 
 # ==============================
 # System packages
-# - 包含你点名的工具：vim/jq/tree/htop/tmux/rsync
 # - sshd + nginx（虽然不 expose 80，但你要它在容器里启动就给你启动）
 # - python + pip：用于 huggingface-cli/datasets-cli/unsloth/jupyterlab
 # - NCCL：用于 nccl-tests
 # ==============================
-RUN apt-get update -y && \
+USER root
+
+RUN set -eux; \
+    mkdir -p /var/lib/apt/lists/partial; \
+    chmod 755 /var/lib/apt/lists; \
+    chmod 755 /var/lib/apt/lists/partial; \
+    apt-get update -y; \
     apt-get install -y --no-install-recommends \
-      # base
       ca-certificates curl wget git git-lfs locales tzdata \
-      # build
       build-essential pkg-config ninja-build \
-      # runtime libs
       ffmpeg libgl1 libglib2.0-0 \
-      # ops tools (你点名的 + 常用排障)
       vim jq tree htop tmux rsync \
       zip unzip less procps net-tools lsof sudo \
       iproute2 iputils-ping dnsutils \
-      # services
       nginx openssh-server openssh-client \
-      # python
       python3 python3-pip python3-venv \
-      # nccl
       libnccl2 libnccl-dev \
-      # pid1
-      tini \
-    && git lfs install \
-    && ln -sf /usr/share/zoneinfo/UTC /etc/localtime \
-    && echo "Etc/UTC" > /etc/timezone \
-    && dpkg-reconfigure -f noninteractive tzdata \
-    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
-    && locale-gen && update-locale \
-    && rm -rf /var/lib/apt/lists/*
+      tini; \
+    git lfs install; \
+    ln -sf /usr/share/zoneinfo/UTC /etc/localtime; \
+    echo "Etc/UTC" > /etc/timezone; \
+    dpkg-reconfigure -f noninteractive tzdata; \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen; \
+    locale-gen; \
+    update-locale; \
+    rm -rf /var/lib/apt/lists/*
+
 
 # ==============================
-# Python CLIs (你点名的)
+# Python CLIs
 # - huggingface-cli 来自 huggingface_hub[cli]
 # - datasets-cli 来自 datasets
 # - 同时装 unsloth + jupyterlab（默认提供“Unsloth 入口服务”）
@@ -66,7 +65,7 @@ RUN python3 -m pip install --no-cache-dir -U pip && \
       "unsloth"
 
 # ==============================
-# Build nccl-tests (你点名的)
+# Build nccl-tests
 # - 可执行放到 /usr/local/bin/nccl-tests/
 # ==============================
 RUN git clone --depth 1 https://github.com/NVIDIA/nccl-tests.git /tmp/nccl-tests && \
