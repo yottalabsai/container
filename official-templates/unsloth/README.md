@@ -12,6 +12,9 @@ docker buildx bake \
   unsloth --no-cache --push
   
 docker buildx bake unsloth --no-cache --push
+
+docker build -t unsloth:local .
+
 ```
 
 ## Run (Interactive Shell)

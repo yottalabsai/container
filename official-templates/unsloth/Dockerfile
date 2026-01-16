@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.6
-
 # ===============================
 # logo + scripts stages
 # ===============================
@@ -132,7 +130,17 @@ RUN set -eux; \
     echo "ubuntu  ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-ubuntu; \
     chmod 0440 /etc/sudoers.d/90-unsloth /etc/sudoers.d/90-ubuntu; \
     mkdir -p /workspace /workspace/work /workspace/unsloth-notebooks; \
-    chown -R ubuntu:ubuntu /workspace || true
+    chown -R unsloth:unsloth /workspace || true
+
+# -------------------------------
+# ✅ 把你本地文件烤进镜像的 /workspace/unsloth-notebooks
+# 要求：构建上下文里存在 ./unsloth-notebooks/ 目录
+# -------------------------------
+COPY --chown=unsloth:unsloth unsloth-notebooks/ /workspace/unsloth-notebooks/
+
+# （保险）再修一次权限，避免某些 Docker 版本/缓存导致 ownership 异常
+RUN set -eux; \
+    chown -R unsloth:unsloth /workspace/unsloth-notebooks || true
 
 # -------------------------------
 # sshd minimal dirs
