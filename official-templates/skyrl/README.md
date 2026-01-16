@@ -1,5 +1,7 @@
 # SkyRL Reinforcement Learning Container
 
+### A GPU-accelerated runtime for reinforcement learning, designed for scalable policy optimization and RL experimentation.
+
 YottaLabs AI - SkyRL Training Platform
 
 基于官方 `skypilot/skypilot` 镜像，集成 Ray、Gymnasium、SSH、Nginx 等工具的强化学习训练环境。

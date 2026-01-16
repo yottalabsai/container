@@ -1,5 +1,7 @@
 # Miles AI Agent Container
 
+### A flexible GPU environment for AI prototyping and inference, suitable for model evaluation and production-ready serving.
+
 YottaLabs AI - Miles AI Agent Platform
 
 基于官方 `radixark/miles` 镜像，集成工具、SSH、Nginx 和 Yotta branding。
