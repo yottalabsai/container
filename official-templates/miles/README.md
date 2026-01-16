@@ -12,7 +12,7 @@ YottaLabs AI - Miles AI Agent Platform
 
 ```bash
 cd ~/projects/container/official-templates/miles
-docker buildx bake miles --no-cache
+docker buildx bake miles --no-cache --push
 
 docker run --gpus all -d \
   --name miles-dev \

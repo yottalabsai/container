@@ -12,7 +12,7 @@ YottaLabs AI - SkyRL Training Platform
 
 ```bash
 cd ~/projects/container/official-templates/skyrl
-docker buildx bake skyrl --no-cache
+docker buildx bake skyrl --no-cache --push
 ```
 
 ### 2. 启动容器（推荐配置）
