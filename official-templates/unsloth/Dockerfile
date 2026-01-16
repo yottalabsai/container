@@ -1,24 +1,18 @@
-# =========================================================
-# Base image
-# =========================================================
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1 \
-    JUPYTER_IP=0.0.0.0 \
-    JUPYTER_PORT=8888
+    JUPYTER_PORT=8888 \
+    JUPYTER_IP=0.0.0.0
 
 WORKDIR /workspace
 
-# =========================================================
+# ===============================
 # System packages
-# =========================================================
-USER root
+# ===============================
 RUN set -eux; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends --allow-change-held-packages \
@@ -30,8 +24,8 @@ RUN set -eux; \
       iproute2 iputils-ping dnsutils \
       nginx openssh-server openssh-client \
       libnccl2 libnccl-dev \
-      software-properties-common \
       python3 python3-venv python3-pip \
+      software-properties-common \
       tini; \
     git lfs install; \
     ln -sf /usr/share/zoneinfo/UTC /etc/localtime; \
@@ -39,101 +33,75 @@ RUN set -eux; \
     locale-gen; \
     rm -rf /var/lib/apt/lists/*
 
-# =========================================================
-# Ubuntu user (platform user)
-# =========================================================
+# ===============================
+# User
+# ===============================
 RUN set -eux; \
-    useradd -m -s /bin/bash ubuntu; \
-    usermod -aG sudo ubuntu; \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu; \
-    chmod 0440 /etc/sudoers.d/ubuntu; \
-    passwd -l ubuntu || true
+    groupadd -g 1001 user; \
+    useradd -m -u 1001 -g 1001 -s /bin/bash user; \
+    echo "user ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/user; \
+    chmod 0440 /etc/sudoers.d/user
 
-# =========================================================
-# Python 3.11 (no conda)
-# =========================================================
+# ===============================
+# SSH 修复
+# ===============================
 RUN set -eux; \
-    add-apt-repository ppa:deadsnakes/ppa -y; \
-    apt-get update -y; \
-    apt-get install -y --no-install-recommends \
-      python3.11 python3.11-venv python3.11-distutils; \
-    rm -rf /var/lib/apt/lists/*
-
-# Default python -> 3.11 + pip
-RUN set -eux; \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 311; \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 311; \
-    curl -fSL --retry 10 --retry-all-errors --retry-delay 2 https://bootstrap.pypa.io/get-pip.py | python3.11; \
-    python3.11 -m pip install --no-cache-dir -U pip setuptools wheel
-
-# Python tools (Unsloth + Jupyter)
-RUN set -eux; \
-    python -m pip install --no-cache-dir \
-      jupyterlab notebook ipykernel \
-      huggingface_hub datasets accelerate bitsandbytes unsloth
-
-# =========================================================
-# nginx + README (80)
-# =========================================================
-COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
-COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
-COPY README.md /usr/share/nginx/html/README.md
-
-# =========================================================
-# Branding
-# =========================================================
-COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc
-
-# =========================================================
-# SSH hardening (still starts on 22; key-based by default)
-# =========================================================
-RUN set -eux; \
-    mkdir -p /var/run/sshd; \
+    mkdir -p /run/sshd; \
+    chmod 0755 /run/sshd; \
     sed -i 's/^#\?Port .*/Port 22/' /etc/ssh/sshd_config; \
     sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config; \
     sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config; \
     sed -i 's/^#\?UsePAM .*/UsePAM yes/' /etc/ssh/sshd_config; \
-    printf "\nAllowUsers ubuntu\n" >> /etc/ssh/sshd_config
+    echo "AllowUsers user" >> /etc/ssh/sshd_config
 
-# =========================================================
+# ===============================
+# Python tools (no conda)
+# ===============================
+RUN set -eux; \
+    python3 -m pip install --no-cache-dir -U pip setuptools wheel; \
+    python3 -m pip install --no-cache-dir \
+      jupyterlab notebook ipykernel \
+      huggingface_hub datasets accelerate bitsandbytes unsloth
+
+# ===============================
+# Branding
+# ===============================
+COPY --from=logo yotta.txt /etc/yotta.txt
+RUN echo 'cat /etc/yotta.txt' >> /home/user/.bashrc
+
+# ===============================
 # Permissions
-# =========================================================
-RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
+# ===============================
+RUN chown -R user:user /workspace /home/user
 
-# =========================================================
+# ===============================
 # Ports
-# =========================================================
-EXPOSE 22 80 8888
+# ===============================
+EXPOSE 22 8888
 
-# =========================================================
-# Entrypoint: start sshd + nginx + jupyter (auto)
-# - JUPYTER_PASSWORD is supported (set at run time)
-# =========================================================
+# ===============================
+# Entrypoint
+# ===============================
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/bin/bash", "-lc", "\
-set -euo pipefail; \
-ssh-keygen -A >/dev/null 2>&1 || true; \
+set -e; \
 /usr/sbin/sshd; \
-nginx; \
-mkdir -p /home/ubuntu/.jupyter; \
+nginx || true; \
+mkdir -p /home/user/.jupyter; \
 if [ -n \"${JUPYTER_PASSWORD:-}\" ]; then \
-  python - <<'PY'\n\
-import os\n\
+python3 - <<'PY'\n\
 from jupyter_server.auth import passwd\n\
-pw = os.environ.get('JUPYTER_PASSWORD','')\n\
-print('c.ServerApp.password = %r' % passwd(pw))\n\
+import os\n\
+print('c.ServerApp.password = %r' % passwd(os.environ['JUPYTER_PASSWORD']))\n\
 print('c.ServerApp.token = \"\"')\n\
 PY \
-  > /home/ubuntu/.jupyter/jupyter_server_config.py; \
-  chown -R ubuntu:ubuntu /home/ubuntu/.jupyter; \
+> /home/user/.jupyter/jupyter_server_config.py; \
+chown -R user:user /home/user/.jupyter; \
 fi; \
-exec sudo -u ubuntu -E jupyter lab \
-  --ip=${JUPYTER_IP} \
-  --port=${JUPYTER_PORT} \
+exec sudo -u user -E jupyter lab \
+  --ip=0.0.0.0 \
+  --port=8888 \
   --no-browser \
-  --ServerApp.allow_origin='*' \
   --ServerApp.allow_remote_access=True \
   --ServerApp.root_dir=/workspace \
 "]
-
