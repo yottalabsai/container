@@ -1,16 +1,4 @@
 # ===============================
-# logo stage
-# ===============================
-FROM scratch AS logo
-COPY container-template/yotta.txt yotta.txt
-
-# ===============================
-# scripts stage
-# ===============================
-FROM scratch AS scripts
-COPY container-template/start.sh start.sh
-
-# ===============================
 # main stage
 # ===============================
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
@@ -43,7 +31,7 @@ RUN set -eux; \
 # Platform workaround:
 # Platform runs: sshd -D && /start.sh
 # "-D" blocks forever, so /start.sh never runs.
-# Wrap sshd: when "-D" is passed, daemonize and exit 0.
+# Wrap sshd so "-D" daemonizes and exits 0.
 # -------------------------------
 RUN set -eux; \
     if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
