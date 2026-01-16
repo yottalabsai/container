@@ -1,9 +1,3 @@
-# Unsloth-ready CUDA 12.8 image
-# Includes: PyTorch cu128 + Unsloth + JupyterLab + SSH
-# Tools: vim, jq, tree, htop, tmux, rsync, huggingface-cli, datasets-cli
-# NCCL: libnccl2/libnccl-dev + build nccl-tests (all_reduce_perf etc.)
-# Branding: yotta.txt printed in root interactive bash
-
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -22,18 +16,15 @@ ENV TZ=UTC \
 # -------------------------------
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git \
       sudo openssh-server \
       tini \
       build-essential \
       software-properties-common \
-      # tools
       vim jq tree htop tmux rsync \
       pciutils iproute2 net-tools lsof procps \
-      # for building nccl-tests
       make g++ \
-      # nccl runtime/dev libs (package names exist in NVIDIA CUDA repo)
       libnccl2 libnccl-dev; \
     rm -rf /var/lib/apt/lists/*
 
@@ -78,7 +69,7 @@ RUN set -eux; \
       numpy pandas matplotlib
 
 # -------------------------------
-# User: unsloth (run training/jupyter as non-root)
+# User: unsloth
 # -------------------------------
 RUN set -eux; \
     groupadd -g 1000 unsloth || true; \
@@ -107,9 +98,9 @@ RUN set -eux; \
     chown -R unsloth:unsloth /workspace/unsloth-notebooks || true
 
 # -------------------------------
-# Branding (as you requested)
+# Branding
 # -------------------------------
-COPY --from=logo yotta.txt /etc/yotta.txt
+COPY yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
@@ -120,7 +111,6 @@ RUN set -eux; \
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SSH key injection (env: SSH_KEY)
 if [[ -n "${SSH_KEY:-}" ]]; then
   install -d -m 700 -o unsloth -g unsloth /home/unsloth/.ssh
   echo "${SSH_KEY}" > /home/unsloth/.ssh/authorized_keys
@@ -128,13 +118,9 @@ if [[ -n "${SSH_KEY:-}" ]]; then
   chmod 600 /home/unsloth/.ssh/authorized_keys
 fi
 
-# Set sudo password (env: USER_PASSWORD)
 echo "unsloth:${USER_PASSWORD:-unsloth}" | chpasswd
-
-# Start sshd
 /usr/sbin/sshd
 
-# Jupyter password hash from plaintext JUPYTER_PASSWORD
 JUPYTER_PW="${JUPYTER_PASSWORD:-unsloth}"
 HASH="$(python3.11 - <<PY
 from jupyter_server.auth import passwd
@@ -142,8 +128,6 @@ print(passwd("${JUPYTER_PW}"))
 PY
 )"
 
-# Launch Jupyter Lab as non-root.
-# IMPORTANT: use absolute path to avoid sudo PATH stripping.
 exec sudo -u unsloth -H bash -lc \
   "/opt/venv/bin/jupyter lab \
     --ip=0.0.0.0 \
