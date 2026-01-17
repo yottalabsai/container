@@ -1,3 +1,13 @@
+
+# ===============================
+# logo + scripts stages
+# ===============================
+FROM scratch AS logo
+COPY container-template/yotta.txt yotta.txt
+
+FROM scratch AS scripts
+COPY container-template/start.sh start.sh
+
 # =========================================================
 # Base image
 # =========================================================
@@ -119,6 +129,11 @@ RUN set -eux; \
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
+#=======
+#start.sh
+#=======
+COPY --from=scripts start.sh /start.sh
+RUN chmod 755 /start.sh
 
 # =========================================================
 # Branding
@@ -134,7 +149,7 @@ RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
 # =========================================================
 # Ports
 # =========================================================
-EXPOSE 22 80 8888
+EXPOSE 22 80 8888 6006
 
 # =========================================================
 # Entrypoint (aligned with unsloth)
@@ -149,6 +164,8 @@ export HOME=/home/$JUSER; \
 export JUPYTER_RUNTIME_DIR=$HOME/.local/share/jupyter/runtime; \
 mkdir -p $HOME/.jupyter $JUPYTER_RUNTIME_DIR; \
 chown -R $JUSER:$JUSER $HOME/.jupyter $HOME/.local; \
+nohup tensorboard --logdir=/workspace --port=6006 --host=0.0.0.0 > /tmp/tensorboard.log 2>&1 & \
+sleep 2; \
 exec sudo -u $JUSER -H bash -lc \"jupyter lab \
   --ip=0.0.0.0 \
   --port=8888 \
@@ -160,5 +177,4 @@ exec sudo -u $JUSER -H bash -lc \"jupyter lab \
   --ServerApp.allow_password=False \
 \" \
 "]
-
 
