@@ -113,6 +113,29 @@ RUN set -eux; \
     chown -R unsloth:unsloth /workspace
 
 # =========================================================
+# Download Unsloth notebooks templates and flatten structure
+# =========================================================
+RUN set -eux; \
+    cd /tmp; \
+    git clone --depth=1 https://github.com/unslothai/notebooks.git unsloth-notebooks-src; \
+    \
+    # 确保目标目录存在
+    mkdir -p /workspace/unsloth-notebooks; \
+    \
+    # 把 original_template 里的脚本全部拷到目标目录
+    cp -a unsloth-notebooks-src/original_template/. /workspace/unsloth-notebooks/; \
+    \
+    # 同时把 template.ipynb 也拷过去（如果你要）
+    cp -a unsloth-notebooks-src/template.ipynb /workspace/unsloth-notebooks/ || true; \
+    \
+    # 权限修正（Jupyter 用 unsloth 用户）
+    chown -R unsloth:unsloth /workspace/unsloth-notebooks; \
+    \
+    # 清理
+    rm -rf /tmp/unsloth-notebooks-src
+
+
+# =========================================================
 # ✅ 关键修正点：不直接 COPY unsloth-notebooks
 #    而是 COPY 整个构建上下文，然后“有就拷，没有就算”
 # =========================================================
