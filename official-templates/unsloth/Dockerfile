@@ -1,183 +1,188 @@
-# =========================================================
-# Base: Official Unsloth image
-# =========================================================
-FROM unsloth/unsloth AS base
-
-# =========================================================
-# logo stage (按你要求：COPY --from=logo yotta.txt /etc/yotta.txt)
-# =========================================================
+# ===============================
+# logo + scripts stages
+# ===============================
 FROM scratch AS logo
 COPY container-template/yotta.txt yotta.txt
 
-# =========================================================
-# scripts stage（start.sh 必须原样，不改内容）
-# =========================================================
 FROM scratch AS scripts
 COPY container-template/start.sh start.sh
 
-# =========================================================
-# Final image
-# =========================================================
-FROM base
+# ===============================
+# main stage
+# ===============================
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
-USER root
-
-ENV JUPYTER_PASSWORD="unsloth"
-ENV PATH="/usr/local/sbin:/usr/local/bin:${PATH}"
+ARG DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1 \
+    VENV_PATH=/opt/venv
 
 # -------------------------------
-# Base tools + nginx + service
+# System packages
 # -------------------------------
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git \
-      sudo openssh-server \
+      sudo \
+      openssh-server \
+      nginx \
       tini \
+      build-essential make g++ \
+      software-properties-common \
       vim jq tree htop tmux rsync \
-      pciutils iproute2 net-tools lsof procps \
-      nginx sysvinit-utils; \
+      pciutils iproute2 net-tools lsof procps; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
-# service shim: make "service nginx start" always work
+# sshd wrapper (unchanged)
 # -------------------------------
-RUN set -eux; \
-    printf '%s\n' \
-'#!/usr/bin/env bash' \
-'set -euo pipefail' \
-'svc="${1:-}"; cmd="${2:-}"' \
-'if [[ "$svc" == "nginx" ]]; then' \
-'  case "$cmd" in' \
-'    start)   nginx ;;' \
-'    stop)    nginx -s quit || true ;;' \
-'    restart) nginx -s reload || (nginx -s quit || true; nginx) ;;' \
-'    status)  pgrep -x nginx >/dev/null && echo "nginx is running" || (echo "nginx is not running"; exit 3) ;;' \
-'    *) echo "usage: service nginx {start|stop|restart|status}" >&2; exit 2 ;;' \
-'  esac' \
-'  exit 0' \
-'fi' \
-'exec /usr/sbin/service "$@"' \
-      > /usr/local/sbin/service; \
-    chmod 755 /usr/local/sbin/service
+RUN <<'EOF'
+set -eux
+if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then
+  mv /usr/sbin/sshd /usr/sbin/sshd.real
+  cat > /usr/sbin/sshd <<'EOSSHD'
+#!/usr/bin/env bash
+set -euo pipefail
+REAL="/usr/sbin/sshd.real"
+if [[ " $* " == *" -D "* ]]; then
+  args=()
+  for a in "$@"; do
+    [[ "$a" == "-D" ]] && continue
+    args+=("$a")
+  done
+  exec "$REAL" "${args[@]}"
+fi
+exec "$REAL" "$@"
+EOSSHD
+  chmod 755 /usr/sbin/sshd
+fi
+EOF
 
 # -------------------------------
-# Compatibility: start.sh expects python3.11
-# Provide python3.11 alias to existing python3/python
+# Python 3.11 + venv
 # -------------------------------
 RUN set -eux; \
-    if command -v python3.11 >/dev/null 2>&1; then \
-      echo "python3.11 exists"; \
-    else \
-      if command -v python3 >/dev/null 2>&1; then \
-        target="$(command -v python3)"; \
-      elif command -v python >/dev/null 2>&1; then \
-        target="$(command -v python)"; \
-      else \
-        echo "No python found in base image" >&2; exit 1; \
-      fi; \
-      ln -sf "$target" /usr/local/bin/python3.11; \
+    add-apt-repository -y ppa:deadsnakes/ppa; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      python3.11 python3.11-venv python3.11-dev; \
+    rm -rf /var/lib/apt/lists/*; \
+    python3.11 -m venv "${VENV_PATH}"; \
+    "${VENV_PATH}/bin/pip" install -U pip setuptools wheel
+
+RUN ln -sf "${VENV_PATH}/bin/python3.11" /usr/local/bin/python3.11 && \
+    ln -sf "${VENV_PATH}/bin/python" /usr/local/bin/python || true && \
+    ln -sf "${VENV_PATH}/bin/pip" /usr/local/bin/pip || true
+
+RUN echo 'export PATH=/opt/venv/bin:$PATH' >/etc/profile.d/venv.sh && \
+    chmod 644 /etc/profile.d/venv.sh && \
+    echo 'Defaults secure_path="/opt/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' \
+      >/etc/sudoers.d/99-secure-path
+
+# -------------------------------
+# Python packages (Unsloth)
+# -------------------------------
+RUN set -eux; \
+    pip install --no-cache-dir \
+      --index-url https://download.pytorch.org/whl/cu128 \
+      torch torchvision torchaudio; \
+    pip install --no-cache-dir \
+      unsloth \
+      jupyterlab jupyter_server ipykernel \
+      huggingface_hub datasets; \
+    pip install --no-cache-dir xformers --no-deps; \
+    pip install --no-cache-dir triton
+
+RUN ln -sf "${VENV_PATH}/bin/jupyter" /usr/local/bin/jupyter || true
+
+# -------------------------------
+# Users
+# -------------------------------
+RUN set -eux; \
+    useradd -m -s /bin/bash -u 1000 unsloth || true; \
+    useradd -m -s /bin/bash -u 1001 ubuntu  || true; \
+    usermod -aG sudo unsloth; \
+    usermod -aG sudo ubuntu; \
+    echo "unsloth ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-unsloth; \
+    echo "ubuntu  ALL=(ALL) NOPASSWD:ALL" >/etc/sudoers.d/90-ubuntu; \
+    chmod 0440 /etc/sudoers.d/90-unsloth /etc/sudoers.d/90-ubuntu; \
+    mkdir -p /workspace /workspace/work /workspace/unsloth-notebooks; \
+    chown -R unsloth:unsloth /workspace
+
+# =========================================================
+# Download Unsloth notebooks templates and flatten structure
+# =========================================================
+RUN set -eux; \
+    cd /tmp; \
+    git clone --depth=1 https://github.com/unslothai/notebooks.git unsloth-notebooks-src; \
+    \
+    # 确保目标目录存在
+    mkdir -p /workspace/unsloth-notebooks; \
+    \
+    # 把 original_template 里的脚本全部拷到目标目录
+    cp -a unsloth-notebooks-src/original_template/. /workspace/unsloth-notebooks/; \
+    \
+    # 同时把 template.ipynb 也拷过去（如果你要）
+    cp -a unsloth-notebooks-src/template.ipynb /workspace/unsloth-notebooks/ || true; \
+    \
+    # 权限修正（Jupyter 用 unsloth 用户）
+    chown -R unsloth:unsloth /workspace/unsloth-notebooks; \
+    \
+    # 清理
+    rm -rf /tmp/unsloth-notebooks-src
+
+
+# =========================================================
+# ✅ 关键修正点：不直接 COPY unsloth-notebooks
+#    而是 COPY 整个构建上下文，然后“有就拷，没有就算”
+# =========================================================
+COPY . /__build_context__
+
+RUN set -eux; \
+    if [ -d /__build_context__/unsloth-notebooks ]; then \
+      cp -a /__build_context__/unsloth-notebooks/. /workspace/unsloth-notebooks/; \
+      chown -R unsloth:unsloth /workspace/unsloth-notebooks; \
     fi; \
-    python3.11 -V
+    rm -rf /__build_context__
 
 # -------------------------------
-# Ensure pip + install CLI tools
+# sshd dirs
 # -------------------------------
-RUN set -eux; \
-    if command -v python3 >/dev/null 2>&1; then PY=python3; \
-    elif command -v python >/dev/null 2>&1; then PY=python; \
-    else echo "python not found" >&2; exit 1; fi; \
-    "$PY" -m pip --version >/dev/null 2>&1 || (apt-get update && apt-get install -y --no-install-recommends python3-pip && rm -rf /var/lib/apt/lists/*); \
-    "$PY" -m pip install --no-cache-dir -U pip; \
-    "$PY" -m pip install --no-cache-dir "huggingface_hub[cli]" "datasets"
+RUN mkdir -p /var/run/sshd
 
 # -------------------------------
-# Jupyter availability:
-# - start.sh 可能直接调用 "jupyter"
-# - 不假设 /opt/venv/bin/jupyter 一定存在
-# - 找不到就用 pip 装 jupyterlab 并建立 /usr/local/bin/jupyter
-# -------------------------------
-RUN set -eux; \
-    # pick python
-    if command -v python3 >/dev/null 2>&1; then PY=python3; \
-    elif command -v python >/dev/null 2>&1; then PY=python; \
-    else echo "python not found" >&2; exit 1; fi; \
-    # already in PATH?
-    if command -v jupyter >/dev/null 2>&1; then \
-      echo "jupyter already in PATH"; \
-    else \
-      # common locations
-      if [ -x /opt/venv/bin/jupyter ]; then \
-        ln -sf /opt/venv/bin/jupyter /usr/local/bin/jupyter; \
-      elif [ -x /usr/local/bin/jupyter ]; then \
-        :; \
-      elif [ -x /usr/bin/jupyter ]; then \
-        ln -sf /usr/bin/jupyter /usr/local/bin/jupyter; \
-      else \
-        # last resort: install jupyterlab
-        "$PY" -m pip install --no-cache-dir "jupyterlab"; \
-        # try to locate installed jupyter script
-        JPATH="$("$PY" -c 'import shutil; p=shutil.which("jupyter"); print(p or "")')"; \
-        if [ -n "$JPATH" ] && [ -x "$JPATH" ]; then \
-          ln -sf "$JPATH" /usr/local/bin/jupyter; \
-        fi; \
-      fi; \
-    fi; \
-    # verify
-    command -v jupyter >/dev/null 2>&1 || { echo "jupyter still not found" >&2; exit 1; }; \
-    jupyter --version
-
-# -------------------------------
-# start.sh (必须原样)
-# -------------------------------
-COPY --from=scripts start.sh /start.sh
-RUN chmod 755 /start.sh
-
-# -------------------------------
-# branding (你要求必须原样)
+# Branding
 # -------------------------------
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # -------------------------------
-# Optional: create ubuntu user
+# start.sh (must not change)
 # -------------------------------
-RUN set -eux; \
-    if ! id ubuntu >/dev/null 2>&1; then \
-      useradd -m -s /bin/bash ubuntu; \
-      usermod -aG sudo ubuntu; \
-      echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-ubuntu; \
-      chmod 0440 /etc/sudoers.d/90-ubuntu; \
-    fi; \
-    mkdir -p /workspace/work; \
-    chown -R ubuntu:ubuntu /workspace || true
+COPY --from=scripts start.sh /start.sh
+RUN chmod 755 /start.sh
 
 # -------------------------------
-# CRITICAL: platform injects "sshd -D && /start.sh"
-# -D blocks forever -> /start.sh never runs
-# Wrap sshd: if -D, daemonize then exit 0
+# entry.sh
 # -------------------------------
-RUN set -eux; \
-    if [ -x /usr/sbin/sshd ] && [ ! -x /usr/sbin/sshd.real ]; then \
-      mv /usr/sbin/sshd /usr/sbin/sshd.real; \
-      printf '%s\n' \
-'#!/usr/bin/env bash' \
-'set -euo pipefail' \
-'if [[ " $* " == *" -D "* ]]; then' \
-'  args=()' \
-'  for a in "$@"; do' \
-'    [[ "$a" == "-D" ]] && continue' \
-'    args+=("$a")' \
-'  done' \
-'  /usr/sbin/sshd.real "${args[@]}" &' \
-'  exit 0' \
-'fi' \
-'exec /usr/sbin/sshd.real "$@"' \
-      > /usr/sbin/sshd; \
-      chmod 755 /usr/sbin/sshd; \
-    fi
+RUN <<'EOF'
+cat > /entry.sh <<'EOENTRY'
+#!/usr/bin/env bash
+set -euo pipefail
+(/usr/sbin/sshd || true)
+exec sudo -u unsloth -H bash -lc \
+  'jupyter lab --ip=0.0.0.0 --port=${JUPYTER_PORT:-8888} --no-browser \
+   --ServerApp.token="" --ServerApp.password="" \
+   --ServerApp.allow_origin="*" \
+   --ServerApp.root_dir=/workspace'
+EOENTRY
+chmod 755 /entry.sh
+EOF
 
-EXPOSE 22 8888 80
+EXPOSE 8888 22 80
 
-# 平台会覆盖 CMD；我们不依赖 CMD 启动
-CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform should run: sshd -D && /start.sh' && sleep infinity"]
+ENTRYPOINT ["/usr/bin/tini","--"]
+CMD ["/start.sh"]
