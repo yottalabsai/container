@@ -19,8 +19,7 @@ target "skyrl" {
   platforms   = ["linux/amd64"]
 
   tags = [
-  "${PUBLISHER}/skyrl-yotta:ray2.51-py3.12-cu12.8",
-  "${PUBLISHER}/skyrl-yotta:latest",
+  "${PUBLISHER}/skyrl:ray2.51-py3.11-cuda12.1-cudnn-devel-ubuntu22.04",
 ]
   # 为了和现有体系对齐，保留 contexts
   contexts = {
