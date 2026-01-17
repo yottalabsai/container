@@ -1,12 +1,18 @@
-
 # ===============================
-# logo + scripts stages
+# logo + scripts + proxy stages
 # ===============================
 FROM scratch AS logo
 COPY container-template/yotta.txt yotta.txt
 
 FROM scratch AS scripts
 COPY container-template/start.sh start.sh
+
+# nginx config / landing page (keep as its own stage to match existing COPY --from=proxy)
+FROM scratch AS proxy
+# 你可以把 nginx.conf / readme.html 放在构建上下文根目录；
+# 或者放在 container-template/ 下面（二选一，按你仓库实际路径改）。
+COPY nginx.conf nginx.conf
+COPY readme.html readme.html
 
 # =========================================================
 # Base image
@@ -129,9 +135,10 @@ RUN set -eux; \
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
-#=======
-#start.sh
-#=======
+
+# =========================================================
+# start.sh (必须原样保留)
+# =========================================================
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
@@ -140,6 +147,14 @@ RUN chmod 755 /start.sh
 # =========================================================
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc
+
+# =========================================================
+# Entrypoint wrapper
+# - 关键点：把 tensorboard 放到 ENTRYPOINT 里，避免平台覆盖 CMD 导致 6006 不起
+# - 不修改 /start.sh，只是在启动时尝试执行它（如果存在）
+# =========================================================
+RUN set -eux; \
+    cat > /entrypoint.sh <<'SH'\n#!/usr/bin/env bash\nset -euo pipefail\n\n# 起 SSH / nginx（不阻塞）\n/usr/sbin/sshd || true\nnginx || true\n\n# 如果平台依赖 /start.sh，这里也尝试执行（不修改它）\nif [ -x /start.sh ]; then\n  /start.sh &\nfi\n\n# 起 TensorBoard（后台）\nnohup tensorboard --logdir=/workspace --port=6006 --host=0.0.0.0 > /tmp/tensorboard.log 2>&1 &\n\n# 默认启动 JupyterLab；如果外部传了命令，就执行外部命令\nJUSER=ubuntu\nexport HOME=/home/${JUSER}\nexport JUPYTER_RUNTIME_DIR=$HOME/.local/share/jupyter/runtime\nmkdir -p $HOME/.jupyter $JUPYTER_RUNTIME_DIR\nchown -R $JUSER:$JUSER $HOME/.jupyter $HOME/.local /workspace || true\n\nif [ \"$#\" -gt 0 ]; then\n  exec \"$@\"\nelse\n  exec sudo -u ${JUSER} -H bash -lc \"jupyter lab \\\\\n    --ip=0.0.0.0 \\\\\n    --port=8888 \\\\\n    --no-browser \\\\\n    --ServerApp.allow_remote_access=True \\\\\n    --ServerApp.root_dir=/workspace \\\\\n    --ServerApp.password='' \\\\\n    --ServerApp.token='' \\\\\n    --ServerApp.allow_password=False\"\nfi\nSH\n    chmod +x /entrypoint.sh
 
 # =========================================================
 # Permissions
@@ -152,29 +167,7 @@ RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
 EXPOSE 22 80 8888 6006
 
 # =========================================================
-# Entrypoint (aligned with unsloth)
+# Entrypoint
 # =========================================================
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/bin/bash", "-c", "\
-set -euo pipefail; \
-/usr/sbin/sshd; \
-nginx || true; \
-JUSER=ubuntu; \
-export HOME=/home/$JUSER; \
-export JUPYTER_RUNTIME_DIR=$HOME/.local/share/jupyter/runtime; \
-mkdir -p $HOME/.jupyter $JUPYTER_RUNTIME_DIR; \
-chown -R $JUSER:$JUSER $HOME/.jupyter $HOME/.local; \
-nohup tensorboard --logdir=/workspace --port=6006 --host=0.0.0.0 > /tmp/tensorboard.log 2>&1 & \
-sleep 2; \
-exec sudo -u $JUSER -H bash -lc \"jupyter lab \
-  --ip=0.0.0.0 \
-  --port=8888 \
-  --no-browser \
-  --ServerApp.allow_remote_access=True \
-  --ServerApp.root_dir=/workspace \
-  --ServerApp.password='' \
-  --ServerApp.token='' \
-  --ServerApp.allow_password=False \
-\" \
-"]
-
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
+CMD []
