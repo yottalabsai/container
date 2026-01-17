@@ -9,8 +9,7 @@ COPY container-template/start.sh start.sh
 
 # nginx config / landing page (keep as its own stage to match existing COPY --from=proxy)
 FROM scratch AS proxy
-# 你可以把 nginx.conf / readme.html 放在构建上下文根目录；
-# 或者放在 container-template/ 下面（二选一，按你仓库实际路径改）。
+# 下面两个文件需要在 build context 里存在；不在根目录就改路径
 COPY nginx.conf nginx.conf
 COPY readme.html readme.html
 
@@ -25,8 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1 \
-    JUPYTER_PASSWORD=ubuntu
+    PYTHONUNBUFFERED=1
 
 WORKDIR /workspace
 
@@ -58,10 +56,10 @@ RUN set -eux; \
 # Users: ubuntu (compat)
 # =========================================================
 RUN set -eux; \
-    useradd -ms /bin/bash ubuntu; \
-    usermod -aG sudo ubuntu; \
+    useradd -ms /bin/bash ubuntu || true; \
+    usermod -aG sudo ubuntu || true; \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu; \
-    echo "ubuntu:ubuntu" | chpasswd
+    echo "ubuntu:ubuntu" | chpasswd || true
 
 # =========================================================
 # Python 3.11
@@ -85,7 +83,7 @@ RUN set -eux; \
     python3.11 -m pip install --no-cache-dir -U pip setuptools wheel
 
 # =========================================================
-# Python tools (SkyRL / Unsloth)
+# Python tools
 # =========================================================
 RUN set -eux; \
     python -m pip install --no-cache-dir \
@@ -104,7 +102,7 @@ RUN set -eux; \
       unsloth
 
 # =========================================================
-# Megatron-LM
+# Megatron-LM (optional)
 # =========================================================
 RUN git clone --depth 1 https://github.com/NVIDIA/Megatron-LM.git /opt/megatron-lm && \
     pip install -e /opt/megatron-lm
@@ -120,7 +118,7 @@ RUN set -eux; \
     rm -rf /tmp/nccl-tests
 
 # =========================================================
-# SSH hardening
+# SSH hardening (platform may override anyway)
 # =========================================================
 RUN set -eux; \
     mkdir -p /var/run/sshd; \
@@ -130,7 +128,7 @@ RUN set -eux; \
     sed -ri 's/^#?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
 
 # =========================================================
-# nginx + README
+# nginx + README (optional)
 # =========================================================
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
@@ -146,58 +144,48 @@ RUN chmod 755 /start.sh
 # Branding
 # =========================================================
 COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc
+RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc || true
 
 # =========================================================
-# Entrypoint wrapper
-# - 关键点：把 tensorboard 放到 ENTRYPOINT 里，避免平台覆盖 CMD 导致 6006 不起
-# - 不修改 /start.sh，只是在启动时尝试执行它（如果存在）
+# post_start hook (关键)
+# - 你的平台 PID1 实际跑的是: sudo -E /start.sh
+# - 所以 ENTRYPOINT/CMD 不可靠；用 /post_start.sh 注入最稳
+# - 全程不依赖 root，不碰 /home/ubuntu，日志写 /workspace
 # =========================================================
 RUN set -eux; \
-  cat > /entrypoint.sh <<'SH'
+  cat > /post_start.sh <<'SH'
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
-# 起 SSH / nginx（不阻塞）
-/usr/sbin/sshd || true
-nginx || true
+LOG_DIR="/workspace"
+TB_LOG="${LOG_DIR}/tensorboard.log"
 
-# 如果平台依赖 /start.sh，这里也尝试执行（不修改它）
-if [ -x /start.sh ]; then
-  /start.sh &
+# 记录一下我们是否真的被执行到
+echo "[post_start] invoked at $(date -Is) uid=$(id -u) gid=$(id -g)" >> "${TB_LOG}" 2>/dev/null || true
+
+# 避免重复启动（容器重启/多次调用时）
+if ss -lntp 2>/dev/null | grep -q ':6006'; then
+  echo "[post_start] tensorboard already listening on 6006" >> "${TB_LOG}" 2>/dev/null || true
+  exit 0
 fi
 
-# 起 TensorBoard（后台）
-nohup tensorboard --logdir=/workspace --port=6006 --host=0.0.0.0 > /tmp/tensorboard.log 2>&1 &
+# 启动 TensorBoard（后台），日志追加到 /workspace（通常是可写卷）
+nohup tensorboard \
+  --logdir=/workspace \
+  --host=0.0.0.0 \
+  --port=6006 \
+  >> "${TB_LOG}" 2>&1 &
 
-# 默认启动 JupyterLab；如果外部传了命令，就执行外部命令
-JUSER=ubuntu
-export HOME=/home/${JUSER}
-export JUPYTER_RUNTIME_DIR=$HOME/.local/share/jupyter/runtime
-mkdir -p $HOME/.jupyter $JUPYTER_RUNTIME_DIR
-chown -R $JUSER:$JUSER $HOME/.jupyter $HOME/.local /workspace || true
-
-if [ "$#" -gt 0 ]; then
-  exec "$@"
-else
-  exec sudo -u ${JUSER} -H bash -lc "jupyter lab \
-    --ip=0.0.0.0 \
-    --port=8888 \
-    --no-browser \
-    --ServerApp.allow_remote_access=True \
-    --ServerApp.root_dir=/workspace \
-    --ServerApp.password='' \
-    --ServerApp.token='' \
-    --ServerApp.allow_password=False"
-fi
+sleep 1
+ss -lntp 2>/dev/null | grep 6006 >> "${TB_LOG}" 2>&1 || true
+echo "[post_start] tensorboard launch done at $(date -Is)" >> "${TB_LOG}" 2>/dev/null || true
 SH
-RUN chmod +x /entrypoint.sh
-
+RUN chmod +x /post_start.sh
 
 # =========================================================
-# Permissions
+# Permissions (尽量不假设可写 /home/ubuntu；/workspace 通常挂载可写)
 # =========================================================
-RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
+RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu || true
 
 # =========================================================
 # Ports
@@ -205,7 +193,7 @@ RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu
 EXPOSE 22 80 8888 6006
 
 # =========================================================
-# Entrypoint
+# Entrypoint (对你们平台可能会被覆盖；保留无伤大雅)
 # =========================================================
-ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
-CMD []
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform will run /start.sh.'; sleep infinity"]
