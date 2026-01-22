@@ -3,11 +3,10 @@ variable "TAG_SUFFIX"  { default = "2025102101" }
 
 group "cuda" {
     targets = [
-        "280-py311-cuda1281-cudnn-devel-ubuntu2204",
+        "comfyui-nunchaku",
     ]
     platforms = ["linux/amd64", "linux/arm64"]
 }
-
 
 target "comfyui-nunchaku" {
     platform = ["linux/amd64", "linux/arm64"]
@@ -21,7 +20,11 @@ target "comfyui-nunchaku" {
     args = {
         BASE_IMAGE = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
         PYTHON_VERSION = "3.11"
+
+        # Recommend stable builds here if you want Nunchaku backend wheels to match torch.
+        # If you really want nightly cu128, keep your existing line.
         TORCH = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+
         COMFYUI_HOST="0.0.0.0"
         COMFYUI_PORT="8188"
         COMFYUI_EXTRA_ARGS=""

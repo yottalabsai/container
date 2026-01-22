@@ -46,3 +46,15 @@ curl http://localhost:8001/v1/chat/completions \
   }'
 
 ```
+
+curl https://b32nywzrimurp-669.proxy.yottalabs.ai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "/workspace/hf/Qwen/Qwen3-30B-A3B-Instruct-2507",
+    "messages": [
+      {"role": "system", "content": "You are a helpful assistant."},
+      {"role": "user", "content": "用两句话解释量子纠缠。"}
+    ],
+    "temperature": 0.7,
+    "max_tokens": 256
+  }'
