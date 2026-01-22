@@ -9,7 +9,8 @@ Example:
 ```bash
 cd containers/official-templates/comfyui-nunchaku
 
-docker buildx bake comfyui-nunchaku --set comfyui-nunchaku.push=true
+docker buildx bake comfyui-nunchaku --push
+docker buildx bake comfyui-nunchaku --no-cache --push
 ```
 
 ## Exposed Ports

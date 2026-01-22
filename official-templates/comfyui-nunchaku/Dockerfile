@@ -1,4 +1,3 @@
-# ===== Base & Args =====
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
@@ -10,7 +9,6 @@ ARG COMFYUI_EXTRA_ARGS=""
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ===== Env =====
 ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 \
@@ -22,30 +20,33 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMFYUI_EXTRA_ARGS=${COMFYUI_EXTRA_ARGS}
 
 WORKDIR /
+
+# ---- workspace ----
 RUN mkdir -p /workspace && chmod 777 /workspace
 
-# ===== System deps =====
-# Notes:
-# - ffmpeg + libgl1/libglib2.0-0 etc: common deps for OpenCV/video nodes
-# - build-essential/pkg-config: needed by some Python wheels that compile
-# - extra tools list: vim/jq/tree/htop/tmux/rsync/pciutils/iproute2/net-tools/lsof/procps/make/g++
+# ---- system tools & services ----
+# Includes your requested toolchain + common runtime deps for OpenCV/video nodes.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends --allow-change-held-packages \
       ca-certificates curl wget git git-lfs \
-      sudo openssh-server nginx tini \
-      software-properties-common \
+      sudo \
+      openssh-server \
+      nginx \
+      tini \
       build-essential make g++ pkg-config \
-      ffmpeg \
-      acl bash tzdata locales \
+      software-properties-common \
       vim jq tree htop tmux rsync \
-      pciutils iproute2 net-tools lsof procps; \
+      pciutils iproute2 net-tools lsof procps \
+      acl bash tzdata locales \
+      ffmpeg \
+      libgl1 libglib2.0-0 libsm6 libxext6 libxrender1; \
     git lfs install; \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen; locale-gen; update-locale; \
     mkdir -p /run/sshd; \
     rm -rf /var/lib/apt/lists/*
 
-# ===== Python & Pip =====
+# ---- python ----
 RUN set -eux; \
     add-apt-repository ppa:deadsnakes/ppa -y; \
     apt-get update; \
@@ -56,74 +57,70 @@ RUN set -eux; \
     curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py; \
     python3 /tmp/get-pip.py; \
     rm -f /tmp/get-pip.py; \
-    python3 -m pip install --no-cache-dir -U pip setuptools wheel
+    python3 -m pip install --no-cache-dir -U pip setuptools wheel; \
+    rm -rf /var/lib/apt/lists/*
 
-# ===== Torch (optional) =====
-# Example build-arg:
-#   TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121"
+# ---- torch (optional via build-arg) ----
+# Example:
+#   --build-arg TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121"
 RUN if [ -n "${TORCH}" ]; then python3 -m pip install --no-cache-dir ${TORCH}; fi
 
-# ===== Jupyter (start.sh expects it) =====
+# ---- jupyter (start.sh may rely on it) ----
 RUN python3 -m pip install --no-cache-dir -U jupyterlab
 
-# ===== Install ComfyUI =====
+# ---- ComfyUI ----
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI && \
     python3 -m pip install --no-cache-dir -r /opt/ComfyUI/requirements.txt
 
-# ===== Common deps for popular custom nodes (avoid "module not found" at runtime) =====
-# Your logs showed missing: PIL(a.k.a pillow), aiohttp, torch, cv2, matplotlib, accelerate, gguf, numba, skimage, imageio_ffmpeg
+# ---- common python deps for popular custom_nodes (based on your logs) ----
 RUN python3 -m pip install --no-cache-dir -U \
       pillow aiohttp \
-      opencv-python-headless matplotlib \
+      opencv-python-headless \
+      matplotlib scikit-image \
       accelerate safetensors \
       imageio imageio-ffmpeg \
-      scikit-image \
       numba llvmlite \
       gguf
 
-# ===== Fix diffusers/huggingface_hub mismatch (cached_download removal) =====
-# If diffusers is too old while huggingface_hub is new, you get:
-#   ImportError: cannot import name 'cached_download' from 'huggingface_hub'
-# So we bump diffusers to a modern version (and keep hub modern as well).
+# ---- fix diffusers/huggingface_hub mismatch (cached_download removal) ----
+# Keep them modern and mutually compatible.
 RUN python3 -m pip install --no-cache-dir -U \
       "huggingface_hub>=0.26,<1.0" \
       "diffusers>=0.30,<1.0" \
       "transformers>=4.41,<5.0"
 
-# ===== Custom Nodes: ComfyUI-nunchaku (plugin) =====
-# Repo (upstream): nunchaku-ai/ComfyUI-nunchaku  citeturn0search3
+# ---- custom nodes: ComfyUI-nunchaku (latest) ----
 RUN mkdir -p /opt/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/nunchaku-ai/ComfyUI-nunchaku.git \
       /opt/ComfyUI/custom_nodes/ComfyUI-Nunchaku
 
-# Install plugin deps if the repo provides them (does NOT install backend wheel).
+# Install plugin deps if present (does not install backend engine wheels).
 RUN set -eux; \
     if [ -f /opt/ComfyUI/custom_nodes/ComfyUI-Nunchaku/requirements.txt ]; then \
       python3 -m pip install --no-cache-dir -r /opt/ComfyUI/custom_nodes/ComfyUI-Nunchaku/requirements.txt; \
     fi
 
-# (Optional) Copy the installer workflow into the image for convenience.
-# The backend engine is distributed as wheels via GitHub Releases / HF; the plugin can install them via install_wheel.json workflow. citeturn2search0turn2search7
+# Put installer workflow in default workflows for one-click backend install in UI.
 RUN set -eux; \
     mkdir -p /opt/ComfyUI/user/default/workflows; \
     curl -fsSL "https://raw.githubusercontent.com/nunchaku-ai/ComfyUI-nunchaku/main/example_workflows/install_wheel.json" \
       -o /opt/ComfyUI/user/default/workflows/install_wheel.json || true
 
-# ===== Models dir to persistent path =====
+# ---- persistent models path ----
 RUN mkdir -p /workspace/ComfyUI/models && \
     rm -rf /opt/ComfyUI/models && ln -s /workspace/ComfyUI/models /opt/ComfyUI/models
 
-# ===== Path compatibility for your pod =====
+# ---- path compatibility (your pod had /home/ubuntu/ComfyUI) ----
 RUN mkdir -p /home/ubuntu && ln -sfn /opt/ComfyUI /home/ubuntu/ComfyUI
 
-# ===== User & Perm =====
+# ---- create ubuntu user (used for running ComfyUI) ----
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
     chmod 0440 /etc/sudoers.d/ubuntu && \
     chown -R ubuntu:ubuntu /workspace /opt/ComfyUI /home/ubuntu
 
-# ===== SSH prep (start.sh prints keys; regenerate at runtime) =====
+# ---- ssh prep: let start.sh generate host keys at runtime if missing ----
 RUN mkdir -p /root/.ssh && \
     touch /root/.ssh/authorized_keys && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
@@ -131,27 +128,31 @@ RUN mkdir -p /root/.ssh && \
     setfacl -R -m u:ubuntu:rwx /root/.ssh && \
     rm -f /etc/ssh/ssh_host_*
 
-# ===== Nginx & Static =====
+# ---- nginx/static (from container-template contexts) ----
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 
-# Welcome Message (keep original behavior)
+# ---- welcome ----
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[1;34mhttps://www.yottalabs.ai/\033[0m and \033[1;34mhttps://www.yottalabs.ai/\033[0m\n\n"' >> /root/.bashrc
 
-# ===== Start & post_start =====
-# IMPORTANT: container-template/start.sh must remain unchanged (we only copy it).
+# ---- start.sh (MUST NOT MODIFY) ----
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# post_start: start ComfyUI in the background (loads custom_nodes)
+# ---- post_start.sh ----
+# Requirement: print logs to console AND write to file for collection.
+# We start ComfyUI as ubuntu, but tee runs in root shell so it can write stdout.
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
-LOG=/workspace/comfyui.log
-mkdir -p /workspace
+
+LOG="/home/ubuntu/comfyui.log"
+mkdir -p "$(dirname "$LOG")"
+touch "$LOG"
+chown ubuntu:ubuntu "$LOG" || true
 
 if [ -d /opt/ComfyUI ]; then
   COMFY_DIR=/opt/ComfyUI
@@ -162,22 +163,27 @@ else
   exit 1
 fi
 
-# Run as ubuntu so any downloaded workflows/models land in the user's space.
-sudo -u ubuntu bash -lc "cd \"$COMFY_DIR\" && \
-  python3 -u main.py \
-    --listen \"${COMFYUI_HOST:-0.0.0.0}\" \
-    --port   \"${COMFYUI_PORT:-8188}\" \
-    ${COMFYUI_EXTRA_ARGS:-} \
-  >> \"$LOG\" 2>&1 &"
+echo "[post_start] Starting ComfyUI (logs -> $LOG AND stdout) ..."
 
-echo "ComfyUI started on ${COMFYUI_HOST:-0.0.0.0}:${COMFYUI_PORT:-8188}. Logs: $LOG"
-echo "If Nunchaku nodes show 'backend not installed', open workflow: user/default/workflows/install_wheel.json and run it in ComfyUI."
+# Run as ubuntu; pipe output to both file and container stdout.
+# Background the whole pipeline so post_start can return.
+(
+  sudo -u ubuntu bash -lc "cd \"$COMFY_DIR\" && \
+    python3 -u main.py \
+      --listen \"${COMFYUI_HOST:-0.0.0.0}\" \
+      --port \"${COMFYUI_PORT:-8188}\" \
+      ${COMFYUI_EXTRA_ARGS:-}" 2>&1 | tee -a "$LOG"
+) &
+
+echo "[post_start] ComfyUI launch command submitted."
+echo "[post_start] Tip: For Nunchaku backend, open workflow: user/default/workflows/install_wheel.json and run it in ComfyUI."
 EOS
 RUN chmod +x /post_start.sh
 
-EXPOSE 8188
+EXPOSE 22 8888 8188
 
-USER ubuntu
-WORKDIR /home/ubuntu
+# IMPORTANT: do NOT switch USER here.
+# start.sh must run as root to start services (ssh/nginx) and generate host keys.
+WORKDIR /root
 ENTRYPOINT ["/usr/bin/tini", "-g", "--"]
 CMD ["/start.sh"]
