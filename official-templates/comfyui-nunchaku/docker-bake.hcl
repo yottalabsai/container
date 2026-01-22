@@ -8,7 +8,7 @@ group "cuda" {
 
 target "comfyui-nunchaku" {
   dockerfile = "Dockerfile"
-  tags = ["${PUBLISHER}/comfyui-nunchaku:${TAG_SUFFIX}"]
+  tags = ["${PUBLISHER}/comfyui-nunchaku:cuda12.8.1-ubuntu22.04-${TAG_SUFFIX}"]
   contexts = {
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"

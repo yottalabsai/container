@@ -1,34 +1,21 @@
 # ComfyUI-Nunchaku Container
 
-**ComfyUI‑Nunchaku** is a high‑performance extension of ComfyUI optimized for large video-generation models such as Wan2.1, Wan2.2, AnimateDiff, and other advanced pipelines.
+This image bundles:
 
-It focuses on improving throughput, runtime stability, batching, and GPU memory utilization for heavy T2V workloads.
+- ComfyUI (upstream)
+- ComfyUI-Nunchaku (installed under `ComfyUI/custom_nodes/ComfyUI-Nunchaku`)
+- A CUDA-enabled PyTorch stack
+- Optional JupyterLab support (controlled by `JUPYTER_PASSWORD`)
 
-## Key Features
-- Built on top of ComfyUI with performance enhancements  
-- Optimized for text‑to‑video and animation pipelines  
-- Supports Wan‑AI models out of the box  
-- Better long‑sequence scheduling for video frames  
-- Efficient GPU memory reuse & graph optimizations  
-- Plugin‑compatible with standard ComfyUI nodes
+## Default ports
 
-## Directory Layout
-```
-/comfyui-nunchaku/
-/comfyui-nunchaku/models/
-/comfyui-nunchaku/wan/
-/comfyui-nunchaku/output/
-/comfyui-nunchaku/cache/
-```
+- `8188/tcp` ComfyUI Web UI
+- `22/tcp` SSH
+- `8888/tcp` JupyterLab (optional)
 
-## Typical Ports
-- **8189** → Web UI (Nunchaku dashboard)
-- **9200–9300** → High‑throughput video-generation service endpoints
+## Key paths
 
-## Usage
-ComfyUI‑Nunchaku is ideal for:
-- Heavy text‑to‑video pipelines  
-- Long clip generation  
-- Batch rendering jobs  
-- High‑performance inference in production environments  
-
+- ComfyUI root: `/home/ubuntu/ComfyUI`
+- Custom nodes: `/home/ubuntu/ComfyUI/custom_nodes`
+- Models: `/home/ubuntu/ComfyUI/models`
+- Optional persistent mount: `/workspace/storage` (see `README.md`)
