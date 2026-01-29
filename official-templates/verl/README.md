@@ -31,6 +31,8 @@ Notebook（Jupyter 打开后在 /workspace 可见）：
 ```bash
 cd container/official-templates/verl
 docker build -t yottalabsai/verl:dev .
+
+docker buildx bake verl --no-cache --push
 ```
 
 或使用 bake：

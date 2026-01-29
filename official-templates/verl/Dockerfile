@@ -64,7 +64,7 @@ RUN chmod 755 /start.sh
 # =================================================
 # Verl template files (NO model weights, NO entrypoint)
 # =================================================
-COPY official-templates/verl/Verl_Qwen2.5_Demo.ipynb /workspace/Verl_Qwen2.5_Demo.ipynb
+COPY Verl_Qwen2.5_Demo.ipynb /workspace/Verl_Qwen2.5_Demo.ipynb
 
 # -------------------------------------------------
 # No CMD / No ENTRYPOINT
