@@ -31,7 +31,9 @@ RUN set -eux; \
       iproute2 \
       net-tools \
       lsof \
-      procps; \
+      procps \
+      python3 \
+      python3-pip; \
     rm -rf /var/lib/apt/lists/*
 
 # -------------------------------
@@ -65,9 +67,3 @@ RUN chmod 755 /start.sh
 # Verl template files (NO model weights, NO entrypoint)
 # =================================================
 COPY Verl_Qwen2.5_Demo.ipynb /workspace/Verl_Qwen2.5_Demo.ipynb
-
-# -------------------------------------------------
-# No CMD / No ENTRYPOINT
-# Lifecycle is fully managed by platform:
-# sudo -E /start.sh
-# -------------------------------------------------
