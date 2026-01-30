@@ -127,8 +127,6 @@ RUN set -eux; \
     sed -ri 's/^#?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config; \
     sed -ri 's/^#?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
 
-cp SkyRL_Demo.ipynb /workspace/
-
 # =========================================================
 # nginx + README (optional)
 # =========================================================
@@ -148,6 +146,7 @@ RUN chmod 755 /start.sh
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc || true
 
+COPY SkyRL_Demo.ipynb /workspace/
 # =========================================================
 # post_start hook (关键)
 # - 你的平台 PID1 实际跑的是: sudo -E /start.sh
