@@ -125,6 +125,8 @@ RUN touch /root/.bashrc && \
     echo 'cat /etc/yotta.txt 2>/dev/null || true' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
+COPY Miles_Demo.ipynb /workspace/
+
 # ---- 允许脚本不存在：避免 build fail ----
 RUN chmod +x /post_start.sh /start.sh 2>/dev/null || true
 
