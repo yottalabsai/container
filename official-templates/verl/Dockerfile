@@ -39,12 +39,21 @@ RUN set -eux; \
 # -------------------------------
 # python
 # -------------------------------
-RUN ln -s /usr/bin/python3 /usr/bin/python || true
-RUN python -m pip install --no-cache-dir \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      python3 \
+      python3-pip; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+RUN python3 -m pip install --no-cache-dir \
     torch \
     transformers \
     accelerate \
     verl
+
 
 # -------------------------------
 # sshd dirs

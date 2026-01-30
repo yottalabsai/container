@@ -127,6 +127,8 @@ RUN set -eux; \
     sed -ri 's/^#?KbdInteractiveAuthentication .*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config; \
     sed -ri 's/^#?ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
 
+cp SkyRL_Demo.ipynb /workspace/
+
 # =========================================================
 # nginx + README (optional)
 # =========================================================
