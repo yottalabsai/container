@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.1.30",
+    "lastTouchedAt": "2026-02-01T17:15:00.000Z"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "vllm-local": {
+        "baseUrl": "http://localhost:8000/v1",
+        "apiKey": "dummy-key",
+        "api": "openai-responses",
+        "models": [
+          {
+            "id": "/workspace/hf/Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "name": "Qwen3-30B-A3B-Instruct-2507",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 32768,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "vllm-local//workspace/hf/Qwen/Qwen3-30B-A3B-Instruct-2507"
+      },
+      "models": {
+        "vllm-local//workspace/hf/Qwen/Qwen3-30B-A3B-Instruct-2507": {
+          "alias": "Qwen3"
+        }
+      },
+      "workspace": "/home/ubuntu/clawd",
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    }
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
+  "gateway": {
+    "auth": {
+      "token": "clawdbot"
+    },
+    "mode": "local"
+  }
+}
