@@ -124,6 +124,17 @@ RUN python -m pip install --no-cache-dir \
       huggingface-hub datasets
 
 # ===============================
+# Patch: ensure python3.11 has Jupyter (required by /start.sh)
+# 不改你现有的 python -m pip 安装逻辑，仅补齐 python3.11 环境
+# ===============================
+RUN /usr/local/bin/python3.11 -m ensurepip --upgrade && \
+    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+
+# 构建期断言：避免推坏镜像
+RUN /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
+
+# ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
 # ===============================
 RUN set -eux; \
