@@ -82,7 +82,7 @@ RUN set -eux; \
     "${CONDA_DIR}/bin/conda" config --system --set auto_activate_base false; \
     "${CONDA_DIR}/bin/conda" clean -afy
 
-ENV PATH=/opt/conda/bin:$PATH
+ENV PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:/opt/conda/bin:$PATH
 
 # ===============================
 # Python 3.11 (build from source, with ensurepip)
