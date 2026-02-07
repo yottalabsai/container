@@ -19,7 +19,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ===============================
 ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
-    PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
+    PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     JUPYTER_PASSWORD=ubuntu
 
