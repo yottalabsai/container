@@ -12,21 +12,20 @@ group "cuda" {
 
 target "pytorch290" {
   platforms  = ["linux/amd64"]
-  dockerfile = "Dockerfile"
+  dockerfile = "runtime.Dockerfile"
 
   tags = [
     "${PUBLISHER}/pytorch:2.9.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
   ]
 
   contexts = {
+    base    = "target:ml-runtime"
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"
     logo    = "../../container-template"
   }
 
   args = {
-    BASE_IMAGE     = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
-    PYTHON_VERSION = "3.11.14"
-    TORCH          = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+    BASE_IMAGE     = "base"
   }
 }
