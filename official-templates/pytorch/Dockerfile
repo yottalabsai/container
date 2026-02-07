@@ -48,6 +48,43 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
+# uv (Astral) - Python package manager
+# - 固定安装到 /usr/local/bin
+# - 避免修改 shell profile（适合容器/CI）
+# ===============================
+ARG UV_VERSION="latest"
+RUN set -eux; \
+    if [ "${UV_VERSION}" = "latest" ]; then \
+      curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh; \
+    else \
+      curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh; \
+    fi; \
+    uv --version
+
+# ===============================
+# Miniconda
+# ===============================
+ARG MINICONDA_VERSION="py311_24.1.2-0"
+ARG CONDA_DIR="/opt/conda"
+
+RUN set -eux; \
+    ARCH="$(uname -m)"; \
+    case "${ARCH}" in \
+      x86_64)  MINICONDA_ARCH="x86_64" ;; \
+      aarch64) MINICONDA_ARCH="aarch64" ;; \
+      *) echo "Unsupported arch: ${ARCH}" && exit 1 ;; \
+    esac; \
+    curl -fsSL \
+      "https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Linux-${MINICONDA_ARCH}.sh" \
+      -o /tmp/miniconda.sh; \
+    bash /tmp/miniconda.sh -b -p "${CONDA_DIR}"; \
+    rm -f /tmp/miniconda.sh; \
+    "${CONDA_DIR}/bin/conda" config --system --set auto_activate_base false; \
+    "${CONDA_DIR}/bin/conda" clean -afy
+
+ENV PATH=/opt/conda/bin:$PATH
+
+# ===============================
 # Python 3.11 (build from source, with ensurepip)
 # ===============================
 RUN set -eux; \
