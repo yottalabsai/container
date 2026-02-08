@@ -114,7 +114,7 @@ RUN set -eux; \
 # ===============================
 # PyTorch (nightly cu128)
 # ===============================
-RUN python -m pip install --no-cache-dir ${TORCH}
+RUN python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}
 
 # ===============================
 # Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
@@ -135,7 +135,7 @@ RUN set -eux; \
     # 先装发布版 sglang（避免 dflash/requirements.txt pin 到某个 PR 导致 flashinfer/cutlass 等被降级） \
     python -m pip install --no-cache-dir sglang; \
     # 把 PyTorch 重装回 nightly cu128（sglang 可能会回退 torch/vision/audio 版本） \
-    python -m pip install --no-cache-dir ${TORCH}; \
+    python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
     rm -rf /tmp/dflash; \
     git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
     cd /tmp/dflash; \
@@ -167,7 +167,7 @@ RUN set -eux; \
         echo "/opt/dflash" > /opt/conda/lib/python3.11/site-packages/dflash.pth; \
       fi; \
     fi; \
-    python -c "import importlib, sglang; print('sglang OK'); try: importlib.import_module('dflash'); print('dflash import OK'); except Exception as e: print('dflash not importable (ok):', e)"; \
+    python -c $'import importlib\nimport sglang\nprint("sglang OK")\ntry:\n    importlib.import_module("dflash")\n    print("dflash import OK")\nexcept Exception as e:\n    print("dflash not importable (ok):", e)'; \
     rm -rf /tmp/dflash
 
 # ===============================
