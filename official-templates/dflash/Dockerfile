@@ -272,12 +272,14 @@ COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # ===============================
-# entrypoint wrapper: start sglang then exec /start.sh (start.sh 保持不动)
+# entrypoint wrapper: start sglang then exec /start.sh
 # ===============================
-RUN set -eux; \
-  cat >/entrypoint.sh <<'SH'
+RUN set -eux && \
+  cat > /entrypoint.sh <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+
+echo "[entrypoint] starting..."
 
 export CUDA_HOME=/usr/local/cuda
 export CUDA_PATH=/usr/local/cuda
@@ -290,11 +292,11 @@ export CPLUS_INCLUDE_PATH="$CUDA_HOME/include:${CPLUS_INCLUDE_PATH:-}"
 rm -rf /root/.cache/flashinfer 2>/dev/null || true
 
 LOG_DIR="${SGLANG_LOG_DIR:-/workspace/logs}"
-mkdir -p "$LOG_DIR" || true
-LOG_FILE="${LOG_DIR%/}/sglang.log"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/sglang.log"
 
-# 如果已经起了，就别重复起（用 ps，最稳）
 if ! ps -ef | grep -E "python .*sglang\.launch_server" | grep -v grep >/dev/null; then
+  echo "[entrypoint] launching sglang..."
   nohup /opt/conda/bin/python -m sglang.launch_server \
     --model-path "${SGLANG_MODEL:-Qwen/Qwen2.5-7B-Instruct}" \
     --host 0.0.0.0 \
@@ -302,19 +304,12 @@ if ! ps -ef | grep -E "python .*sglang\.launch_server" | grep -v grep >/dev/null
     --mem-fraction-static "${SGLANG_MEM_FRACTION_STATIC:-0.9}" \
     >"$LOG_FILE" 2>&1 &
   sleep 2
-  if ! ps -ef | grep -E "python .*sglang\.launch_server" | grep -v grep >/dev/null; then
-    echo "[entrypoint] sglang failed to start, tail log: $LOG_FILE"
-    tail -n 200 "$LOG_FILE" 2>/dev/null || true
-  else
-    echo "[entrypoint] sglang started, log=$LOG_FILE"
-  fi
 fi
 
+echo "[entrypoint] exec start.sh"
 exec /start.sh
 SH
-  chmod 755 /entrypoint.sh; \
-  sed -i 's/\r$//' /entrypoint.sh
-
+RUN chmod 755 /entrypoint.sh && sed -i 's/\r$//' /entrypoint.sh
 
 
 # ===============================
