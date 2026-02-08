@@ -284,11 +284,31 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 # ===============================
 # Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
 # ===============================
-EXPOSE 22 80 8888
+EXPOSE 22 80 8888 30000
 
 # ===============================
 # Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
 # ===============================
 USER root
 WORKDIR /root
-CMD ["/bin/bash", "-lc", "exec /start.sh"]
+CMD ["/bin/bash","-lc", "\
+  set -euo pipefail; \
+  export CUDA_HOME=/usr/local/cuda; \
+  export CUDA_PATH=/usr/local/cuda; \
+  export PATH=$CUDA_HOME/bin:$PATH; \
+  export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}; \
+  export CPATH=$CUDA_HOME/include:${CPATH:-}; \
+  export C_INCLUDE_PATH=$CUDA_HOME/include:${C_INCLUDE_PATH:-}; \
+  export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:${CPLUS_INCLUDE_PATH:-}; \
+  rm -rf /root/.cache/flashinfer || true; \
+  mkdir -p /var/log; \
+  nohup /opt/conda/bin/python -m sglang.launch_server \
+    --model-path Qwen/Qwen2.5-7B-Instruct \
+    --host 0.0.0.0 \
+    --port 30000 \
+    --mem-fraction-static 0.9 \
+    >/var/log/sglang.log 2>&1 & \
+  exec /start.sh \
+"]
+
+
