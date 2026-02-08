@@ -5,7 +5,10 @@ FROM ${BASE_IMAGE}
 # Build args
 # ===============================
 ARG PYTHON_VERSION="3.11.14"
+
+# PyTorch 2.9：nightly cu128（按你原来的方式）
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+
 ARG NCCL_TESTS_VERSION="v2.13.11"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -27,7 +30,7 @@ WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
 # ===============================
-# Base system packages
+# Base system packages（按你给的案例原样 + 补 ninja）
 # ===============================
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -45,7 +48,9 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# uv
+# uv (Astral) - Python package manager
+# - 固定安装到 /usr/local/bin
+# - 避免修改 shell profile（适合容器/CI）
 # ===============================
 ARG UV_VERSION="latest"
 RUN set -eux; \
@@ -80,7 +85,7 @@ RUN set -eux; \
 RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 
 # ===============================
-# Python 3.11
+# Python 3.11 (build from source, with ensurepip)
 # ===============================
 RUN set -eux; \
     PY_MM="$(echo "${PYTHON_VERSION}" | awk -F. '{print $1"."$2}')"; \
@@ -107,33 +112,50 @@ RUN set -eux; \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# PyTorch
+# PyTorch (nightly cu128)
 # ===============================
 RUN python -m pip install --no-cache-dir ${TORCH}
 
 # ===============================
-# Jupyter + HF tools
+# Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
 # ===============================
 RUN python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
       huggingface-hub datasets
 
 # ===============================
-# SGLang + DFlash (DEFAULT ENABLED)
+# DFlash + SGLang（默认安装）
+# 关键修复点：
+# - 1) sglang 的 extra 'srt' 在你日志里显示“不存在”，所以直接装 sglang（避免误导）
+# - 2) sglang 会强依赖/回退 torch==2.9.1 等，安装完后再把 torch/vision/audio 重装回 nightly cu128（保证最终一致）
+# - 3) uv pip 默认要求 venv，你这边不想引入 venv，所以 dflash 这块改用 python -m pip 装 requirements（最稳）
 # ===============================
 RUN set -eux; \
     python -m pip install --no-cache-dir -U pip setuptools wheel; \
-    python -m pip install --no-cache-dir "sglang[srt]"; \
+    python -m pip install --no-cache-dir sglang; \
+    # 重要：把 PyTorch 重新装回 nightly cu128，避免被 sglang 依赖覆盖成 torch==2.9.1 / torchvision==0.24.1 / torchaudio==2.9.1
+    python -m pip install --no-cache-dir ${TORCH}; \
     rm -rf /tmp/dflash; \
     git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
     cd /tmp/dflash; \
-    uv pip install -r requirements.txt; \
-    uv pip install -e .; \
+    python -m pip install --no-cache-dir -r requirements.txt; \
+    python -m pip install --no-cache-dir -e .; \
     python -c "import dflash, sglang; print('dflash + sglang OK')"; \
     rm -rf /tmp/dflash
 
 # ===============================
-# NCCL tests
+# Patch: ensure python3.11 has Jupyter (required by /start.sh)
+# 不改你现有的 python -m pip 安装逻辑，仅补齐 python3.11 环境
+# ===============================
+RUN /usr/local/bin/python3.11 -m ensurepip --upgrade && \
+    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+
+# 构建期断言：避免推坏镜像
+RUN /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
+
+# ===============================
+# NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
 # ===============================
 RUN set -eux; \
     git clone --branch "${NCCL_TESTS_VERSION}" --depth 1 \
@@ -151,19 +173,19 @@ RUN useradd -ms /bin/bash ubuntu && \
     echo "ubuntu:ubuntu" | chpasswd
 
 # ===============================
-# SSH
+# SSH config (start.sh 负责启动 sshd；这里确保配置允许密码登录)
 # ===============================
 RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     rm -f /etc/ssh/ssh_host_*
 
 # ===============================
-# CUDA bin
+# CUDA bin convenience
 # ===============================
 RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 
 # ===============================
-# start.sh
+# start.sh (from buildx bake context "scripts")
 # ===============================
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
@@ -179,12 +201,12 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # ===============================
-# Ports
+# Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
 # ===============================
 EXPOSE 22 80 8888
 
 # ===============================
-# Entrypoint
+# Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
 # ===============================
 USER root
 WORKDIR /root
