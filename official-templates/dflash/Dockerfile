@@ -146,17 +146,19 @@ RUN set -eux; \
     fi; \
     mkdir -p /opt/dflash-src; \
     cp -a . /opt/dflash-src/; \
-    /opt/conda/bin/python - <<'PY' \
-import sys, importlib, os \
-print("exe:", sys.executable) \
-for m in ["torch", "sglang", "flashinfer"]: \
-    try: \
-        mod = importlib.import_module(m) \
-        print(f"{m}: OK  version={getattr(mod,'__version__','?')}") \
-    except Exception as e: \
-        print(f"{m}: FAIL", repr(e)) \
-print("dflash repo copied:", os.path.isdir("/opt/dflash-src")) \
-PY; \
+    ( /opt/conda/bin/python - <<'PY'
+import sys, importlib, os
+print("exe:", sys.executable)
+for m in ["torch", "sglang", "flashinfer"]:
+    try:
+        mod = importlib.import_module(m)
+        print(f"{m}: OK  version={getattr(mod,'__version__','?')}")
+    except Exception as e:
+        print(f"{m}: FAIL", repr(e))
+print("dflash repo copied:", os.path.isdir("/opt/dflash-src"))
+PY
+    ); \
+
     rm -rf /tmp/dflash
 
 # ===============================
