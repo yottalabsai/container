@@ -107,12 +107,13 @@ RUN set -eux; \
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
-    /opt/conda/bin/python - <<'PY' \
-import torch \
-print("torch:", torch.__version__) \
-print("cuda:", torch.version.cuda) \
-print("cuda available:", torch.cuda.is_available()) \
+    ( /opt/conda/bin/python - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("cuda:", torch.version.cuda)
+print("cuda available:", torch.cuda.is_available())
 PY
+    )
 
 # ===============================
 # Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
