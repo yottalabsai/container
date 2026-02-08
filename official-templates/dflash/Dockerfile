@@ -28,6 +28,29 @@ ENV DEBIAN_FRONTEND=noninteractive \
     JUPYTER_PASSWORD=ubuntu
 
 # ===============================
+# CUDA env 固化（解决 flashinfer/sglang 编译扩展时找不到 cuda headers）
+# - 不改 start.sh
+# - profile.d: 交互 shell & bash -lc 都会加载
+# ===============================
+RUN set -eux; \
+    cat >/etc/profile.d/10-cuda-env.sh <<'SH' \
+#!/usr/bin/env bash
+export CUDA_HOME=/usr/local/cuda
+export CUDA_PATH=/usr/local/cuda
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
+
+# 显式把 include 加进去，避免编译扩展时找不到 cuda_runtime.h
+export CPATH=$CUDA_HOME/include:${CPATH}
+export C_INCLUDE_PATH=$CUDA_HOME/include:${C_INCLUDE_PATH}
+export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:${CPLUS_INCLUDE_PATH}
+SH
+    chmod 644 /etc/profile.d/10-cuda-env.sh; \
+    echo "/usr/local/cuda/lib64" >/etc/ld.so.conf.d/cuda.conf; \
+    ldconfig
+
+
+# ===============================
 # Workspace
 # ===============================
 WORKDIR /
