@@ -55,7 +55,7 @@ docker buildx bake --push
 docker build should be ran from the root of the repository, not from the container folder. The build command should be ran as follows:
 
 ```bash
-docker build -t yottalabs/<container-name>:<version> -f <container-name>/Dockerfile .
+docker build -t yottalabs/<container-name>:<version> -f <container-name>/Dockerfile.bak .
 ```
 
 

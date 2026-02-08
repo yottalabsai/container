@@ -128,6 +128,7 @@ RUN set -eux; \
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
+    /opt/conda/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall "fsspec[http]==2025.10.0"; \
     /opt/conda/bin/python -c $'import torch\nprint("torch:", torch.__version__)\nprint("cuda:", torch.version.cuda)\nprint("cuda available:", torch.cuda.is_available())'
 
 # ===============================
@@ -156,6 +157,7 @@ RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
     /opt/conda/bin/python -m pip install --no-cache-dir sglang; \
     /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
+    /opt/conda/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall "fsspec[http]==2025.10.0"; \
     rm -rf /tmp/dflash; \
     git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
     cd /tmp/dflash; \
@@ -167,7 +169,7 @@ RUN set -eux; \
     fi; \
     mkdir -p /opt/dflash-src; \
     cp -a . /opt/dflash-src/; \
-    /opt/conda/bin/python -c $'import sys,importlib,os\nprint("exe:",sys.executable)\nfor m in ["torch","sglang","flashinfer"]:\n  mod=importlib.import_module(m)\n  print(f"{m}: OK  version={getattr(mod,\"__version__\",\"?\")}")\nprint("torch.cuda.is_available:", __import__("torch").cuda.is_available())\nprint("dflash repo copied:", os.path.isdir("/opt/dflash-src"))'; \
+    /opt/conda/bin/python -c $'import sys,importlib,os\nprint("exe:",sys.executable)\nfor m in ["torch","sglang","flashinfer"]:\n  mod=importlib.import_module(m)\n  print("{}: OK  version={}".format(m, getattr(mod, "__version__", "?")))\nprint("torch.cuda.is_available:", __import__("torch").cuda.is_available())\nprint("dflash repo copied:", os.path.isdir("/opt/dflash-src"))'; \
     rm -rf /tmp/dflash
 
 # ===============================
