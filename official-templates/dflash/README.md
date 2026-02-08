@@ -40,6 +40,8 @@ docker buildx bake -f docker-bake.hcl dflash   --set dflash.platform=linux/amd64
 ```
 docker buildx bake dflash --no-cache --push
 
+docker buildx bake dflash --push
+
 ---
 
 ## 4. 本地测试步骤

@@ -7,9 +7,12 @@ FROM ${BASE_IMAGE}
 # 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
 ARG PYTHON_VERSION="3.11.14"
 
-# PyTorch：nightly cu128（按你原来的方式）
-ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+# PyTorch：对齐 sglang/sgl-kernel 要求的稳定版 torch==2.9.1（CUDA 12.8 wheels）
+# 说明：不要用 nightly；否则 pip 会报警依赖冲突，客户侧可能踩 ABI/扩展包雷
+ARG TORCH_INDEX_URL="https://download.pytorch.org/whl/cu128"
+ARG TORCH="torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1"
 
+ARG SGLANG_VERSION="0.5.8.post1"
 ARG NCCL_TESTS_VERSION="v2.13.11"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -31,13 +34,13 @@ WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
 # ===============================
-# Base system packages（按你给的案例原样 + 补 ninja）
+# Base system packages（按你给的案例原样 + 补 ninja + 补 libnuma1）
 # ===============================
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git acl wget curl ca-certificates bash \
       libgl1 software-properties-common \
-      locales tzdata \
+      locales tzdata libnuma1 \
       openssh-server nginx sudo \
       tmux vim zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd \
@@ -124,10 +127,12 @@ RUN set -eux; \
     chmod 644 /etc/profile.d/00-conda-path.sh
 
 # ===============================
-# PyTorch (nightly cu128) —— 永远用 conda python 装
+# PyTorch (stable cu128, pinned) —— 永远用 conda python 装
 # ===============================
 RUN set -eux; \
-    /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
+    /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
+    /opt/conda/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall \
+      --index-url "${TORCH_INDEX_URL}" ${TORCH}; \
     /opt/conda/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall "fsspec[http]==2025.10.0"; \
     /opt/conda/bin/python -c $'import torch\nprint("torch:", torch.__version__)\nprint("cuda:", torch.version.cuda)\nprint("cuda available:", torch.cuda.is_available())'
 
@@ -149,15 +154,13 @@ RUN set -eux; \
 # DFlash + SGLang（默认安装）
 # 关键修复点：
 # - 1) 永远用 /opt/conda/bin/python 安装/验证（避免混到 system python）
-# - 2) sglang 可能会回退 torch/vision/audio：装完 sglang 后，再强制把 torch 重装回 nightly cu128
-# - 3) dflash 仓库不是 Python package（你已经验证：没有 setup.py/pyproject.toml，也没有 dflash/ 包）
+# - 2) 固定 sglang 版本；并在最后做 pip check，确保不再出现 torch 冲突警告
+# - 3) dflash 仓库不是 Python package（没有 setup.py/pyproject.toml，也没有 dflash/ 包）
 #     所以这里只保留源码到 /opt/dflash-src，不要求 import dflash
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
-    /opt/conda/bin/python -m pip install --no-cache-dir sglang; \
-    /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
-    /opt/conda/bin/python -m pip install --no-cache-dir --upgrade --force-reinstall "fsspec[http]==2025.10.0"; \
+    /opt/conda/bin/python -m pip install --no-cache-dir "sglang==${SGLANG_VERSION}"; \
     rm -rf /tmp/dflash; \
     git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
     cd /tmp/dflash; \
@@ -169,8 +172,46 @@ RUN set -eux; \
     fi; \
     mkdir -p /opt/dflash-src; \
     cp -a . /opt/dflash-src/; \
-    /opt/conda/bin/python -c $'import sys,importlib,os\nprint("exe:",sys.executable)\nfor m in ["torch","sglang","flashinfer"]:\n  mod=importlib.import_module(m)\n  print("{}: OK  version={}".format(m, getattr(mod, "__version__", "?")))\nprint("torch.cuda.is_available:", __import__("torch").cuda.is_available())\nprint("dflash repo copied:", os.path.isdir("/opt/dflash-src"))'; \
+    /opt/conda/bin/python -c $'import sys,importlib,os\nprint("exe:",sys.executable)\nfor m in ["torch","sglang"]:\n  mod=importlib.import_module(m)\n  print("{}: OK  version={}".format(m, getattr(mod, "__version__", "?")))\nprint("torch.cuda.is_available:", __import__("torch").cuda.is_available())\nprint("dflash repo copied:", os.path.isdir("/opt/dflash-src"))'; \
+    /opt/conda/bin/python -m pip check; \
     rm -rf /tmp/dflash
+
+# ===============================
+# SGLang 最小 smoke 脚本（Qwen 7B + 启动 + 一次请求）
+# - 仅用于你做 ===== [1] basic ===== 的最小验证
+# - 不会在启动时自动跑，避免影响客户环境；你手动执行即可
+# ===============================
+RUN set -eux; \
+    cat >/usr/local/bin/sglang_basic_smoke.sh <<'SH'\n\
+#!/usr/bin/env bash\n\
+set -euo pipefail\n\
+MODEL=${1:-Qwen/Qwen2.5-7B-Instruct}\n\
+HOST=${HOST:-0.0.0.0}\n\
+PORT=${PORT:-30000}\n\
+echo \"[smoke] model=$MODEL host=$HOST port=$PORT\"\n\
+# 启动服务（后台）\n\
+/opt/conda/bin/python -m sglang.launch_server \\\n\
+  --model-path \"$MODEL\" \\\n\
+  --host \"$HOST\" \\\n\
+  --port \"$PORT\" \\\n\
+  --mem-fraction-static 0.9 &\n\
+PID=$!\n\
+trap 'echo \"[smoke] stopping pid=$PID\"; kill $PID || true' EXIT\n\
+# 等待端口起来\n\
+for i in $(seq 1 60); do\n\
+  if curl -s \"http://127.0.0.1:${PORT}/v1/models\" >/dev/null 2>&1; then\n\
+    break\n\
+  fi\n\
+  sleep 1\n\
+done\n\
+echo \"[smoke] server up, sending request...\"\n\
+curl -s \"http://127.0.0.1:${PORT}/v1/chat/completions\" \\\n\
+  -H \"Content-Type: application/json\" \\\n\
+  -d \"{\\\"model\\\":\\\"$MODEL\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"Say hello in one short sentence.\\\"}],\\\"max_tokens\\\":32,\\\"temperature\\\":0.2}\" | head\n\
+echo\n\
+echo \"[smoke] OK\"\n\
+SH\n\
+    chmod 755 /usr/local/bin/sglang_basic_smoke.sh
 
 # ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
