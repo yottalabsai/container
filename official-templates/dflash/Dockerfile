@@ -4,12 +4,8 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
-# 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
 ARG PYTHON_VERSION="3.11.14"
-
-# PyTorch 2.9：这里用 nightly cu128（按你原来的方式）
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
-
 ARG NCCL_TESTS_VERSION="v2.13.11"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -21,6 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
+    CUDA_HOME=/usr/local/cuda \
     JUPYTER_PASSWORD=ubuntu
 
 # ===============================
@@ -40,7 +37,7 @@ RUN apt-get update -y && \
       openssh-server nginx sudo \
       tmux vim zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd \
-      build-essential pkg-config \
+      build-essential pkg-config ninja-build \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
     && mkdir -p /var/run/sshd \
@@ -48,9 +45,7 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# uv (Astral) - Python package manager
-# - 固定安装到 /usr/local/bin
-# - 避免修改 shell profile（适合容器/CI）
+# uv
 # ===============================
 ARG UV_VERSION="latest"
 RUN set -eux; \
@@ -85,7 +80,7 @@ RUN set -eux; \
 RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 
 # ===============================
-# Python 3.11 (build from source, with ensurepip)
+# Python 3.11
 # ===============================
 RUN set -eux; \
     PY_MM="$(echo "${PYTHON_VERSION}" | awk -F. '{print $1"."$2}')"; \
@@ -112,49 +107,33 @@ RUN set -eux; \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# PyTorch (nightly cu128)
+# PyTorch
 # ===============================
 RUN python -m pip install --no-cache-dir ${TORCH}
 
 # ===============================
-# Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
+# Jupyter + HF tools
 # ===============================
 RUN python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
       huggingface-hub datasets
 
 # ===============================
-# DFlash (optional)
-# - DFlash: Block Diffusion for Flash Speculative Decoding
-# - 主要用于 SGLang 的 speculative decoding（DFLASH 算法）
-# - 默认不安装；通过 build-arg INSTALL_DFLASH=1 开启
+# SGLang + DFlash (DEFAULT ENABLED)
 # ===============================
-ARG INSTALL_DFLASH="0"
-ARG DFLASH_REPO="https://github.com/z-lab/dflash.git"
-ARG DFLASH_REF="main"
-
 RUN set -eux; \
-    if [ "${INSTALL_DFLASH}" = "1" ]; then \
-      # SGLang 侧对 DFLASH 的集成使用 python 包形式即可
-      python -m pip install --no-cache-dir "git+${DFLASH_REPO}@${DFLASH_REF}"; \
-      # 生产级 serving 推荐直接装 sglang（DFLASH 由 sglang 选择/调用）
-      python -m pip install --no-cache-dir sglang; \
-      python -c "import dflash; import sglang; print('dflash+sglang ok')"; \
-    fi
+    python -m pip install --no-cache-dir -U pip setuptools wheel; \
+    python -m pip install --no-cache-dir "sglang[srt]"; \
+    rm -rf /tmp/dflash; \
+    git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
+    cd /tmp/dflash; \
+    uv pip install -r requirements.txt; \
+    uv pip install -e .; \
+    python -c "import dflash, sglang; print('dflash + sglang OK')"; \
+    rm -rf /tmp/dflash
 
 # ===============================
-# Patch: ensure python3.11 has Jupyter (required by /start.sh)
-# 不改你现有的 python -m pip 安装逻辑，仅补齐 python3.11 环境
-# ===============================
-RUN /usr/local/bin/python3.11 -m ensurepip --upgrade && \
-    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
-      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
-
-# 构建期断言：避免推坏镜像
-RUN /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
-
-# ===============================
-# NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
+# NCCL tests
 # ===============================
 RUN set -eux; \
     git clone --branch "${NCCL_TESTS_VERSION}" --depth 1 \
@@ -172,19 +151,19 @@ RUN useradd -ms /bin/bash ubuntu && \
     echo "ubuntu:ubuntu" | chpasswd
 
 # ===============================
-# SSH config (start.sh 负责启动 sshd；这里确保配置允许密码登录)
+# SSH
 # ===============================
 RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     rm -f /etc/ssh/ssh_host_*
 
 # ===============================
-# CUDA bin convenience
+# CUDA bin
 # ===============================
 RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 
 # ===============================
-# start.sh (from buildx bake context "scripts")
+# start.sh
 # ===============================
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
@@ -200,12 +179,12 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # ===============================
-# Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
+# Ports
 # ===============================
 EXPOSE 22 80 8888
 
 # ===============================
-# Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
+# Entrypoint
 # ===============================
 USER root
 WORKDIR /root
