@@ -28,23 +28,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
     JUPYTER_PASSWORD=ubuntu
 
 # ===============================
-# CUDA env 固化（解决 sglang / flashinfer 编译扩展找不到 cuda headers）
+# CUDA env 固化（解决 sglang / flashinfer JIT 编译找不到 cuda_runtime.h）
+# 不使用 heredoc，避免 dockerfile parser 炸
 # ===============================
 RUN set -eux; \
-    cat >/etc/profile.d/10-cuda-env.sh <<'SH'
-#!/usr/bin/env bash
-export CUDA_HOME=/usr/local/cuda
-export CUDA_PATH=/usr/local/cuda
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}
-
-# 显式补 include 路径，避免编译扩展时找不到 cuda_runtime.h
-export CPATH=$CUDA_HOME/include:${CPATH}
-export C_INCLUDE_PATH=$CUDA_HOME/include:${C_INCLUDE_PATH}
-export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:${CPLUS_INCLUDE_PATH}
-SH
-    chmod 644 /etc/profile.d/10-cuda-env.sh && \
-    echo "/usr/local/cuda/lib64" >/etc/ld.so.conf.d/cuda.conf && \
+    printf '%s\n' \
+'#!/usr/bin/env bash' \
+'export CUDA_HOME=/usr/local/cuda' \
+'export CUDA_PATH=/usr/local/cuda' \
+'export PATH=$CUDA_HOME/bin:$PATH' \
+'export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}' \
+'' \
+'# 显式补 include 路径，避免 nvcc / gcc 找不到 cuda_runtime.h' \
+'export CPATH=$CUDA_HOME/include:${CPATH}' \
+'export C_INCLUDE_PATH=$CUDA_HOME/include:${C_INCLUDE_PATH}' \
+'export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:${CPLUS_INCLUDE_PATH}' \
+    > /etc/profile.d/10-cuda-env.sh; \
+    chmod 644 /etc/profile.d/10-cuda-env.sh; \
+    echo "/usr/local/cuda/lib64" > /etc/ld.so.conf.d/cuda.conf; \
     ldconfig
 
 
