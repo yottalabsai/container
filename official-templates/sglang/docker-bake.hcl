@@ -29,11 +29,11 @@ target "sglang" {
   }
 
   args = {
-    # 对应 Dockerfile 顶部 ARG
+    # 对应 Dockerfile.bak 顶部 ARG
     BASE_IMAGE     = "nvidia/cuda:12.1.1-devel-ubuntu22.04"
     PYTHON_VERSION = "3.11"
 
-    # 不传 TORCH = 走 Dockerfile 的“稳定 cu121”逻辑
+    # 不传 TORCH = 走 Dockerfile.bak 的“稳定 cu121”逻辑
     # 需要 nightly 时可以在命令行用 --set 覆盖：
     #   --set sglang.args.TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121"
     # TORCH         = ""
@@ -51,7 +51,7 @@ target "sglang" {
     SGLANG_PORT   = "30000"
     SGLANG_EXTRA  = "--trust-remote-code --mem-fraction-static 0.7 --disable-cuda-graph"
 
-    # 让 Dockerfile 里自动 TP 生效（空串 或 auto = 自动按 GPU 数量推 tp-size）
+    # 让 Dockerfile.bak 里自动 TP 生效（空串 或 auto = 自动按 GPU 数量推 tp-size）
     SGLANG_TP = "auto"
 
     # 预拉策略：auto = 单卡 lazy，多卡 eager

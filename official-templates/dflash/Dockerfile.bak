@@ -6,7 +6,7 @@ FROM ${BASE_IMAGE}
 # ===============================
 ARG PYTHON_VERSION="3.11.14"
 
-# PyTorch nightly cu128（按你原来的方式）
+# PyTorch 2.9：nightly cu128（按你原来的方式）
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
 
 ARG NCCL_TESTS_VERSION="v2.13.11"
@@ -85,78 +85,101 @@ RUN set -eux; \
 RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 
 # ===============================
-# Python（统一使用 conda 的 Python，版本对齐到 PYTHON_VERSION）
-# 关键修复点：
-# - 不再编译 system python（那套 python 上不会有 torch/sglang，导致你 runtime import torch 失败）
-# - 全局把 /usr/bin/python、/usr/bin/python3、/usr/local/bin/python3.11 指向 conda python
-# - 以后所有 pip 安装都用 /opt/conda/bin/python -m pip（避免 pip 绑到 system python）
+# Python 3.11 (build from source, with ensurepip)
 # ===============================
 RUN set -eux; \
-    /opt/conda/bin/conda install -y -n base -c conda-forge "python=${PYTHON_VERSION}" pip; \
-    /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
-    ln -sf /opt/conda/bin/python /usr/local/bin/python; \
-    ln -sf /opt/conda/bin/pip /usr/local/bin/pip; \
-    ln -sf /opt/conda/bin/python /usr/local/bin/python3.11; \
-    ln -sf /opt/conda/bin/python /usr/bin/python; \
-    ln -sf /opt/conda/bin/python /usr/bin/python3; \
-    python -V; \
-    /opt/conda/bin/python -V
+    PY_MM="$(echo "${PYTHON_VERSION}" | awk -F. '{print $1"."$2}')"; \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+      libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+      libffi-dev libncursesw5-dev xz-utils tk-dev uuid-dev liblzma-dev \
+    && curl -fSL --retry 10 --retry-delay 2 --retry-all-errors \
+      "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
+      -o /tmp/Python.tgz \
+    && mkdir -p /tmp/python-src \
+    && tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1 \
+    && rm -f /tmp/Python.tgz \
+    && cd /tmp/python-src \
+    && ./configure --enable-optimizations --with-ensurepip=install \
+    && make -j"$(nproc)" \
+    && make altinstall \
+    && cd / \
+    && rm -rf /tmp/python-src \
+    && ln -sf "/usr/local/bin/python${PY_MM}" /usr/bin/python \
+    && ln -sf "/usr/local/bin/python${PY_MM}" /usr/bin/python3 \
+    && python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# PyTorch (nightly cu128) - 装在 conda python 环境里
+# PyTorch (nightly cu128)
 # ===============================
-RUN set -eux; \
-    /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
-    /opt/conda/bin/python - <<'PY' \
-import torch \
-print("torch:", torch.__version__) \
-print("cuda:", torch.version.cuda) \
-print("cuda available:", torch.cuda.is_available()) \
-PY
+RUN python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}
 
 # ===============================
 # Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
 # ===============================
-RUN set -eux; \
-    /opt/conda/bin/python -m pip install --no-cache-dir \
+RUN python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
-      huggingface-hub datasets; \
-    /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
+      huggingface-hub datasets
 
 # ===============================
 # DFlash + SGLang（默认安装）
 # 关键修复点：
-# - 1) 永远用 /opt/conda/bin/python 安装/验证（避免混到 system python）
-# - 2) sglang 可能会回退 torch/vision/audio 版本：装完 sglang 后，再强制把 torch 重装回 nightly cu128
-# - 3) dflash 仓库不是 Python package（无 setup.py/pyproject.toml），只保留源码到 /opt/dflash-src，不要求 import dflash
+# - 1) sglang 的 extra 'srt' 在你日志里显示“不存在”，所以直接装 sglang（避免误导）
+# - 2) sglang 会强依赖/回退 torch==2.9.1 等，安装完后再把 torch/vision/audio 重装回 nightly cu128（保证最终一致）
+# - 3) uv pip 默认要求 venv，你这边不想引入 venv，所以 dflash 这块改用 python -m pip 装 requirements（最稳）
 # ===============================
 RUN set -eux; \
-    /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
-    /opt/conda/bin/python -m pip install --no-cache-dir sglang; \
-    /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
+    python -m pip install --no-cache-dir -U pip setuptools wheel; \
+    # 先装发布版 sglang（避免 dflash/requirements.txt pin 到某个 PR 导致 flashinfer/cutlass 等被降级） \
+    python -m pip install --no-cache-dir sglang; \
+    # 把 PyTorch 重装回 nightly cu128（sglang 可能会回退 torch/vision/audio 版本） \
+    python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
     rm -rf /tmp/dflash; \
     git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
     cd /tmp/dflash; \
+    # requirements.txt 里如果包含 sglang 的 git+...（PR ref），会把已装好的 sglang/flashinfer/cutlass 回退；这里直接过滤掉那一行 \
     if [ -f requirements.txt ]; then \
       grep -vE 'sgl-project/sglang|^sglang([<>= ].*)?$' requirements.txt > /tmp/dflash.requirements.txt || true; \
       if [ -s /tmp/dflash.requirements.txt ]; then \
-        /opt/conda/bin/python -m pip install --no-cache-dir -r /tmp/dflash.requirements.txt; \
+        python -m pip install --no-cache-dir -r /tmp/dflash.requirements.txt; \
       fi; \
     fi; \
-    mkdir -p /opt/dflash-src; \
-    cp -a . /opt/dflash-src/; \
-    /opt/conda/bin/python - <<'PY' \
-import sys, importlib, os \
-print("exe:", sys.executable) \
-for m in ["torch", "sglang", "flashinfer"]: \
-    try: \
-        mod = importlib.import_module(m) \
-        print(f"{m}: OK  version={getattr(mod,'__version__','?')}") \
-    except Exception as e: \
-        print(f"{m}: FAIL", repr(e)) \
-print("dflash repo copied:", os.path.isdir("/opt/dflash-src")) \
-PY; \
+    # dflash 仓库不一定在根目录提供 setup.py/pyproject.toml，做一个“找得到就装”的自适应安装 \
+    pkg_dir=""; \
+    for d in . python ./python ./bindings/python ./src/python; do \
+      if [ -f "$d/pyproject.toml" ] || [ -f "$d/setup.py" ] || [ -f "$d/setup.cfg" ]; then pkg_dir="$d"; break; fi; \
+    done; \
+    if [ -z "$pkg_dir" ]; then \
+      pkg_dir="$(find . -maxdepth 5 -type f \( -name pyproject.toml -o -name setup.py -o -name setup.cfg \) -print -quit | xargs -r dirname || true)"; \
+    fi; \
+    if [ -n "$pkg_dir" ]; then \
+      python -m pip install --no-cache-dir -e "$pkg_dir"; \
+    else \
+      # dflash 可能只提供 CUDA/C++ 源码，不一定带可安装的 Python 包；这里不强制失败。\
+      # 把源码留在 /opt/dflash-src，供运行时或后续编译/调试使用。\
+      mkdir -p /opt/dflash-src; \
+      cp -a . /opt/dflash-src/; \
+      # 兼容：如果仓库里确实有 dflash/ 纯 Python 包，则用 .pth 暴露到 sys.path\
+      if [ -d "./dflash" ] && [ -f "./dflash/__init__.py" ]; then \
+        mkdir -p /opt/dflash && cp -a ./dflash /opt/dflash/; \
+        echo "/opt/dflash" > /opt/conda/lib/python3.11/site-packages/dflash.pth; \
+      fi; \
+    fi; \
+    python -c $'import importlib\nimport sglang\nprint("sglang OK")\ntry:\n    importlib.import_module("dflash")\n    print("dflash import OK")\nexcept Exception as e:\n    print("dflash not importable (ok):", e)'; \
     rm -rf /tmp/dflash
+
+# ===============================
+# Patch: ensure python3.11 has Jupyter (required by /start.sh)
+# 不改你现有的 python -m pip 安装逻辑，仅补齐 python3.11 环境
+# ===============================
+RUN /usr/local/bin/python3.11 -m ensurepip --upgrade && \
+    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+
+# 构建期断言：避免推坏镜像
+RUN /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
 
 # ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
