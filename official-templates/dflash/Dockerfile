@@ -4,9 +4,10 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
+# 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
 ARG PYTHON_VERSION="3.11.14"
 
-# PyTorch nightly cu128（按你原来的方式）
+# PyTorch：nightly cu128（按你原来的方式）
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
 
 ARG NCCL_TESTS_VERSION="v2.13.11"
@@ -85,51 +86,71 @@ RUN set -eux; \
 RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 
 # ===============================
-# Python（统一使用 conda 的 Python，版本对齐到 PYTHON_VERSION）
-# 关键修复点：
-# - 不再编译 system python（那套 python 上不会有 torch/sglang，导致你 runtime import torch 失败）
-# - 全局把 /usr/bin/python、/usr/bin/python3、/usr/local/bin/python3.11 指向 conda python
-# - 以后所有 pip 安装都用 /opt/conda/bin/python -m pip（避免 pip 绑到 system python）
+# Python 3.11 (build from source, with ensurepip)
+# - 保留 system python3.11：给 /start.sh / jupyter 之类用（你原有逻辑）
+# - 但不再把 /usr/bin/python 指向 system python，避免 runtime 跑到“没装 torch”的 python
 # ===============================
 RUN set -eux; \
-    /opt/conda/bin/conda install -y -n base -c conda-forge "python=${PYTHON_VERSION}" pip; \
-    /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
-    ln -sf /opt/conda/bin/python /usr/local/bin/python; \
-    ln -sf /opt/conda/bin/pip /usr/local/bin/pip; \
-    ln -sf /opt/conda/bin/python /usr/local/bin/python3.11; \
-    ln -sf /opt/conda/bin/python /usr/bin/python; \
-    ln -sf /opt/conda/bin/python /usr/bin/python3; \
-    python -V; \
-    /opt/conda/bin/python -V
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+      libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+      libffi-dev libncursesw5-dev xz-utils tk-dev uuid-dev liblzma-dev \
+    && curl -fSL --retry 10 --retry-delay 2 --retry-all-errors \
+      "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
+      -o /tmp/Python.tgz \
+    && mkdir -p /tmp/python-src \
+    && tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1 \
+    && rm -f /tmp/Python.tgz \
+    && cd /tmp/python-src \
+    && ./configure --enable-optimizations --with-ensurepip=install \
+    && make -j"$(nproc)" \
+    && make altinstall \
+    && cd / \
+    && rm -rf /tmp/python-src \
+    && /usr/local/bin/python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# PyTorch (nightly cu128) - 装在 conda python 环境里
+# 关键修复：让“python/pip 默认就是 conda python”
+# - 避免 start.sh / 登录 shell PATH 不含 /opt/conda/bin 时跑到 system python
+# - system python 仍然可用：/usr/local/bin/python3.11
+# ===============================
+RUN set -eux; \
+    ln -sf /opt/conda/bin/python /usr/bin/python; \
+    ln -sf /opt/conda/bin/python /usr/bin/python3; \
+    ln -sf /opt/conda/bin/python /usr/local/bin/python; \
+    echo 'export PATH=/opt/conda/bin:$PATH' > /etc/profile.d/00-conda-path.sh; \
+    chmod 644 /etc/profile.d/00-conda-path.sh
+
+# ===============================
+# PyTorch (nightly cu128) —— 永远用 conda python 装
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir --pre --upgrade --force-reinstall ${TORCH}; \
-    ( /opt/conda/bin/python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("cuda:", torch.version.cuda)
-print("cuda available:", torch.cuda.is_available())
-PY
-    )
+    /opt/conda/bin/python -c $'import torch\nprint("torch:", torch.__version__)\nprint("cuda:", torch.version.cuda)\nprint("cuda available:", torch.cuda.is_available())'
 
 # ===============================
 # Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
+# - conda python：你主要跑推理/训练用
+# - system python3.11：补齐 /start.sh 可能需要的 jupyter 依赖
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
       huggingface-hub datasets; \
+    /usr/local/bin/python3.11 -m ensurepip --upgrade; \
+    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
+      jupyterlab ipywidgets jupyter-archive notebook==7.3.3; \
     /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
 
 # ===============================
 # DFlash + SGLang（默认安装）
 # 关键修复点：
 # - 1) 永远用 /opt/conda/bin/python 安装/验证（避免混到 system python）
-# - 2) sglang 可能会回退 torch/vision/audio 版本：装完 sglang 后，再强制把 torch 重装回 nightly cu128
-# - 3) dflash 仓库不是 Python package（无 setup.py/pyproject.toml），只保留源码到 /opt/dflash-src，不要求 import dflash
+# - 2) sglang 可能会回退 torch/vision/audio：装完 sglang 后，再强制把 torch 重装回 nightly cu128
+# - 3) dflash 仓库不是 Python package（你已经验证：没有 setup.py/pyproject.toml，也没有 dflash/ 包）
+#     所以这里只保留源码到 /opt/dflash-src，不要求 import dflash
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
@@ -146,19 +167,7 @@ RUN set -eux; \
     fi; \
     mkdir -p /opt/dflash-src; \
     cp -a . /opt/dflash-src/; \
-    ( /opt/conda/bin/python - <<'PY'
-import sys, importlib, os
-print("exe:", sys.executable)
-for m in ["torch", "sglang", "flashinfer"]:
-    try:
-        mod = importlib.import_module(m)
-        print(f"{m}: OK  version={getattr(mod,'__version__','?')}")
-    except Exception as e:
-        print(f"{m}: FAIL", repr(e))
-print("dflash repo copied:", os.path.isdir("/opt/dflash-src"))
-PY
-    ); \
-
+    /opt/conda/bin/python -c $'import sys,importlib,os\nprint("exe:",sys.executable)\nfor m in ["torch","sglang","flashinfer"]:\n  mod=importlib.import_module(m)\n  print(f"{m}: OK  version={getattr(mod,\"__version__\",\"?\")}")\nprint("torch.cuda.is_available:", __import__("torch").cuda.is_available())\nprint("dflash repo copied:", os.path.isdir("/opt/dflash-src"))'; \
     rm -rf /tmp/dflash
 
 # ===============================
