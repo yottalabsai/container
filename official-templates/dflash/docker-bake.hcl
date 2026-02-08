@@ -41,7 +41,7 @@ target "dflash" {
   platforms  = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/dflash:py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
+    "${PUBLISHER}/pytorch:py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04-dflash"
   ]
 
   args = {
