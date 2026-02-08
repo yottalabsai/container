@@ -182,36 +182,36 @@ RUN set -eux; \
 # - 不会在启动时自动跑，避免影响客户环境；你手动执行即可
 # ===============================
 RUN set -eux; \
-    cat >/usr/local/bin/sglang_basic_smoke.sh <<'SH'\n\
-#!/usr/bin/env bash\n\
-set -euo pipefail\n\
-MODEL=${1:-Qwen/Qwen2.5-7B-Instruct}\n\
-HOST=${HOST:-0.0.0.0}\n\
-PORT=${PORT:-30000}\n\
-echo \"[smoke] model=$MODEL host=$HOST port=$PORT\"\n\
-# 启动服务（后台）\n\
-/opt/conda/bin/python -m sglang.launch_server \\\n\
-  --model-path \"$MODEL\" \\\n\
-  --host \"$HOST\" \\\n\
-  --port \"$PORT\" \\\n\
-  --mem-fraction-static 0.9 &\n\
-PID=$!\n\
-trap 'echo \"[smoke] stopping pid=$PID\"; kill $PID || true' EXIT\n\
-# 等待端口起来\n\
-for i in $(seq 1 60); do\n\
-  if curl -s \"http://127.0.0.1:${PORT}/v1/models\" >/dev/null 2>&1; then\n\
-    break\n\
-  fi\n\
-  sleep 1\n\
-done\n\
-echo \"[smoke] server up, sending request...\"\n\
-curl -s \"http://127.0.0.1:${PORT}/v1/chat/completions\" \\\n\
-  -H \"Content-Type: application/json\" \\\n\
-  -d \"{\\\"model\\\":\\\"$MODEL\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"Say hello in one short sentence.\\\"}],\\\"max_tokens\\\":32,\\\"temperature\\\":0.2}\" | head\n\
-echo\n\
-echo \"[smoke] OK\"\n\
-SH\n\
-    chmod 755 /usr/local/bin/sglang_basic_smoke.sh
+    cat >/usr/local/bin/sglang_basic_smoke.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+MODEL=${1:-Qwen/Qwen2.5-7B-Instruct}
+HOST=${HOST:-0.0.0.0}
+PORT=${PORT:-30000}
+echo "[smoke] model=$MODEL host=$HOST port=$PORT"
+# 启动服务（后台）
+/opt/conda/bin/python -m sglang.launch_server \
+  --model-path "$MODEL" \
+  --host "$HOST" \
+  --port "$PORT" \
+  --mem-fraction-static 0.9 &
+PID=$!
+trap 'echo "[smoke] stopping pid=$PID"; kill $PID || true' EXIT
+# 等待端口起来
+for i in $(seq 1 60); do
+  if curl -s "http://127.0.0.1:${PORT}/v1/models" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+echo "[smoke] server up, sending request..."
+curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}],\"max_tokens\":32,\"temperature\":0.2}" | head
+echo
+echo "[smoke] OK"
+SH
+RUN chmod 755 /usr/local/bin/sglang_basic_smoke.sh
 
 # ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
