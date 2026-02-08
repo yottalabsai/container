@@ -65,7 +65,7 @@ RUN apt-get update -y && \
       locales tzdata libnuma1 \
       openssh-server nginx sudo \
       tmux vim zsh zip unzip less procps net-tools htop \
-      jq tree rsync netcat-openbsd \
+      jq tree rsync netcat-openbsd iproute2 \
       build-essential pkg-config ninja-build \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
@@ -272,6 +272,52 @@ COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # ===============================
+# entrypoint wrapper: start sglang then exec /start.sh (start.sh 保持不动)
+# ===============================
+RUN set -eux; \
+  cat >/entrypoint.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+export CUDA_HOME=/usr/local/cuda
+export CUDA_PATH=/usr/local/cuda
+export PATH="$CUDA_HOME/bin:$PATH"
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+export CPATH="$CUDA_HOME/include:${CPATH:-}"
+export C_INCLUDE_PATH="$CUDA_HOME/include:${C_INCLUDE_PATH:-}"
+export CPLUS_INCLUDE_PATH="$CUDA_HOME/include:${CPLUS_INCLUDE_PATH:-}"
+
+rm -rf /root/.cache/flashinfer 2>/dev/null || true
+
+LOG_DIR="${SGLANG_LOG_DIR:-/workspace/logs}"
+mkdir -p "$LOG_DIR" || true
+LOG_FILE="${LOG_DIR%/}/sglang.log"
+
+# 如果已经起了，就别重复起（用 ps，最稳）
+if ! ps -ef | grep -E "python .*sglang\.launch_server" | grep -v grep >/dev/null; then
+  nohup /opt/conda/bin/python -m sglang.launch_server \
+    --model-path "${SGLANG_MODEL:-Qwen/Qwen2.5-7B-Instruct}" \
+    --host 0.0.0.0 \
+    --port "${SGLANG_PORT:-30000}" \
+    --mem-fraction-static "${SGLANG_MEM_FRACTION_STATIC:-0.9}" \
+    >"$LOG_FILE" 2>&1 &
+  sleep 2
+  if ! ps -ef | grep -E "python .*sglang\.launch_server" | grep -v grep >/dev/null; then
+    echo "[entrypoint] sglang failed to start, tail log: $LOG_FILE"
+    tail -n 200 "$LOG_FILE" 2>/dev/null || true
+  else
+    echo "[entrypoint] sglang started, log=$LOG_FILE"
+  fi
+fi
+
+exec /start.sh
+SH
+  chmod 755 /entrypoint.sh; \
+  sed -i 's/\r$//' /entrypoint.sh
+
+
+
+# ===============================
 # nginx / branding
 # ===============================
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
@@ -291,24 +337,6 @@ EXPOSE 22 80 8888 30000
 # ===============================
 USER root
 WORKDIR /root
-CMD ["/bin/bash","-lc", "\
-  set -euo pipefail; \
-  export CUDA_HOME=/usr/local/cuda; \
-  export CUDA_PATH=/usr/local/cuda; \
-  export PATH=$CUDA_HOME/bin:$PATH; \
-  export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}; \
-  export CPATH=$CUDA_HOME/include:${CPATH:-}; \
-  export C_INCLUDE_PATH=$CUDA_HOME/include:${C_INCLUDE_PATH:-}; \
-  export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:${CPLUS_INCLUDE_PATH:-}; \
-  rm -rf /root/.cache/flashinfer || true; \
-  mkdir -p /var/log; \
-  nohup /opt/conda/bin/python -m sglang.launch_server \
-    --model-path Qwen/Qwen2.5-7B-Instruct \
-    --host 0.0.0.0 \
-    --port 30000 \
-    --mem-fraction-static 0.9 \
-    >/var/log/sglang.log 2>&1 & \
-  exec /start.sh \
-"]
+ENTRYPOINT ["/bin/bash","-lc","exec /entrypoint.sh"]
 
 
