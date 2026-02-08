@@ -132,14 +132,40 @@ RUN python -m pip install --no-cache-dir \
 # ===============================
 RUN set -eux; \
     python -m pip install --no-cache-dir -U pip setuptools wheel; \
+    # 先装发布版 sglang（避免 dflash/requirements.txt pin 到某个 PR 导致 flashinfer/cutlass 等被降级） \
     python -m pip install --no-cache-dir sglang; \
-    # 重要：把 PyTorch 重新装回 nightly cu128，避免被 sglang 依赖覆盖成 torch==2.9.1 / torchvision==0.24.1 / torchaudio==2.9.1
+    # 把 PyTorch 重装回 nightly cu128（sglang 可能会回退 torch/vision/audio 版本） \
     python -m pip install --no-cache-dir ${TORCH}; \
     rm -rf /tmp/dflash; \
     git clone --depth=1 https://github.com/z-lab/dflash.git /tmp/dflash; \
     cd /tmp/dflash; \
-    python -m pip install --no-cache-dir -r requirements.txt; \
-    python -m pip install --no-cache-dir -e .; \
+    # requirements.txt 里如果包含 sglang 的 git+...（PR ref），会把已装好的 sglang/flashinfer/cutlass 回退；这里直接过滤掉那一行 \
+    if [ -f requirements.txt ]; then \
+      grep -vE 'sgl-project/sglang\\.git|^sglang([<>= ].*)?$' requirements.txt > /tmp/dflash.requirements.txt || true; \
+      if [ -s /tmp/dflash.requirements.txt ]; then \
+        python -m pip install --no-cache-dir -r /tmp/dflash.requirements.txt; \
+      fi; \
+    fi; \
+    # dflash 仓库不一定在根目录提供 setup.py/pyproject.toml，做一个“找得到就装”的自适应安装 \
+    pkg_dir=""; \
+    for d in . python ./python ./bindings/python ./src/python; do \
+      if [ -f "$d/pyproject.toml" ] || [ -f "$d/setup.py" ] || [ -f "$d/setup.cfg" ]; then pkg_dir="$d"; break; fi; \
+    done; \
+    if [ -z "$pkg_dir" ]; then \
+      pkg_dir="$(find . -maxdepth 5 -type f \( -name pyproject.toml -o -name setup.py -o -name setup.cfg \) -print -quit | xargs -r dirname || true)"; \
+    fi; \
+    if [ -n "$pkg_dir" ]; then \
+      python -m pip install --no-cache-dir -e "$pkg_dir"; \
+    else \
+      # 兜底：如果存在 dflash/ 作为纯 Python 包，则用 .pth 方式加入 sys.path（不需要 packaging 元数据） \
+      if [ -d "./dflash" ] && [ -f "./dflash/__init__.py" ]; then \
+        mkdir -p /opt/dflash && cp -a ./dflash /opt/dflash/; \
+        echo "/opt/dflash" > /opt/conda/lib/python3.11/site-packages/dflash.pth; \
+      else \
+        echo "ERROR: dflash repo has no installable Python project (no setup.py/pyproject.toml, and no dflash/__init__.py)" >&2; \
+        exit 1; \
+      fi; \
+    fi; \
     python -c "import dflash, sglang; print('dflash + sglang OK')"; \
     rm -rf /tmp/dflash
 
