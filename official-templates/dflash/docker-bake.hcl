@@ -20,7 +20,7 @@ target "pytorch290" {
   dockerfile = "Dockerfile"
 
   tags = [
-    "${PUBLISHER}/pytorch:2.9.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
+    "${PUBLISHER}/dflash:py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
   ]
 
   contexts = {
