@@ -1,155 +1,210 @@
-# OpenClaw Container
+# OpenClaw Image Documentation (Generated from Dockerfile)
 
-The **OpenClaw container** provides a production-ready runtime environment for executing
-**agent-based workflows**, **tool-calling systems**, and **long-running AI services** on GPU or CPU infrastructure.
-
-It is designed as a **general-purpose agent execution base**, suitable for automation,
-data extraction, decision pipelines, and action-oriented AI systems.
+This document describes the current **OpenClaw Docker image**, its build-time parameters, runtime behavior, and embedded components, with a particular focus on the large language model **Qwen3-30B-A3B-Instruct-2507**.
 
 ---
 
-## What is OpenClaw
+## 1. Image Purpose
 
-**OpenClaw** is an agent runtime focused on:
-
-- Task orchestration
-- Tool invocation and chaining
-- Stateful execution
-- Long-running, service-style agents
-
-Unlike model-only containers, OpenClaw emphasizes **behavior, control flow, and integration**
-rather than pure inference.
+This image serves as a general-purpose GPU/CPU runtime base for OpenClaw workloads.  
+It is designed to host long-running services, tool/workflow execution, and optional operational entry points such as Jupyter or SSH.
 
 ---
 
-## Key Features
+## 2. Build Arguments
 
-- Modular agent runtime architecture
-- Built-in support for tool calling and action execution
-- Designed for long-running and stateful workloads
-- GPU-optional (can run on CPU or GPU)
-- Suitable for both interactive and service-style deployments
-- Cloud and Kubernetes friendly
+The following parameters are injected via `docker buildx bake` or `docker build` and directly affect how the image is built.
 
----
+### 2.1 Base Image
 
-## Included Components
-
-The container typically includes:
-
-- Python runtime (3.10+ / 3.11 recommended)
-- Core OpenClaw runtime
-- Common system utilities (git, curl, tmux, vim)
-- SSH server for remote access
-- Optional web / API entrypoint
-- Optional Jupyter environment for development
-
-> Specific components may vary depending on the OpenClaw build target.
+- `BASE_IMAGE`  
+  The CUDA / system base image used for this build.  
+  The exact value is defined in the Dockerfile.
 
 ---
 
-## Runtime Behavior
+### 2.2 Python Version
 
-When the container starts, it initializes the OpenClaw runtime and prepares the environment
-for executing agent workflows.
+- `PYTHON_VERSION`  
+  Controls which Python version is installed during build.
 
-Typical startup behavior includes:
-
-1. Environment variable initialization
-2. Runtime and dependency checks
-3. Agent runtime bootstrap
-4. Optional service startup (API / Web / Jupyter)
-5. Entering a long-running execution state
-
-The container is designed to stay alive as a **persistent agent service**, not as a one-shot job.
+⚠️ **Important note**  
+If the Dockerfile installs Python via `apt` using `python${PYTHON_VERSION}`, the package manager typically only supports **major.minor** versions (e.g. `3.11`), not full patch versions such as `3.11.14`.
 
 ---
 
-## Environment Configuration
+### 2.3 PyTorch / CUDA Stack
 
-OpenClaw behavior is primarily configured through environment variables, such as:
+- `TORCH`  
+  Specifies the PyTorch / torchvision / torchaudio installation command, usually bound to a specific CUDA version.
 
-- Agent execution mode
-- Tool availability
-- External service credentials
-- Optional UI or API settings
-
-This makes it suitable for managed platforms and dynamic orchestration systems.
+- `NCCL_TESTS_VERSION` (optional)  
+  Version of NCCL tests compiled into the image.
 
 ---
 
-## Exposed Ports (Typical)
+## 3. HuggingFace Model Download (Build Time)
 
-Depending on configuration, the following ports may be used:
+During image build, the Dockerfile executes `huggingface-cli download` to fetch the model directly into the image filesystem.
 
-- **22/tcp** → SSH access
-- **8080/tcp** → Agent API / control plane
-- **8888/tcp** → Jupyter (optional, development mode)
-
-> Ports must be explicitly exposed or mapped by the hosting platform.
+This step **requires a non-empty `HF_TOKEN`**.  
+If the token is missing, the build will fail immediately with exit code `2`.
 
 ---
 
-## Typical Use Cases
+### 3.1 Model Configuration
 
-- Autonomous agent execution
-- Tool-calling and action pipelines
-- Data extraction and transformation agents
-- Workflow automation
-- Research agents with memory and state
-- Backend services driven by AI decision logic
+- `HF_MODEL_ID`  
+  ```
+  Qwen/Qwen3-30B-A3B-Instruct-2507
+  ```
 
----
+- `HF_HOME`  
+  ```
+  /workspace/hf
+  ```
 
-## Recommended Deployment
-
-- Linux (x86_64)
-- Docker / containerd runtime
-- Kubernetes or managed GPU platforms
-- Persistent volume mounted for:
-  - Agent state
-  - Logs
-  - Artifacts and outputs
+- Model download path  
+  ```
+  /workspace/hf/Qwen/Qwen3-30B-A3B-Instruct-2507
+  ```
 
 ---
 
-## GPU Usage
+### 3.2 Providing `HF_TOKEN`
 
-OpenClaw **does not require a GPU**, but can leverage one when:
+`HF_TOKEN` must be supplied at build time.
 
-- Integrated with LLM backends
-- Running embedding or vision models
-- Performing compute-heavy decision steps
+#### Option A: Environment variable (recommended)
 
-This makes it flexible across both CPU-only and GPU-accelerated environments.
+```bash
+HF_TOKEN=hf_xxx docker buildx bake <target> --no-cache
+```
 
----
+#### Option B: Explicit bake override
 
-## Intended Audience
+```bash
+docker buildx bake <target> \
+  --set <target>.args.HF_TOKEN=hf_xxx \
+  --no-cache
+```
 
-This container is intended for:
+#### When using `sudo`
 
-- AI / Agent engineers
-- Platform and infrastructure teams
-- Automation and workflow developers
-- Research teams building action-oriented AI systems
+If you run `docker buildx bake` with `sudo`, environment variables may be stripped.
 
-It is **not** a minimal runtime image, but a flexible base for building
-and operating agent-driven services at scale.
+Use:
 
----
-
-## Notes
-
-- Do not override the container startup command unless you fully control the runtime lifecycle
-- If extending this image, ensure OpenClaw initialization remains intact
-- Use environment variables for configuration instead of hard-coding behavior
+```bash
+sudo -E HF_TOKEN=hf_xxx docker buildx bake <target> --no-cache
+```
 
 ---
 
-## Summary
+### 3.3 Security Notice
 
-**OpenClaw** provides a stable and extensible foundation for running
-**agents that act**, not just models that predict.
+You may see warnings such as:
 
-It is designed to bridge the gap between AI reasoning and real-world execution.
+```
+SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data
+```
+
+This is expected when passing secrets via build arguments.
+
+For higher security guarantees, consider migrating to **BuildKit secrets**, which requires Dockerfile changes.
+
+---
+
+## 4. Runtime Entry Points and Ports
+
+Runtime behavior is defined by the Dockerfile `ENTRYPOINT` / `CMD`.
+
+- Do **not** override the startup script unless you fully understand the initialization logic.
+- Port exposure depends on the services enabled inside the image.
+
+Commonly used ports include:
+
+- `22` – SSH
+- `8888` – Jupyter
+- Service-specific ports (e.g. `8080`)
+
+---
+
+## 5. Recommended Runtime Usage
+
+### 5.1 Local GPU Run
+
+```bash
+docker run --gpus all --rm -it \
+  -p 22:22 \
+  -p 8888:8888 \
+  -v $(pwd)/data:/workspace/data \
+  <image>:<tag>
+```
+
+---
+
+### 5.2 Mounting HF Cache (Recommended for Iteration)
+
+To avoid embedding large model files into the image layer and to enable cache reuse:
+
+```bash
+docker run --gpus all --rm -it \
+  -e HF_HOME=/workspace/hf \
+  -v /data/hf-cache:/workspace/hf \
+  <image>:<tag>
+```
+
+> Note:  
+> The current Dockerfile downloads the model **at build time**.  
+> Switching to runtime download or shared cache requires Dockerfile changes.
+
+---
+
+## 6. Common Failure Modes
+
+### 6.1 `python: command not found`
+
+**Cause**
+
+- `PYTHON_VERSION` was set to a full patch version (e.g. `3.11.14`)
+- Dockerfile installs Python via `apt`, which does not provide such packages
+
+**Resolution**
+
+- Pass `PYTHON_VERSION=3.11` via `docker-bake.hcl`
+- Or modify the Dockerfile to normalize major/minor automatically
+
+---
+
+### 6.2 `HF_TOKEN is empty` (exit code 2)
+
+**Cause**
+
+- `HF_TOKEN` was not passed through `docker-bake.hcl`
+- Environment variable lost due to `sudo`
+
+**Resolution**
+
+- Declare `HF_TOKEN` in bake `args`
+- Inject it via environment variable or `--set`
+
+---
+
+## 7. Relationship to Previous Generic Documentation
+
+The original `OpenClaw.md` document is intentionally **generic**, describing what the container is in abstract terms.
+
+This document complements it by documenting:
+
+- Actual Dockerfile behavior
+- Build-time HuggingFace model download
+- Fixed model: `Qwen3-30B-A3B-Instruct-2507`
+- Real-world failure modes and debugging paths
+
+---
+
+## 8. Change Policy
+
+This document is derived directly from the current Dockerfile.  
+If the Dockerfile changes, this document **must be reviewed and updated accordingly**.
