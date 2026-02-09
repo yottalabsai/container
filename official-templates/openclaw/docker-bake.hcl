@@ -39,5 +39,8 @@ target "openclaw" {
   }
 
   // output tag
-  tags = ["${REGISTRY}${IMAGE}:${TAG}"]
+  tags = [
+    "${PUBLISHER}/openclaw:py3.11-cuda12.8-cudnn-devel-ubuntu22.04",
+  ]
+
 }
