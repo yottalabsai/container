@@ -243,7 +243,6 @@ MODEL=${1:-Qwen/Qwen2.5-7B-Instruct}
 HOST=${HOST:-0.0.0.0}
 PORT=${PORT:-30000}
 echo "[smoke] model=$MODEL host=$HOST port=$PORT"
-# 启动服务（后台）
 /opt/conda/bin/python -m sglang.launch_server \
   --model-path "$MODEL" \
   --host "$HOST" \
@@ -251,7 +250,6 @@ echo "[smoke] model=$MODEL host=$HOST port=$PORT"
   --mem-fraction-static 0.9 &
 PID=$!
 trap 'echo "[smoke] stopping pid=$PID"; kill $PID || true' EXIT
-# 等待端口起来
 for i in $(seq 1 60); do
   if curl -s "http://127.0.0.1:${PORT}/v1/models" >/dev/null 2>&1; then
     break
@@ -265,6 +263,7 @@ curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
 echo
 echo "[smoke] OK"
 SH
+    ; \
     chmod 755 /usr/local/bin/sglang_basic_smoke.sh
 
 # ===============================
