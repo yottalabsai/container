@@ -239,10 +239,13 @@ RUN set -eux; \
     cat >/usr/local/bin/sglang_basic_smoke.sh <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+
 MODEL=${1:-Qwen/Qwen2.5-7B-Instruct}
 HOST=${HOST:-0.0.0.0}
 PORT=${PORT:-30000}
+
 echo "[smoke] model=$MODEL host=$HOST port=$PORT"
+
 /opt/conda/bin/python -m sglang.launch_server \
   --model-path "$MODEL" \
   --host "$HOST" \
@@ -250,12 +253,14 @@ echo "[smoke] model=$MODEL host=$HOST port=$PORT"
   --mem-fraction-static 0.9 &
 PID=$!
 trap 'echo "[smoke] stopping pid=$PID"; kill $PID || true' EXIT
+
 for i in $(seq 1 60); do
   if curl -s "http://127.0.0.1:${PORT}/v1/models" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
+
 echo "[smoke] server up, sending request..."
 curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
   -H "Content-Type: application/json" \
@@ -263,8 +268,9 @@ curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
 echo
 echo "[smoke] OK"
 SH
-    ; \
-    chmod 755 /usr/local/bin/sglang_basic_smoke.sh
+
+RUN chmod 755 /usr/local/bin/sglang_basic_smoke.sh
+
 
 # ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
