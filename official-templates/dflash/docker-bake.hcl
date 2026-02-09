@@ -2,20 +2,11 @@ variable "PUBLISHER"  { default = "yottalabsai" }
 variable "TAG_SUFFIX" { default = "2026010901" }
 
 group "default" {
-  targets = ["pytorch290"]
+  targets = ["dflash"]
 }
 
-group "dflash" {
-  targets   = ["dflash"]
-  platforms = ["linux/amd64"]
-}
 
-group "cuda" {
-  targets   = ["pytorch290"]
-  platforms = ["linux/amd64"]
-}
-
-target "pytorch290" {
+target "dflash" {
   platforms  = ["linux/amd64"]
   dockerfile = "Dockerfile"
 
@@ -30,24 +21,10 @@ target "pytorch290" {
   }
 
   args = {
-    BASE_IMAGE     = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
-    PYTHON_VERSION = "3.11.14"
-    TORCH          = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
-  }
-}
-
-target "dflash" {
-  inherits   = ["pytorch290"]
-  platforms  = ["linux/amd64"]
-
-  tags = [
-    "${PUBLISHER}/dflash:py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04"
-  ]
-
-  args = {
     BASE_IMAGE      = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
     PYTHON_VERSION  = "3.11.14"
-    TORCH           = "torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
+    TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
+    TORCH           = "torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1"
     INSTALL_DFLASH  = "1"
     DFLASH_REPO     = "https://github.com/z-lab/dflash.git"
     DFLASH_REF      = "main"
