@@ -24,7 +24,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    CUDA_HOME=/usr/local/cuda
+    CUDA_HOME=/usr/local/cuda \
+    JUPYTER_PASSWORD=ubuntu
 
 # ===============================
 # CUDA env 固化（解决 sglang / flashinfer JIT 编译找不到 cuda_runtime.h）
@@ -47,6 +48,7 @@ RUN set -eux; \
     echo "/usr/local/cuda/lib64" > /etc/ld.so.conf.d/cuda.conf; \
     ldconfig
 
+
 # ===============================
 # Workspace
 # ===============================
@@ -54,23 +56,9 @@ WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
 # ===============================
-# APT helper (NVIDIA repo 偶发 mirror sync：Packages.gz size/hash 不一致)
-# - 用 retries + timeout + 二次 update，增强抗抖
-# ===============================
-RUN set -eux; \
-    apt-get update -y \
-      -o Acquire::Retries=5 \
-      -o Acquire::http::Timeout=30 \
-      -o Acquire::https::Timeout=30 \
-    || (sleep 8 && apt-get update -y \
-      -o Acquire::Retries=5 \
-      -o Acquire::http::Timeout=30 \
-      -o Acquire::https::Timeout=30)
-
-# ===============================
 # Base system packages（按你给的案例原样 + 补 ninja + 补 libnuma1）
 # ===============================
-RUN set -eux; \
+RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git acl wget curl ca-certificates bash \
       libgl1 software-properties-common \
@@ -79,12 +67,11 @@ RUN set -eux; \
       tmux vim zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd iproute2 \
       build-essential pkg-config ninja-build \
-    ; \
-    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen; \
-    locale-gen; \
-    mkdir -p /var/run/sshd; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen \
+    && mkdir -p /var/run/sshd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ===============================
 # uv (Astral) - Python package manager
@@ -129,33 +116,25 @@ RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 # - 但不再把 /usr/bin/python 指向 system python，避免 runtime 跑到“没装 torch”的 python
 # ===============================
 RUN set -eux; \
-    apt-get update -y \
-      -o Acquire::Retries=5 \
-      -o Acquire::http::Timeout=30 \
-      -o Acquire::https::Timeout=30 \
-    || (sleep 8 && apt-get update -y \
-      -o Acquire::Retries=5 \
-      -o Acquire::http::Timeout=30 \
-      -o Acquire::https::Timeout=30); \
+    apt-get update -y && \
     apt-get install -y --no-install-recommends \
       libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
       libffi-dev libncursesw5-dev xz-utils tk-dev uuid-dev liblzma-dev \
-    ; \
-    curl -fSL --retry 10 --retry-delay 2 --retry-all-errors \
+    && curl -fSL --retry 10 --retry-delay 2 --retry-all-errors \
       "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
-      -o /tmp/Python.tgz; \
-    mkdir -p /tmp/python-src; \
-    tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1; \
-    rm -f /tmp/Python.tgz; \
-    cd /tmp/python-src; \
-    ./configure --enable-optimizations --with-ensurepip=install; \
-    make -j"$(nproc)"; \
-    make altinstall; \
-    cd /; \
-    rm -rf /tmp/python-src; \
-    /usr/local/bin/python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+      -o /tmp/Python.tgz \
+    && mkdir -p /tmp/python-src \
+    && tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1 \
+    && rm -f /tmp/Python.tgz \
+    && cd /tmp/python-src \
+    && ./configure --enable-optimizations --with-ensurepip=install \
+    && make -j"$(nproc)" \
+    && make altinstall \
+    && cd / \
+    && rm -rf /tmp/python-src \
+    && /usr/local/bin/python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # ===============================
 # 关键修复：让“python/pip 默认就是 conda python”
@@ -195,6 +174,11 @@ RUN set -eux; \
 
 # ===============================
 # DFlash + SGLang（默认安装）
+# 关键修复点：
+# - 1) 永远用 /opt/conda/bin/python 安装/验证（避免混到 system python）
+# - 2) 固定 sglang 版本；并在最后做 pip check，确保不再出现 torch 冲突警告
+# - 3) dflash 仓库不是 Python package（没有 setup.py/pyproject.toml，也没有 dflash/ 包）
+#     所以这里只保留源码到 /opt/dflash-src，不要求 import dflash
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
@@ -216,6 +200,8 @@ RUN set -eux; \
 
 # ===============================
 # SGLang 最小 smoke 脚本（Qwen 7B + 启动 + 一次请求）
+# - 仅用于你做 ===== [1] basic ===== 的最小验证
+# - 不会在启动时自动跑，避免影响客户环境；你手动执行即可
 # ===============================
 RUN set -eux; \
     cat >/usr/local/bin/sglang_basic_smoke.sh <<'SH'
@@ -247,7 +233,7 @@ curl -s "http://127.0.0.1:${PORT}/v1/chat/completions" \
 echo
 echo "[smoke] OK"
 SH
-    chmod 755 /usr/local/bin/sglang_basic_smoke.sh
+RUN chmod 755 /usr/local/bin/sglang_basic_smoke.sh
 
 # ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
@@ -288,7 +274,7 @@ RUN chmod 755 /start.sh
 # ===============================
 # entrypoint wrapper: start sglang then exec /start.sh
 # ===============================
-RUN set -eux; \
+RUN set -eux && \
   cat > /entrypoint.sh <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -325,6 +311,7 @@ exec /start.sh
 SH
 RUN chmod 755 /entrypoint.sh && sed -i 's/\r$//' /entrypoint.sh
 
+
 # ===============================
 # nginx / branding
 # ===============================
@@ -341,8 +328,10 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 EXPOSE 22 80 8888 30000
 
 # ===============================
-# Entrypoint: root 直接跑 entrypoint.sh（entrypoint 内部会 exec /start.sh）
+# Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
 # ===============================
 USER root
 WORKDIR /root
 ENTRYPOINT ["/bin/bash","-lc","exec /entrypoint.sh"]
+
+
