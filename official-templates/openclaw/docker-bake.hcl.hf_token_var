@@ -1,6 +1,6 @@
+variable "HF_TOKEN" { default = "" }
 variable "PUBLISHER"  { default = "yottalabsai" }
 variable "TAG_SUFFIX" { default = "2026010901" }
-variable "HF_TOKEN" { default = "" }
 
 group "default" {
   targets = ["openclaw"]
