@@ -7,12 +7,12 @@ group "default" {
 }
 
 group "cuda" {
-  targets   = ["pytorch290"]
+  targets   = ["dflash"]
   platforms = ["linux/amd64"]
 }
 
 target "dflash" {
-  inherits   = ["pytorch290"]
+  inherits   = ["dflash"]
   platforms  = ["linux/amd64"]
 
   tags = [
