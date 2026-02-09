@@ -24,7 +24,7 @@ target "openclaw" {
 
   // build args (match your Dockerfile ARG names)
   args = {
-    PYTHON_VERSION     = "3.11.14"
+    PYTHON_VERSION     = "3.11"
     TORCH_INDEX_URL    = "https://download.pytorch.org/whl/cu128"
     TORCH              = "torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1"
     SGLANG_VERSION     = "0.5.8.post1"

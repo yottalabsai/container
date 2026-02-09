@@ -1,74 +1,120 @@
-# DFlash PyTorch Container – Overview & Usage
+# DFlash GPU Inference Container
 
 ## Overview
-This container is a **GPU-optimized base image** designed for modern LLM inference and serving workloads.
 
-It ships **out-of-the-box** with:
-- PyTorch 2.9 (CUDA 12.8)
-- SGLang
-- DFlash (default-enabled speculative decoding)
-- Full system tooling (SSH, Nginx, tmux, build tools)
+**DFlash** is a production-grade GPU inference container designed for low-latency Large Language Model (LLM) serving and long-running AI services.
 
-The image is intended for **production inference**, not as a minimal runtime.
+It provides a stable, service-oriented runtime optimized for inference workloads, making it suitable for cloud, Kubernetes, and managed GPU platforms where predictable behavior and operational reliability are critical.
+
+---
+
+## Design Goals
+
+- Inference-first, not training-oriented
+- Stable startup and long-running execution
+- Minimal operational surprises in managed platforms
+- Clear startup contract for platform and infrastructure teams
+- Compatible with modern NVIDIA GPU architectures
 
 ---
 
 ## Key Features
-- CUDA 12.8 + cuDNN + NCCL
-- Python 3.11
-- Speculative decoding via **DFlash**
-- Optimized for Ampere / Ada / Hopper GPUs
-- Ready for Docker, Kubernetes, and cloud GPU platforms
+
+- PyTorch **2.9.x** runtime
+- CUDA **12.8** acceleration
+- Python **3.11**
+- Optimized for Ampere, Ada, and Hopper GPUs
+- Suitable for LLM backends and inference APIs
+- Designed for Kubernetes and cloud GPU environments
 
 ---
 
-## Why DFlash
-DFlash enables **speculative decoding**, significantly improving:
-- Token throughput
-- End-to-end latency
-- GPU utilization
+## Included Components
 
-It is particularly effective for:
-- Large language model serving
-- High-QPS inference backends
-- Interactive LLM applications
+- PyTorch, torchvision, torchaudio
+- CUDA, cuDNN, NCCL
+- OpenSSH server for remote access and debugging
+- Optional Jupyter Lab (environment-controlled)
+- Nginx for lightweight HTTP entrypoints
+- Common system utilities (git, curl, htop, vim, tmux)
 
 ---
 
-## Running the Container
+## Runtime Model
 
-```bash
-docker run --gpus all -it   -p 22:22   -p 80:80   yottalabsai/pytorch:2.9.0-dflash
+DFlash follows a **service-oriented startup model**.
+
+When the container starts:
+
+1. Core system services (SSH, Nginx) are initialized
+2. Platform-provided environment variables are injected
+3. Optional interactive services (e.g., Jupyter) are started if enabled
+4. The container remains alive as a long-running GPU service host
+
+This model allows DFlash to act as a **stable base layer** for deploying LLM inference servers such as custom APIs, gateways, or internal model services.
+
+---
+
+## Startup Contract
+
+DFlash relies on its internal startup script to ensure correct initialization.
+
+When deploying on Kubernetes or managed GPU platforms:
+
+- Do **not** override the container startup command unless necessary
+- If a custom command is required, it **must** end with:
+
+```
+exec /start.sh
 ```
 
----
-
-## Using DFlash with SGLang
-
-```bash
-python -m sglang.launch_server   --model-path meta-llama/Llama-2-7b-hf   --speculative-algorithm DFLASH
-```
-
-DFlash is enabled by default — no additional configuration is required.
+Failing to follow this contract may prevent essential services from starting correctly.
 
 ---
 
 ## Typical Use Cases
-- LLM inference services
-- Speculative decoding research
-- GPU cloud platforms
-- Internal AI infrastructure
+
+- Large Language Model (LLM) inference services
+- Chat and completion APIs
+- Internal model gateways
+- GPU-backed microservices
+- Research and evaluation inference workloads
 
 ---
 
-## Deployment Notes
-- Requires NVIDIA driver compatible with CUDA 12.x
-- Do not override the container startup script
-- Recommended to mount persistent storage to /workspace
+## Recommended Hardware
+
+- NVIDIA GPU with **≥16GB VRAM**
+- ≥24GB VRAM recommended for larger LLMs
+- Host driver compatible with CUDA 12.x
 
 ---
 
-## What This Image Is Not
-- Not a minimal runtime image
-- Not CPU-only
-- Not intended for environments without NVIDIA GPUs
+## Deployment Recommendations
+
+- Linux (x86_64)
+- Docker or containerd runtime
+- Kubernetes, Yotta Labs, or similar GPU platforms
+- Persistent volume mounted to `/workspace` for models and logs
+
+---
+
+## Target Audience
+
+DFlash is intended for:
+
+- AI platform and infrastructure teams
+- Backend engineers running GPU services
+- Research and inference engineers
+- Organizations operating LLM inference at scale
+
+It is not designed as a training-focused image, but as a **reliable inference foundation**.
+
+---
+
+## Version Summary
+
+- Runtime: **DFlash**
+- PyTorch: **2.9.x**
+- CUDA: **12.8**
+- Python: **3.11**
