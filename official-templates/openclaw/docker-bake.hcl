@@ -1,26 +1,19 @@
-// OpenClaw / SGLang image build with docker buildx bake
-
-variable "REGISTRY" { default = "" }
-variable "IMAGE"    { default = "openclaw" }
-variable "TAG"      { default = "latest" }
-
-// these must match your build contexts used by: COPY --from=scripts/proxy/logo
-variable "CTX_SCRIPTS" { default = "./scripts" }
-variable "CTX_PROXY"   { default = "./proxy" }
-variable "CTX_LOGO"    { default = "./logo" }
-
-// if you need to override at build time:
-//   docker buildx bake -f docker-bake.hcl \
-//     --set openclaw.args.SGLANG_VERSION=0.5.8.post1 \
-//     --set openclaw.tags=myrepo/openclaw:dev
+variable "PUBLISHER"  { default = "yottalabsai" }
+variable "TAG_SUFFIX" { default = "2026010901" }
 
 group "default" {
   targets = ["openclaw"]
 }
 
 target "openclaw" {
-  context    = "."
-  dockerfile = "Dockerfile"
+  description = ""
+  dockerfile  = "Dockerfile"
+  platforms   = ["linux/amd64"]
+
+    // output tag
+  tags = [
+    "${PUBLISHER}/openclaw:py3.11-cuda12.8-cudnn-devel-ubuntu22.04",
+  ]
 
   // named contexts for multi-stage COPY --from=...
   contexts = {
@@ -37,10 +30,5 @@ target "openclaw" {
     SGLANG_VERSION     = "0.5.8.post1"
     NCCL_TESTS_VERSION = "v2.13.11"
   }
-
-  // output tag
-  tags = [
-    "${PUBLISHER}/openclaw:py3.11-cuda12.8-cudnn-devel-ubuntu22.04",
-  ]
 
 }
