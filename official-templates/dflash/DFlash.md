@@ -1,124 +1,139 @@
 # DFlash
 
-A production-ready GPU inference container optimized for low-latency LLM serving and long-running AI services.
+# **About DFlash**
 
----
+**DFlash** is a production-grade GPU inference container designed for low-latency Large Language Model (LLM) serving and long-running AI services.
 
-## Introduction
+It provides a stable, service-oriented runtime optimized for inference workloads, making it suitable for cloud, Kubernetes, and managed GPU platforms where predictable behavior and operational reliability are critical.
 
-**DFlash** is a service-oriented GPU container designed specifically for **inference-first workloads**.
-It provides a predictable, stable runtime for deploying Large Language Model (LLM) backends in
-cloud and Kubernetes environments, where reliability and operational clarity matter.
+------
 
-DFlash is not a minimal image and not a training-focused environment.
-Instead, it serves as a **reusable inference base layer** for internal platforms,
-model gateways, and production AI services.
+### :confused:**The Problem: Inference Bottleneck**
 
----
+Current LLMs face a "trilemma" between speed, accuracy, and efficiency: Autoregressive Models has high accuracy, but slow because they generate text sequentially (one token at a time). Speculators as EAGLE-3 offer some speedup but rely on *serial* drafting, but they are inefficient and prone to error accumulation. Standard diffusion LLM offer fast parallel generation but suffer from lower accuracy and require heavy denoising computation to maintain quality.
 
-## Core Principles
+**How to generate GOOD tokens FAST?**
 
-- **Inference-first design**  
-  Optimized for serving and generation, not model training.
+**That is a problem.**
 
-- **Stable startup contract**  
-  Clear and explicit startup behavior to avoid surprises on managed platforms.
+### :arrow_down::wrench:**The DFlash Solution: Best of Both Worlds**
 
-- **Production reliability**  
-  Designed for long-running GPU services with minimal operational friction.
+DFlash combines the reasoning power of large autoregressive models with the parallel speed of diffusion.
 
-- **Platform-friendly**  
-  Works cleanly with Kubernetes and managed GPU providers.
+The major insight they proposed is **"The Target Knows Best."** 
 
----
+Instead of forcing a small draft model to reason from scratch, DFlash leverages the rich hidden features already present in the large target model.
 
-## Features
+### **How It Works**
 
-- PyTorch **2.9.x**
-- CUDA **12.8**
+DFlash uses a lightweight, 5-layer diffusion model to draft tokens in parallel, conditioned on the target model's intelligence.
+
+1. **Feature Fusion:** DFlash extracts hidden context features from the large target model .
+2. **Conditioning:** These features are fed directly into the draft model. This allows the small drafter to "borrow" the deep reasoning capabilities of the large model.
+3. **Parallel Drafting:** The drafter predicts a block of future tokens (e.g., 16 tokens) simultaneously using diffusion.
+4. **Verification:** The target model verifies the draft in a single pass.
+
+> **Key Design Choice:** To minimize overhead, the draft model reuses the embedding and LM head layers of the target model, training only the intermediate layers.
+
+**Key Results**: DFlash outperforms state-of-the-art methods like EAGLE-3 on standard benchmarks (such as Math tasks).
+
+# **Our Template**
+
+## Key Features
+
+- PyTorch **2.9.x** runtime
+- CUDA **12.8** acceleration
 - Python **3.11**
-- NVIDIA Ampere / Ada / Hopper GPU support
-- Service-oriented startup model
-- SSH access for debugging and maintenance
+- Optimized for Ampere, Ada, and Hopper GPUs
+- Suitable for LLM backends and inference APIs
+- Designed for Kubernetes and cloud GPU environments
+
+------
+
+## Included Components
+
+- PyTorch, torchvision, torchaudio
+- CUDA, cuDNN, NCCL
+- OpenSSH server for remote access and debugging
 - Optional Jupyter Lab (environment-controlled)
 - Nginx for lightweight HTTP entrypoints
-- Common CLI and debugging tools
+- Common system utilities (git, curl, htop, vim, tmux)
 
----
+------
 
-## Startup Model
+## Runtime Model
 
-DFlash relies on an internal startup script to initialize system services and
-prepare the runtime environment.
+DFlash follows a **service-oriented startup model**.
 
-At container startup:
+When the container starts:
 
-1. Core services (SSH, Nginx) are initialized
+1. Core system services (SSH, Nginx) are initialized
 2. Platform-provided environment variables are injected
-3. Optional services (such as Jupyter Lab) are started if enabled
+3. Optional interactive services (e.g., Jupyter) are started if enabled
 4. The container remains alive as a long-running GPU service host
 
-This model allows DFlash to be used as a **base container** on top of which
-custom inference servers (LLM APIs, gateways, schedulers) can be launched.
+This model allows DFlash to act as a **stable base layer** for deploying LLM inference servers such as custom APIs, gateways, or internal model services.
 
----
+------
 
-## Startup Contract (Important)
+## Startup Contract
 
-When deploying DFlash on Kubernetes or managed GPU platforms:
+DFlash relies on its internal startup script to ensure correct initialization.
+
+When deploying on Kubernetes or managed GPU platforms:
 
 - Do **not** override the container startup command unless necessary
 - If a custom command is required, it **must** end with:
 
-```bash
+```
 exec /start.sh
 ```
 
-Failing to do so may prevent essential services from starting correctly.
+Failing to follow this contract may prevent essential services from starting correctly.
 
----
+------
 
-## Use Cases
+## Typical Use Cases
 
-- Large Language Model (LLM) inference backends
+- Large Language Model (LLM) inference services
 - Chat and completion APIs
-- Internal model gateways and routing services
+- Internal model gateways
 - GPU-backed microservices
 - Research and evaluation inference workloads
 
----
+------
 
-## Hardware Requirements
+## Recommended Hardware
 
 - NVIDIA GPU with **≥16GB VRAM**
-- ≥24GB VRAM recommended for larger models
-- Host drivers compatible with CUDA 12.x
+- ≥24GB VRAM recommended for larger LLMs
+- Host driver compatible with CUDA 12.x
 
----
+------
 
 ## Deployment Recommendations
 
 - Linux (x86_64)
 - Docker or containerd runtime
-- Kubernetes or managed GPU platforms (e.g. Yotta Labs)
+- Kubernetes, Yotta Labs, or similar GPU platforms
 - Persistent volume mounted to `/workspace` for models and logs
 
----
+------
 
-## Intended Audience
+## Target Audience
 
 DFlash is intended for:
 
 - AI platform and infrastructure teams
-- Backend engineers operating GPU services
-- Inference and research engineers
-- Organizations running LLM inference at scale
+- Backend engineers running GPU services
+- Research and inference engineers
+- Organizations operating LLM inference at scale
 
-It is **not** intended as a training-focused image, but as a **stable inference foundation**.
+It is not designed as a training-focused image, but as a **reliable inference foundation**.
 
----
+------
 
-## Version Information
+## Version Summary
 
 - Runtime: **DFlash**
 - PyTorch: **2.9.x**
