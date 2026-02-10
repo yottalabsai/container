@@ -8,7 +8,7 @@ It provides a stable, service-oriented runtime optimized for inference workloads
 
 ------
 
-### :confused:**The Problem: Inference Bottleneck**
+### **The Problem: Inference Bottleneck**
 
 Current LLMs face a "trilemma" between speed, accuracy, and efficiency: Autoregressive Models has high accuracy, but slow because they generate text sequentially (one token at a time). Speculators as EAGLE-3 offer some speedup but rely on *serial* drafting, but they are inefficient and prone to error accumulation. Standard diffusion LLM offer fast parallel generation but suffer from lower accuracy and require heavy denoising computation to maintain quality.
 
@@ -16,7 +16,7 @@ Current LLMs face a "trilemma" between speed, accuracy, and efficiency: Autoregr
 
 **That is a problem.**
 
-### :arrow_down::wrench:**The DFlash Solution: Best of Both Worlds**
+### **The DFlash Solution: Best of Both Worlds**
 
 DFlash combines the reasoning power of large autoregressive models with the parallel speed of diffusion.
 
