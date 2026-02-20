@@ -1,4 +1,4 @@
-variable "PUBLISHER"  { default = "yottalabsai" }
+variable "PUBLISHER" { default = "yottalabsai" }
 variable "TAG_SUFFIX" { default = "2026010901" }
 
 group "default" {
