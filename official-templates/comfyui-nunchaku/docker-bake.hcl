@@ -1,6 +1,10 @@
 variable "PUBLISHER" { default = "yottalabsai" }
 variable "TAG_SUFFIX"  { default = "2026012201" }
 
+group "default" {
+  targets = ["comfyui-nunchaku"]
+}
+
 group "cuda" {
   targets = ["comfyui-nunchaku"]
   platforms = ["linux/amd64"]

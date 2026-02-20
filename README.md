@@ -55,7 +55,7 @@ Each container folder must include a `README.md`. This file is displayed on Dock
 
 ## Building Images
 
-All images are built using [Docker Buildx Bake](https://docs.docker.com/build/bake/). Builds must be run from the **repository root**, not from a template subdirectory.
+All images are built using [Docker Buildx Bake](https://docs.docker.com/build/bake/). Each template has its own `docker-bake.hcl` — run bake commands from **inside the template directory**.
 
 ### Prerequisites
 
@@ -71,23 +71,19 @@ docker buildx inspect --bootstrap
 ### Build Commands
 
 ```bash
-# Build all targets
+cd official-templates/<template-name>
+
+# Build using the default target
 docker buildx bake
 
-# Build and push all targets
+# Build and push
 docker buildx bake --push
 
-# Build a specific target
-docker buildx bake <target-name>
-
-# Build and push a specific target
-docker buildx bake <target-name> --push
-
-# Build without cache
-docker buildx bake <target-name> --no-cache --push
+# Build without cache and push
+docker buildx bake --no-cache --push
 ```
 
-Replace `<target-name>` with the target defined in the template's `docker-bake.hcl` (e.g., `pytorch`, `comfyui`, `dflash`).
+Replace `<template-name>` with the directory name (e.g., `pytorch`, `comfyui`, `dflash`).
 
 ## Contributing
 

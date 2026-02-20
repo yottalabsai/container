@@ -1,6 +1,10 @@
 variable "PUBLISHER" { default = "yottalabsai" }
 variable "TAG_SUFFIX"  { default = "2025102101" }
 
+group "default" {
+  targets = ["comfyui"]
+}
+
 group "cuda" {
     targets = [
         "280-py311-cuda1281-cudnn-devel-ubuntu2204",

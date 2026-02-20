@@ -60,6 +60,10 @@ variable "HF_TOKEN" {
 # ==============================
 # Build Groups
 # ==============================
+group "default" {
+  targets = ["vllm-qwen"]
+}
+
 group "cuda" {
   targets   = ["vllm-qwen"]
   platforms = ["linux/amd64"]
