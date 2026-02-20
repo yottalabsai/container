@@ -1,69 +1,102 @@
-# Yotta Containers
+# Yotta Labs Container Images
 
-This repository contains the Dockerfiles for the Yotta containers used for our official templates. Resulting containers are available on [Docker Hub](https://hub.docker.com/u/yottalabs).
+This repository contains the Dockerfiles for the official [Yotta Labs](https://yottalabs.ai) launch template images. All images are published to [Docker Hub](https://hub.docker.com/u/yottalabs) and are ready to deploy on the Yotta platform.
 
-| Container             | Yotta Labs Template              | Description |
-|-----------------------|------------------------------|-------------|
-| Pytorch               | Yotta Pytorch                |             |
-| Vllm                  | Yotta Vllm                   |             |
-| Base                  | Yotta Base                   |             |
-| Flux                  | Yotta Flux                   |             |
+## Available Templates
 
-
-
+| Template | Docker Image | Description |
+|----------|-------------|-------------|
+| [Base](official-templates/base/) | `yottalabs/base` | Minimal runtime with CUDA, Python 3.8–3.13, and JupyterLab |
+| [PyTorch](official-templates/pytorch/) | `yottalabs/pytorch` | PyTorch 2.9 on CUDA 12.8, Python 3.11, JupyterLab |
+| [TensorFlow](official-templates/tensorflow/) | `yottalabs/tensorflow` | TensorFlow with CUDA and JupyterLab |
+| [ComfyUI](official-templates/comfyui/) | `yottalabs/comfyui` | AI image generation with ComfyUI |
+| [ComfyUI Nunchaku](official-templates/comfyui-nunchaku/) | `yottalabs/comfyui-nunchaku` | ComfyUI with Nunchaku quantization acceleration |
+| [Flux 1.0 Dev](official-templates/flux1dev-comfyui/) | `yottalabs/flux1dev-comfyui` | FLUX.1-dev image generation via ComfyUI |
+| [Wan 2.1](official-templates/wan21-comfyui/) | `yottalabs/wan21-comfyui` | Wan 2.1 video generation via ComfyUI |
+| [Wan 2.2](official-templates/wan22-comfyui/) | `yottalabs/wan22-comfyui` | Wan 2.2 video generation via ComfyUI |
+| [Fast Stable Diffusion](official-templates/fast-stable-diffusion/) | `yottalabs/fast-stable-diffusion` | Automatic1111 WebUI and DreamBooth fine-tuning |
+| [DFlash](official-templates/dflash/) | `yottalabs/dflash` | High-performance LLM inference with speculative decoding |
+| [SGLang](official-templates/sglang/) | `yottalabs/sglang` | SGLang inference framework |
+| [vLLM + Qwen](official-templates/vllm-qwen/) | `yottalabs/vllm-qwen` | vLLM inference server pre-loaded with Qwen3 |
+| [Unsloth](official-templates/unsloth/) | `yottalabs/unsloth` | Memory-efficient LLM fine-tuning with Unsloth |
+| [VERL](official-templates/verl/) | `yottalabs/verl` | Reinforcement learning from human feedback (RLHF) |
+| [VERL + vLLM](official-templates/verl-vllm/) | `yottalabs/verl-vllm` | VERL with vLLM for efficient rollout generation |
+| [SkyRL](official-templates/skyrl/) | `yottalabs/skyrl` | SkyRL distributed reinforcement learning framework |
+| [Miles](official-templates/miles/) | `yottalabs/miles` | Miles AI inference framework |
+| [AI Toolkit](official-templates/ai-toolkit/) | `yottalabs/ai-toolkit` | Comprehensive AI/ML toolkit |
+| [VS Code](official-templates/vs-code/) | `yottalabs/vs-code` | Desktop VS Code development environment |
+| [VS Code Server](official-templates/vscode-server/) | `yottalabs/vscode-server` | Browser-based VS Code Server |
 
 ## Container Requirements
 
+All official images must include the following to integrate with the Yotta platform:
+
 ### Dependencies
 
-The following dependencies are required as part of YottaLabs platform functionality.
+- `nginx` — Port proxying to the user-facing interface
+- `openssh-server` — SSH access to the container
+- `jupyterlab` — JupyterLab notebook access
 
-- `nginx` - Required for proxying ports to the user.
-- `openssh-server` - Required for SSH access to the container.
-- 'pip install jupyterlab' - Required for JupyterLab access to the container.
+### `yotta.yaml`
 
-### yotta.yaml
-
-Each container folder needs to have a yotta.yaml file. This file will contain version info as well as services to be ran. The yotta.yaml file should be formatted as follows:
+Each container folder must include a `yotta.yaml` describing its version and exposed services:
 
 ```yaml
 version: '1.0.0'
 services:
-  - name: 'service1'
+  - name: 'my-service'
     port: 9000
     proxy_port: 9001
-  - name: 'service2'
-    port: 9002
-    proxy_port: 9003
 ```
 
-### README
+### `README.md`
 
-Every container folder needs to have its own README.md file, this file will be displayed both on the Docker Hub as well as the README section of the template on the YottaLabs website. Additionally, if the container is opening a port other than 8888 that is passed through the proxy and the service is not running yet, the README will be displayed to the user.
+Each container folder must include a `README.md`. This file is displayed on Docker Hub and in the Yotta platform UI. It is also served to users when a proxied port is not yet ready.
 
-## Building Containers
+## Building Images
 
-buildx bake
+All images are built using [Docker Buildx Bake](https://docs.docker.com/build/bake/). Builds must be run from the **repository root**, not from a template subdirectory.
 
-```BASH
-docker buildx bake
-
-docker buildx bake --push
-```
-
-
-docker build should be ran from the root of the repository, not from the container folder. The build command should be ran as follows:
+### Prerequisites
 
 ```bash
-docker build -t yottalabs/<container-name>:<version> -f <container-name>/Dockerfile.bak .
+# Install QEMU for multi-platform builds
+docker run --privileged --rm tonistiigi/binfmt --install all
+
+# Create and activate a Buildx builder with the docker-container driver
+docker buildx create --name yotta-builder --driver docker-container --use
+docker buildx inspect --bootstrap
 ```
 
+### Build Commands
 
-# 1) 安装 QEMU/binfmt（让 x86 主机能构建 arm64 等）
-sudo docker run --privileged --rm tonistiigi/binfmt --install all
+```bash
+# Build all targets
+docker buildx bake
 
-# 2) 建一个 container 驱动的 buildx builder，并设为当前默认
-docker buildx create --name multi --driver docker-container --use
+# Build and push all targets
+docker buildx bake --push
 
-# 3) 启动一下（可选）
-docker buildx inspect --bootstrap
+# Build a specific target
+docker buildx bake <target-name>
+
+# Build and push a specific target
+docker buildx bake <target-name> --push
+
+# Build without cache
+docker buildx bake <target-name> --no-cache --push
+```
+
+Replace `<target-name>` with the target defined in the template's `docker-bake.hcl` (e.g., `pytorch`, `comfyui`, `dflash`).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on adding or modifying templates.
+
+## Security
+
+To report a security vulnerability, see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © Yotta Labs
