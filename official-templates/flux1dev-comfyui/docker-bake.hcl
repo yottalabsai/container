@@ -5,7 +5,7 @@ variable "BASE_IMAGE"  { default = "nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04" 
 variable "PYTHON_VER"  { default = "3.11" }
 variable "COMFY_PORT"  { default = "8188" }
 
-# Torch 相关
+# Torch related
 variable "TORCH_CHANNEL"           { default = "nightly" }
 variable "TORCH_VERSION"           { default = "2.4.1" }
 variable "TORCH_VISION_VERSION"    { default = "0.19.1" }
@@ -20,9 +20,9 @@ variable "HF_TOKEN" {
   description = "HuggingFace access token (REQUIRED)"
 }
 
-# ---- 标准版（不装 Nunchaku）----
+# ---- Standard edition (without Nunchaku) ----
 target "flux1dev-comfyui" {
-  description = "ComfyUI + FLUX1-Dev 环境镜像"
+  description = "ComfyUI + FLUX1-Dev environment image"
   dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 
@@ -56,9 +56,9 @@ target "flux1dev-comfyui" {
   }
 }
 
-# ---- Nunchaku 版 ----
+# ---- Nunchaku edition ----
 target "flux1dev-comfyui-nunchaku" {
-  description = "ComfyUI + FLUX1-Dev + Nunchaku 变体"
+  description = "ComfyUI + FLUX1-Dev + Nunchaku variant"
   dockerfile  = "Dockerfile"
   platforms   = ["linux/amd64"]
 

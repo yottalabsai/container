@@ -1,25 +1,25 @@
 # ==============================
-# Flux1-Dev ComfyUI 基座构建参数
+# Flux1-Dev ComfyUI base build arguments
 # ==============================
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 ARG COMFYUI_PORT="8188"
 
-# 是否安装 Nunchaku（由 bake 决定）
+# Whether to install Nunchaku (determined by bake)
 ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-# Torch / CUDA 相关参数
+# Torch / CUDA related arguments
 ARG TORCH_CHANNEL="nightly"          # nightly / stable
-ARG TORCH_VERSION="2.4.1"           # stable 时使用
-ARG TORCH_VISION_VERSION="0.19.1"   # stable 时使用
-ARG TORCH_CUDA="cu128"              # 默认 cu128 适配 CUDA 12.8
+ARG TORCH_VERSION="2.4.1"           # used when stable
+ARG TORCH_VISION_VERSION="0.19.1"   # used when stable
+ARG TORCH_CUDA="cu128"              # default cu128 for CUDA 12.8
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
 # ==============================
-# Base: CUDA + 系统依赖 + Python + SSH
+# Base: CUDA + system dependencies + Python + SSH
 # ==============================
 FROM ${BASE_IMAGE} AS base
 
@@ -34,7 +34,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
-    # 针对 5090 / Blackwell
+    # targeting 5090 / Blackwell
     TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0;12.0" \
     HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
@@ -57,7 +57,7 @@ RUN apt-get update -y && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 创建普通用户
+# Create non-root user
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
@@ -65,12 +65,12 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chmod 700 /home/${UBUNTU_USER}/.ssh && \
     mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
-# SSH 配置：允许密码登录，但禁止 root 登录
+# SSH config: allow password login, but disallow root login
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# 安装指定版本 Python + pip
+# Install specified Python version + pip
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -81,11 +81,11 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
       /usr/bin/python /tmp/get-pip.py || true) && \
     rm -f /tmp/get-pip.py
 
-# 兜底：保证 python -m pip 可用
+# Fallback: ensure python -m pip is available
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# python-env: 安装 PyTorch + Jupyter
+# python-env: install PyTorch + Jupyter
 # ==============================
 FROM base AS python-env
 
@@ -115,13 +115,13 @@ RUN python -m pip install --upgrade pip wheel setuptools && \
         --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"; \
     fi
 
-# 安装 jupyter 以兼容 start.sh
+# Install jupyter for compatibility with start.sh
 RUN python -m pip install --no-cache-dir \
       "jupyterlab>=4.0.0" \
       "notebook" \
       "ipykernel"
 
-# 简单的环境自检
+# Simple environment self-check
 RUN python - <<'PY'
 import torch, platform
 print("PyTorch:", torch.__version__)
@@ -132,7 +132,7 @@ print("CUDA arch list:", getattr(torch.cuda, "get_arch_list", lambda: "n/a")())
 PY
 
 # ==============================
-# comfy-builder: 安装 ComfyUI + Manager + (可选) Nunchaku + 下载脚本 + FLUX1-Dev 模型
+# comfy-builder: install ComfyUI + Manager + (optional) Nunchaku + download script + FLUX1-Dev models
 # ==============================
 FROM python-env AS comfy-builder
 
@@ -140,23 +140,23 @@ ARG UBUNTU_USER
 ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
-ARG HF_TOKEN          # <- 从 docker-bake 传入的 HF_TOKEN
+ARG HF_TOKEN          # <- HF_TOKEN passed in from docker-bake
 
 WORKDIR /home/${UBUNTU_USER}
 
-# ComfyUI 本体
+# ComfyUI core
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# ComfyUI Manager 节点
+# ComfyUI Manager node
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager && \
     cd ComfyUI-Manager && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 安装 huggingface_hub 等工具
+# Install huggingface_hub and related tools
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -170,7 +170,7 @@ RUN python -m pip install --no-cache-dir --user \
       "PyGithub" \
       "toml"
 
-# 可选：Nunchaku
+# Optional: Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
         echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
@@ -186,7 +186,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 基本目录结构
+# Basic directory structure
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -197,7 +197,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/models
 
 # -------------------------------
-# FLUX1-Dev 下载脚本（构建 / 运行都可复用）
+# FLUX1-Dev download script (reusable at build time and runtime)
 # -------------------------------
 USER root
 RUN cat >/usr/local/bin/flux_download.sh <<'FLUX'
@@ -319,7 +319,7 @@ FLUX
 
 RUN chmod +x /usr/local/bin/flux_download.sh
 
-# ★ 构建阶段调用 flux_download.sh，使用 ARG HF_TOKEN，把模型写进镜像
+# Call flux_download.sh during build stage, using ARG HF_TOKEN to bake models into the image
 RUN set -euo pipefail; \
     FLUX_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models"; \
     if [ -z "${HF_TOKEN}" ]; then \
@@ -330,7 +330,7 @@ RUN set -euo pipefail; \
     HF_TOKEN="${HF_TOKEN}" FLUX_MODEL_DIR="${FLUX_MODEL_DIR}" flux_download.sh; \
     chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${FLUX_MODEL_DIR}"; \
     \
-    # 兼容老工作流：t5xxl_fp16.safetensors -> t5xxl_fp8_e4m3fn_scaled.safetensors
+    # Compatibility alias for old workflows: t5xxl_fp16.safetensors -> t5xxl_fp8_e4m3fn_scaled.safetensors
     TE_DIR="${FLUX_MODEL_DIR}/text_encoders"; \
     if [ -f "${TE_DIR}/t5xxl_fp8_e4m3fn_scaled.safetensors" ] && [ ! -e "${TE_DIR}/t5xxl_fp16.safetensors" ]; then \
       echo "[FLUX1-Dev][build] create alias t5xxl_fp16.safetensors -> t5xxl_fp8_e4m3fn_scaled.safetensors"; \
@@ -341,28 +341,28 @@ RUN set -euo pipefail; \
 USER ${UBUNTU_USER}
 
 # ==============================
-# runtime
+# runtime stage
 # ==============================
 FROM comfy-builder AS runtime
 
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
 
-# 默认环境变量（运行时可用 env 覆盖）
+# Default environment variables (can be overridden at runtime via env)
 ENV COMFYUI_PORT=${COMFYUI_PORT} \
     FLUX_MODEL_DIR="/home/${UBUNTU_USER}/ComfyUI/models"
 
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
-# 这些来自 docker buildx bake 的额外上下文（scripts/proxy/logo）
+# These come from extra contexts provided by docker buildx bake (scripts/proxy/logo)
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# post_start.sh：这里只负责启动 ComfyUI（模型已在构建阶段下载）
+# post_start.sh: only responsible for starting ComfyUI (models were downloaded at build time)
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -370,7 +370,7 @@ set -euo pipefail
 LOG=/home/ubuntu/comfyui.log
 mkdir -p /home/ubuntu
 
-# 以 ubuntu 用户运行 ComfyUI
+# Run ComfyUI as the ubuntu user
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \
@@ -386,17 +386,17 @@ RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# 把 ComfyUI/models 也当成数据卷，方便挂载/持久化
+# Also declare ComfyUI/models as a volume for easy mounting/persistence
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output", "/home/${UBUNTU_USER}/ComfyUI/models"]
 
-# 暴露端口：Nginx / ComfyUI / SSH
+# Expose ports: Nginx / ComfyUI / SSH
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-# 健康检查：直接探 ComfyUI HTTP 端口
+# Health check: probe the ComfyUI HTTP port directly
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 
-# 入口脚本来自 scripts 上下文的 start.sh
+# Entrypoint script comes from start.sh in the scripts context
 ENTRYPOINT ["/start.sh"]

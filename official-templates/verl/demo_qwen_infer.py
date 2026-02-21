@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Qwen2.5-0.5B-Instruct 预制推理 Demo
+“””Qwen2.5-0.5B-Instruct Pre-built Inference Demo
 
-- 第一次运行会从 HuggingFace 下载模型（走 /workspace/.cache/huggingface 缓存）
-- 仅用于“开箱即用”验证镜像可用性，不代表 Verl 的核心能力（Verl 主要用于后训练 / RL）
-"""
+- On first run the model is downloaded from HuggingFace into /workspace/.cache/huggingface
+- For out-of-the-box environment verification only; does not represent Verl's core capabilities (Verl is primarily used for post-training / RL)
+“””
 
 import os
 import torch
@@ -13,7 +13,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 def main():
     model_id = os.environ.get("MODEL_ID", "Qwen/Qwen2.5-0.5B-Instruct")
-    prompt = os.environ.get("DEMO_PROMPT", "用一句话解释什么是强化学习。")
+    prompt = os.environ.get("DEMO_PROMPT", "Explain what reinforcement learning is in one sentence.")
 
     print(f"[demo] MODEL_ID={model_id}")
     print(f"[demo] torch={torch.__version__} cuda_available={torch.cuda.is_available()}")

@@ -7,21 +7,18 @@
 Example:
 
 ```bash
-cd containers/official-templates/wan22-comfyui
-  
-HF_TOKEN=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 \
+cd official-templates/wan22-comfyui
+
+HF_TOKEN=<your_hf_token> \
 docker buildx bake wan22-comfyui --no-cache --push
 
-  
-HF_TOKEN=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 \
+HF_TOKEN=<your_hf_token> \
 docker buildx bake wan22-comfyui-nunchaku --no-cache --push
 
-  
-HF_TOKEN=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 \
+HF_TOKEN=<your_hf_token> \
 docker buildx bake wan22-all --no-cache --push
 
-docker buildx bake wan22-comfyui --push 
-
+docker buildx bake wan22-comfyui --push
 ```
 
 ## Exposed Ports
@@ -32,8 +29,10 @@ docker buildx bake wan22-comfyui --push
 
 ## Test
 
-# 系统状态
+```bash
+# System status
 curl -s http://localhost:8188/system_stats | jq .
 
-# 队列状态
+# Queue status
 curl -s http://localhost:8188/queue | jq .
+```

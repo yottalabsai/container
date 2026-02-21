@@ -6,13 +6,13 @@ group "default" {
 }
 
 target "verl-vllm" {
-  description = "基础 Verl + vLLM 镜像（不含模型、不含业务 start.sh）"
+  description = "Base Verl + vLLM image (no model, no business start.sh)"
 
-  # 主 build context：当前目录（official-templates/verl-vllm）
+  # Main build context: current directory (official-templates/verl-vllm)
   context    = "."
   dockerfile = "Dockerfile"
 
-  # 额外上下文：给 scripts / proxy / logo 用
+  # Extra contexts: used for scripts / proxy / logo
   contexts = {
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"

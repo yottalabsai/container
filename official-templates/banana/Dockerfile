@@ -9,17 +9,17 @@ ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM golang:1.22-bookworm AS go_gateway_builder
 WORKDIR /src
 
-# 先拷贝 go.mod/go.sum 以便利用缓存
+# Copy go.mod/go.sum first to leverage cache
 COPY gateway/go.mod gateway/go.sum ./
 RUN go mod download
 
-# 再拷贝源码
+# Then copy source code
 COPY gateway/. ./
 
-# 关键：补齐 go.sum（避免你现在的 missing go.sum entry）
+# Important: complete go.sum (to avoid the current missing go.sum entry error)
 RUN go mod tidy
 
-# 编译
+# Compile
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w" -o /out/gateway ./cmd/gateway
 
@@ -32,10 +32,10 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
-# 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
+# Note: use the full version number (otherwise python.org has no tarball for just "3.11")
 ARG PYTHON_VERSION="3.11.14"
 
-# PyTorch 2.9：这里用 nightly cu128（按你原来的方式）
+# PyTorch 2.9: using nightly cu128 here (following your original approach)
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
 
 ARG NCCL_TESTS_VERSION="v2.13.11"
@@ -109,7 +109,7 @@ RUN set -eux; \
 RUN python -m pip install --no-cache-dir ${TORCH}
 
 # ===============================
-# Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
+# Jupyter + common CLIs (huggingface-cli / datasets-cli)
 # ===============================
 RUN python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
@@ -134,7 +134,7 @@ RUN useradd -ms /bin/bash ubuntu && \
     echo "ubuntu:ubuntu" | chpasswd
 
 # ===============================
-# SSH config (start.sh 负责启动 sshd；这里确保配置允许密码登录)
+# SSH config (start.sh is responsible for launching sshd; here we ensure the config allows password login)
 # ===============================
 RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -169,12 +169,12 @@ COPY post_start.sh /post_start.sh
 RUN chmod +x /opt/gateway/gateway /post_start.sh
 
 # ===============================
-# Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
+# Ports (do not add inline comments here, to avoid containerPort parsing failures on some platforms)
 # ===============================
 EXPOSE 22 80 8888 8080
 
 # ===============================
-# Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
+# Entrypoint: root runs start.sh directly (without modifying your shared start.sh)
 # ===============================
 USER root
 WORKDIR /root

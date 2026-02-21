@@ -4,24 +4,24 @@
 
 YottaLabs AI - SkyRL Training Platform
 
-基于官方 `skypilot/skypilot` 镜像，集成 Ray、Gymnasium、SSH、Nginx 等工具的强化学习训练环境。
+Built on the official `skypilot/skypilot` image, with Ray, Gymnasium, SSH, Nginx, and other tools integrated into a reinforcement learning training environment.
 
-## 快速开始
+## Quick Start
 
-### 1. 构建镜像
+### 1. Build the image
 
 ```bash
-cd ~/projects/container/official-templates/skyrl
+cd official-templates/skyrl
 docker buildx bake skyrl --no-cache --push
 ```
 
-### 2. 启动容器（推荐配置）
+### 2. Start the container (recommended configuration)
 
 ```bash
-# 清理旧容器（如果存在）
+# Remove old container (if it exists)
 docker rm -f skyrl-dev
 
-# 启动容器
+# Start the container
 docker run --gpus all -d \
   --name skyrl-dev \
   --shm-size=32g \
@@ -36,31 +36,31 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-### 3. 查看容器状态
+### 3. Check container status
 
 ```bash
-# 查看运行状态
+# Check running status
 docker ps | grep skyrl-dev
 
-# 查看启动日志
+# View startup logs
 docker logs skyrl-dev
 
-# 查看实时日志
+# Follow live logs
 docker logs -f skyrl-dev
 ```
 
-### 4. 进入容器
+### 4. Enter the container
 
 ```bash
 docker exec -it skyrl-dev bash
 ```
 
-## 容器内验证
+## Verify components
 
-### 快速验证所有组件
+### Quick verification of all components
 
 ```bash
-# 保存为 /workspace/test_skyrl.sh
+# Save as /workspace/test_skyrl.sh
 cat > /workspace/test_skyrl.sh << 'EOF'
 #!/bin/bash
 set -e
@@ -69,23 +69,23 @@ echo "=========================================="
 echo "Testing SkyRL Container"
 echo "=========================================="
 
-# 1. 检查 Nginx
+# 1. Check Nginx
 echo -e "\n1. Nginx Status:"
 service nginx status && echo "✓ Nginx OK" || echo "✗ Nginx failed"
 
-# 2. 检查 SSH
+# 2. Check SSH
 echo -e "\n2. SSH Status:"
 pgrep -x sshd && echo "✓ SSH OK" || echo "✗ SSH failed"
 
-# 3. 检查 Branding
+# 3. Check Branding
 echo -e "\n3. Yotta Branding:"
 cat /etc/yotta.txt
 
-# 4. 检查 GPU
+# 4. Check GPU
 echo -e "\n4. GPU Status:"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader && echo "✓ GPU OK" || echo "✗ GPU failed"
 
-# 5. 测试 Ray
+# 5. Test Ray
 echo -e "\n5. Testing Ray:"
 python << 'PYTHON_EOF'
 import ray
@@ -99,7 +99,7 @@ ray.shutdown()
 print("="*50 + "\n")
 PYTHON_EOF
 
-# 6. 测试 Gymnasium
+# 6. Test Gymnasium
 echo -e "\n6. Testing Gymnasium:"
 python << 'PYTHON_EOF'
 import gymnasium as gym
@@ -123,29 +123,29 @@ chmod +x /workspace/test_skyrl.sh
 bash /workspace/test_skyrl.sh
 ```
 
-### 单独验证各组件
+### Verify individual components
 
-#### 验证 Nginx
+#### Verify Nginx
 
 ```bash
 service nginx status
-# 或
+# or
 curl -I http://localhost
 ```
 
-#### 验证 SSH
+#### Verify SSH
 
 ```bash
 ps aux | grep sshd
 ```
 
-#### 验证 GPU
+#### Verify GPU
 
 ```bash
 nvidia-smi
 ```
 
-#### 验证 Ray
+#### Verify Ray
 
 ```bash
 python << 'EOF'
@@ -161,7 +161,7 @@ print("="*50 + "\n")
 EOF
 ```
 
-#### 验证 Gymnasium
+#### Verify Gymnasium
 
 ```bash
 python << 'EOF'
@@ -178,74 +178,74 @@ print("="*50 + "\n")
 EOF
 ```
 
-## 常用命令
+## Common commands
 
-### 容器管理
+### Container management
 
 ```bash
-# 停止容器
+# Stop the container
 docker stop skyrl-dev
 
-# 启动容器
+# Start the container
 docker start skyrl-dev
 
-# 重启容器
+# Restart the container
 docker restart skyrl-dev
 
-# 删除容器
+# Remove the container
 docker rm -f skyrl-dev
 
-# 查看容器资源使用
+# View container resource usage
 docker stats skyrl-dev
 
-# 查看容器详细信息
+# View container details
 docker inspect skyrl-dev
 
-# 查看端口映射
+# View port mappings
 docker port skyrl-dev
 ```
 
-### 日志管理
+### Log management
 
 ```bash
-# 查看最近 100 行日志
+# View last 100 lines of logs
 docker logs --tail 100 skyrl-dev
 
-# 实时查看日志
+# Follow live logs
 docker logs -f skyrl-dev
 
-# 查看带时间戳的日志
+# View logs with timestamps
 docker logs -t skyrl-dev
 
-# 查看最近 10 分钟的日志
+# View logs from the last 10 minutes
 docker logs --since 10m skyrl-dev
 ```
 
-### 文件传输
+### File transfer
 
 ```bash
-# 从主机复制到容器
+# Copy from host to container
 docker cp /path/on/host/file.py skyrl-dev:/workspace/
 
-# 从容器复制到主机
+# Copy from container to host
 docker cp skyrl-dev:/workspace/results.txt /path/on/host/
 
-# 同步整个目录
+# Sync an entire directory
 docker cp /path/on/host/project/ skyrl-dev:/workspace/project/
 ```
 
-## 环境变量配置
+## Environment variables
 
-### 支持的环境变量
+### Supported environment variables
 
-| 环境变量           | 默认值 | 说明                                       |
-| ------------------ | ------ | ------------------------------------------ |
-| `SSH_ENABLE`       | `1`    | 是否启用 SSH（0=禁用，1=启用）             |
-| `SSH_PORT`         | `22`   | SSH 服务端口                               |
-| `JUPYTER_PASSWORD` | 无     | Jupyter Lab 密码（不设置则不启动 Jupyter） |
-| `JUPYTER_PORT`     | `8888` | Jupyter Lab 端口                           |
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SSH_ENABLE` | `1` | Enable SSH (0=disabled, 1=enabled) |
+| `SSH_PORT` | `22` | SSH service port |
+| `JUPYTER_PASSWORD` | — | JupyterLab password (JupyterLab does not start if unset) |
+| `JUPYTER_PORT` | `8888` | JupyterLab port |
 
-### 完整配置示例
+### Full configuration example
 
 ```bash
 docker run --gpus all -d \
@@ -267,35 +267,35 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-## Ray Dashboard 访问
+## Ray Dashboard
 
-### 本地访问
+### Local access
 
-启动容器后，在浏览器中访问：
+After starting the container, open in your browser:
 
 ```
 http://localhost:8265
 ```
 
-### 在容器内检查 Ray 状态
+### Check Ray status inside the container
 
 ```bash
-# 进入容器
+# Enter the container
 docker exec -it skyrl-dev bash
 
-# 检查 Ray 是否运行
+# Check if Ray is running
 ray status
 
-# 手动启动 Ray（如果未运行）
+# Start Ray manually (if not running)
 ray start --head --dashboard-host=0.0.0.0 --dashboard-port=8265
 
-# 停止 Ray
+# Stop Ray
 ray stop
 ```
 
-## 多 GPU 分布式训练
+## Multi-GPU distributed training
 
-### 单机多卡（推荐配置）
+### Single node, multiple GPUs (recommended)
 
 ```bash
 docker run --gpus all -d \
@@ -307,9 +307,9 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-### 多节点集群部署
+### Multi-node cluster
 
-#### Head 节点
+#### Head node
 
 ```bash
 docker run --gpus all -d \
@@ -321,10 +321,10 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-#### Worker 节点
+#### Worker node
 
 ```bash
-# 在其他机器上运行
+# Run on another machine
 docker run --gpus all -d \
   --name skyrl-worker \
   --shm-size=32g \
@@ -334,21 +334,21 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-## 训练示例
+## Training examples
 
-### 简单 PPO 训练示例
+### Simple PPO training example
 
-创建训练脚本：
+Create a training script:
 
 ```python
 # train_cartpole.py
 import ray
 from ray.rllib.algorithms.ppo import PPOConfig
 
-# 初始化 Ray
+# Initialize Ray
 ray.init(ignore_reinit_error=True)
 
-# 配置 PPO 算法
+# Configure PPO algorithm
 config = (
     PPOConfig()
     .environment("CartPole-v1")
@@ -362,57 +362,57 @@ config = (
     )
 )
 
-# 创建算法实例
+# Build the algorithm
 algo = config.build()
 
-# 训练 10 轮
+# Train for 10 iterations
 print("\nStarting training...")
 for i in range(10):
     result = algo.train()
     print(f"Iteration {i+1}: reward={result['episode_reward_mean']:.2f}")
 
-# 保存模型
+# Save the model
 checkpoint_dir = algo.save("/workspace/models/cartpole_ppo")
 print(f"\n✓ Model saved to: {checkpoint_dir}")
 
-# 清理资源
+# Clean up
 algo.stop()
 ray.shutdown()
 
 print("✓ Training completed!")
 ```
 
-### 运行训练
+### Run training
 
 ```bash
-# 在容器内运行
+# Inside the container
 python /workspace/train_cartpole.py
 
-# 或从主机运行
+# Or from the host
 docker exec -it skyrl-dev python /workspace/train_cartpole.py
 ```
 
-### 多 GPU 训练示例
+### Multi-GPU training example
 
 ```python
 # train_multi_gpu.py
 import ray
 from ray.rllib.algorithms.ppo import PPOConfig
 
-# 初始化 Ray（使用所有 GPU）
+# Initialize Ray (use all GPUs)
 ray.init(ignore_reinit_error=True)
 
-# 配置多 GPU 训练
+# Configure multi-GPU training
 config = (
     PPOConfig()
     .environment("CartPole-v1")
     .framework("torch")
     .resources(
-        num_gpus=4,  # 使用 4 个 GPU
+        num_gpus=4,  # Use 4 GPUs
         num_cpus_per_worker=2,
     )
     .rollouts(
-        num_rollout_workers=16,  # 16 个 worker
+        num_rollout_workers=16,  # 16 workers
     )
     .training(
         train_batch_size=16000,
@@ -422,7 +422,7 @@ config = (
 
 algo = config.build()
 
-# 训练
+# Train
 for i in range(50):
     result = algo.train()
     if i % 5 == 0:
@@ -433,39 +433,39 @@ algo.stop()
 ray.shutdown()
 ```
 
-## SSH 访问配置
+## SSH access
 
-### 方法 1：使用 SSH 密钥（推荐）
+### Method 1: SSH key (recommended)
 
-#### 1. 生成 SSH 密钥对（在主机上）
+#### 1. Generate an SSH key pair (on the host)
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/skyrl_key -N ""
 ```
 
-#### 2. 添加公钥到容器
+#### 2. Add the public key to the container
 
 ```bash
-# 创建 .ssh 目录
+# Create .ssh directory
 docker exec skyrl-dev mkdir -p /root/.ssh
 
-# 复制公钥
+# Copy public key
 docker cp ~/.ssh/skyrl_key.pub skyrl-dev:/root/.ssh/authorized_keys
 
-# 设置权限
+# Set permissions
 docker exec skyrl-dev chmod 700 /root/.ssh
 docker exec skyrl-dev chmod 600 /root/.ssh/authorized_keys
 ```
 
-#### 3. SSH 连接
+#### 3. Connect via SSH
 
 ```bash
 ssh -i ~/.ssh/skyrl_key -p 22 root@localhost
 ```
 
-### 方法 2：配置 SSH config（推荐）
+### Method 2: SSH config (recommended)
 
-创建或编辑 `~/.ssh/config`：
+Create or edit `~/.ssh/config`:
 
 ```bash
 cat >> ~/.ssh/config << 'EOF'
@@ -481,32 +481,32 @@ Host skyrl
 EOF
 ```
 
-然后直接连接：
+Then connect directly:
 
 ```bash
 ssh skyrl
 ```
 
-### 方法 3：VS Code Remote SSH
+### Method 3: VS Code Remote SSH
 
-1. 安装 VS Code 扩展：`Remote - SSH`
-2. 按 `F1`，选择 `Remote-SSH: Connect to Host...`
-3. 选择 `skyrl`（如果配置了 SSH config）
-4. 或输入：`ssh -i ~/.ssh/skyrl_key root@localhost`
+1. Install the VS Code extension: `Remote - SSH`
+2. Press `F1`, select `Remote-SSH: Connect to Host...`
+3. Select `skyrl` (if you configured SSH config)
+4. Or enter: `ssh -i ~/.ssh/skyrl_key root@localhost`
 
-## 常见问题
+## Troubleshooting
 
-### 1. Ray 警告 `/dev/shm` 空间不足
+### 1. Ray warning: insufficient `/dev/shm` space
 
-**问题**：
+**Problem**:
 ```
 WARNING: The object store is using /tmp instead of /dev/shm
 because /dev/shm has only 67108864 bytes available.
 ```
 
-**解决方案**：
+**Solution**:
 ```bash
-# 重启容器时增加 shm-size
+# Restart the container with a larger shm-size
 docker rm -f skyrl-dev
 
 docker run --gpus all -d \
@@ -517,36 +517,36 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-**推荐 shm-size**：
-- 小规模训练：`--shm-size=8g`
-- 中规模训练：`--shm-size=16g`
-- 大规模训练：`--shm-size=32g` 或更多
+**Recommended shm-size**:
+- Small-scale training: `--shm-size=8g`
+- Medium-scale training: `--shm-size=16g`
+- Large-scale training: `--shm-size=32g` or more
 
-### 2. 容器启动后立即退出
+### 2. Container exits immediately after starting
 
-**检查日志**：
+**Check the logs**:
 ```bash
 docker logs skyrl-dev
 ```
 
-**常见原因和解决方案**：
+**Common causes and solutions**:
 
-- **Nginx 未安装**：已在 Dockerfile 中修复
-- **start.sh 执行失败**：检查日志中的错误信息
-- **权限问题**：确保挂载的目录有正确的权限
+- **Nginx not installed**: Fixed in the Dockerfile
+- **start.sh failed**: Check the error message in the logs
+- **Permission issues**: Ensure mounted directories have correct permissions
 
-### 3. GPU 未识别
+### 3. GPU not detected
 
-**检查 NVIDIA 驱动**：
+**Check NVIDIA drivers**:
 ```bash
-# 在主机上检查
+# Check on the host
 nvidia-smi
 
-# 检查 Docker GPU 支持
+# Check Docker GPU support
 docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 ```
 
-**安装 NVIDIA Container Toolkit**：
+**Install NVIDIA Container Toolkit**:
 
 Ubuntu/Debian:
 ```bash
@@ -561,17 +561,17 @@ sudo apt-get install -y nvidia-container-toolkit
 sudo systemctl restart docker
 ```
 
-### 4. 端口冲突
+### 4. Port conflict
 
-**检查端口占用**：
+**Check port usage**:
 ```bash
-# 检查 8265 端口
+# Check port 8265
 sudo lsof -i :8265
-# 或
+# or
 sudo netstat -tulpn | grep 8265
 ```
 
-**使用不同端口**：
+**Use different ports**:
 ```bash
 docker run --gpus all -d \
   --name skyrl-dev \
@@ -584,14 +584,14 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-### 5. 权限问题
+### 5. Permission issues
 
-**容器内文件权限错误**：
+**File permission errors inside the container**:
 ```bash
-# 在容器内更改所有权
+# Change ownership inside the container
 docker exec skyrl-dev chown -R root:root /workspace
 
-# 或在启动时使用用户映射
+# Or use user mapping at startup
 docker run --gpus all -d \
   --name skyrl-dev \
   --user $(id -u):$(id -g) \
@@ -599,71 +599,71 @@ docker run --gpus all -d \
   ...
 ```
 
-## 性能优化
+## Performance tuning
 
-### 1. 增加共享内存
+### 1. Increase shared memory
 
 ```bash
-# 大规模训练推荐 32GB+
+# Recommended 32GB+ for large-scale training
 --shm-size=32g
 
-# 或使用主机的 /dev/shm
+# Or mount the host /dev/shm
 -v /dev/shm:/dev/shm
 ```
 
-### 2. 使用主机网络（多节点训练）
+### 2. Use host networking (multi-node training)
 
 ```bash
-# 减少网络开销
+# Reduce network overhead
 --network host
 ```
 
-### 3. CPU 亲和性
+### 3. CPU affinity
 
 ```bash
-# 绑定到特定 CPU 核心
+# Pin to specific CPU cores
 --cpuset-cpus="0-63"
 
-# 绑定到特定 NUMA 节点
+# Pin to specific NUMA node
 --cpuset-mems="0"
 ```
 
-### 4. 内存限制
+### 4. Memory limits
 
 ```bash
-# 限制最大内存使用
+# Limit maximum memory usage
 --memory=256g
 --memory-swap=256g
 ```
 
-### 5. GPU 选择
+### 5. GPU selection
 
 ```bash
-# 只使用特定 GPU
+# Use specific GPUs
 --gpus '"device=0,1,2,3"'
 
-# 使用前 4 个 GPU
+# Use first 4 GPUs
 --gpus 4
 ```
 
-## 监控和日志
+## Monitoring and logs
 
-### 实时监控
+### Real-time monitoring
 
 ```bash
-# 监控单个容器资源使用
+# Monitor a single container's resource usage
 docker stats skyrl-dev
 
-# 监控所有 SkyRL 容器
+# Monitor all SkyRL containers
 docker stats $(docker ps --format '{{.Names}}' | grep skyrl)
 
-# 持续监控并显示详细信息
+# Continuous monitoring with details
 watch -n 1 'docker stats --no-stream skyrl-dev'
 ```
 
-### 日志配置
+### Log configuration
 
-在启动时配置日志大小限制：
+Configure log size limits at startup:
 
 ```bash
 docker run --gpus all -d \
@@ -677,65 +677,65 @@ docker run --gpus all -d \
   yottalabsai/skyrl-yotta:latest
 ```
 
-### 导出日志
+### Export logs
 
 ```bash
-# 导出到文件
+# Export to file
 docker logs skyrl-dev > skyrl-dev.log 2>&1
 
-# 导出最近 1000 行
+# Export last 1000 lines
 docker logs --tail 1000 skyrl-dev > skyrl-dev-recent.log 2>&1
 
-# 按时间导出
+# Export by time
 docker logs --since "2026-01-15T08:00:00" skyrl-dev > skyrl-dev-today.log 2>&1
 ```
 
-## 清理和维护
+## Cleanup and maintenance
 
-### 清理容器
+### Remove containers
 
 ```bash
-# 停止并删除容器
+# Stop and remove the container
 docker rm -f skyrl-dev
 
-# 删除所有停止的容器
+# Remove all stopped containers
 docker container prune -f
 
-# 删除所有 SkyRL 相关容器
+# Remove all SkyRL-related containers
 docker ps -a | grep skyrl | awk '{print $1}' | xargs docker rm -f
 ```
 
-### 清理镜像
+### Remove images
 
 ```bash
-# 清理悬空镜像
+# Remove dangling images
 docker image prune -f
 
-# 清理所有未使用的镜像
+# Remove all unused images
 docker image prune -a -f
 
-# 清理特定镜像
+# Remove a specific image
 docker rmi yottalabsai/skyrl-yotta:latest
 ```
 
-### 完整清理
+### Full cleanup
 
 ```bash
-# 清理所有未使用的资源
+# Remove all unused resources
 docker system prune -a -f --volumes
 
-# 查看磁盘使用
+# View disk usage
 docker system df
 
-# 查看详细信息
+# View detailed usage
 docker system df -v
 ```
 
-## Docker Compose 部署
+## Docker Compose
 
-### 单节点配置
+### Single-node configuration
 
-创建 `docker-compose.yml`：
+Create `docker-compose.yml`:
 
 ```yaml
 version: '3.8'
@@ -745,7 +745,7 @@ services:
     image: yottalabsai/skyrl-yotta:latest
     container_name: skyrl-prod
     restart: unless-stopped
-    
+
     deploy:
       resources:
         reservations:
@@ -753,25 +753,24 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    
+
     shm_size: 32gb
-    
+
     volumes:
       - ~/workspace:/workspace
       - ~/datasets:/datasets:ro
       - ~/models:/models
-    
+
     ports:
       - "8265:8265"
       - "6379:6379"
       - "8888:8888"
       - "2222:22"
-    
+
     environment:
       - SSH_ENABLE=1
       - JUPYTER_PASSWORD=your-secure-password
-      - TZ=Asia/Shanghai
-    
+
     logging:
       driver: "json-file"
       options:
@@ -779,9 +778,9 @@ services:
         max-file: "3"
 ```
 
-### 多节点配置
+### Multi-node configuration
 
-创建 `docker-compose-cluster.yml`：
+Create `docker-compose-cluster.yml`:
 
 ```yaml
 version: '3.8'
@@ -792,7 +791,7 @@ services:
     container_name: skyrl-head
     restart: unless-stopped
     network_mode: host
-    
+
     deploy:
       resources:
         reservations:
@@ -800,19 +799,37 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    
+
     shm_size: 32gb
-    
+
     volumes:
       - ~/workspace:/workspace
       - ~/datasets:/datasets:ro
       - ~/models:/models
-    
+
     environment:
       - SSH_ENABLE=1
       - RAY_HEAD_SERVICE_HOST=0.0.0.0
-      - TZ=Asia/Shanghai
 
   skyrl-worker:
     image: yottalabsai/skyrl-yotta:latest
-    container_name: skyrl
+    container_name: skyrl-worker
+    restart: unless-stopped
+    network_mode: host
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    shm_size: 32gb
+
+    volumes:
+      - ~/workspace:/workspace
+
+    environment:
+      - RAY_ADDRESS="skyrl-head:6379"
+```

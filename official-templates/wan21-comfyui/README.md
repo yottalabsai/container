@@ -7,22 +7,20 @@
 Example:
 
 ```bash
-cd containers/official-templates/wan21-comfyui
+cd official-templates/wan21-comfyui
 
-# 构建标准版
-HF_TOKEN=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 \
+# Build standard edition
+HF_TOKEN=<your_hf_token> \
 docker buildx bake wan21-comfyui --no-cache --push
 
-HF_TOKEN=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 \
+HF_TOKEN=<your_hf_token> \
 docker buildx bake wan21-comfyui-nunchaku --no-cache --push
 
-# 构建两个变体一起
+# Build both variants together
+HF_TOKEN=<your_hf_token> \
 docker buildx bake wan21-all --no-cache --push
 
-HF_TOKEN=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 \
-docker buildx bake wan21-all --no-cache --push
-
-# 覆盖部分参数
+# Build without model download
 docker buildx bake wan21-comfyui --no-cache --push
 ```
 
@@ -34,23 +32,26 @@ docker buildx bake wan21-comfyui --no-cache --push
 
 ## Test
 
-# 检查 ComfyUI 是否启动
+```bash
+# Check if ComfyUI is running
 curl -s http://localhost:8188/system_stats | jq .
 
-# 或查看队列状态
+# Or check queue status
 curl -s http://localhost:8188/queue | jq .
+```
 
+## Manual Operations (inside the container)
 
-# ==== 手动操作说明（容器内）====
-# 1）手动下载 Wan2.1 模型：
-   export WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
-    export WAN_MODEL_DIR="/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b"
-    export WAN_AUTO_DOWNLOAD="true"
-    export HF_TOKEN="hf_xxx"
+```bash
+# 1) Manually download Wan2.1 model:
+export WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
+export WAN_MODEL_DIR="/home/ubuntu/ComfyUI/models/wan2.1-t2v-1.3b"
+export WAN_AUTO_DOWNLOAD="true"
+export HF_TOKEN="<your_hf_token>"
 
-
-# 2）手动启动 ComfyUI：
-   sudo -u ubuntu bash -lc '
-     cd /home/ubuntu/ComfyUI && \
-     python -u main.py --listen 0.0.0.0 --port 8188
-   '
+# 2) Manually start ComfyUI:
+sudo -u ubuntu bash -lc '
+  cd /home/ubuntu/ComfyUI && \
+  python -u main.py --listen 0.0.0.0 --port 8188
+'
+```

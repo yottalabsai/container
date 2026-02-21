@@ -4,14 +4,14 @@
 
 YottaLabs AI - Miles AI Agent Platform
 
-基于官方 `radixark/miles` 镜像，集成工具、SSH、Nginx 和 Yotta branding。
+Built on the official `radixark/miles` image, with added tools, SSH, Nginx, and Yotta branding.
 
-## 快速开始
+## Quick Start
 
-### 构建镜像
+### Build and Run
 
 ```bash
-cd ~/projects/container/official-templates/miles
+cd official-templates/miles
 docker buildx bake miles --no-cache --push
 
 docker run --gpus all -d \
@@ -26,4 +26,4 @@ docker run --gpus all -d \
   yottalabsai/miles-yotta:latest
 
 docker exec -it miles-dev bash
-
+```

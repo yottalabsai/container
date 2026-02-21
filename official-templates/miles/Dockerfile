@@ -1,20 +1,20 @@
 # ==============================
-# Miles AI Agent 镜像（official-templates/miles）
-# - 底座：官方 radixark/miles
-# - 叠加：工具 + SSH + Nginx + branding
+# Miles AI Agent image (official-templates/miles)
+# - Base: official radixark/miles
+# - Layered: tools + SSH + Nginx + branding
 # ==============================
 
 ARG BASE_IMAGE="radixark/miles:latest"
 FROM ${BASE_IMAGE} AS base
 
-# ---- 环境变量配置 ----
+# ---- Environment variable configuration ----
 ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     PATH=/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
     JUPYTER_PASSWORD=ubuntu 
 # ==============================
-# runtime: 工具 + Branding + SSH
+# runtime: tools + Branding + SSH
 # ==============================
 FROM base AS runtime
 
@@ -22,12 +22,12 @@ USER root
 WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
-# ---- 关键补丁：修复某些 base 镜像中 /var/lib/apt/lists 权限异常导致的 apt-get update 失败 ----
+# ---- Critical patch: fix apt-get update failures caused by /var/lib/apt/lists permission errors in some base images ----
 RUN set -eux; \
     mkdir -p /var/lib/apt/lists/partial; \
     chmod -R 755 /var/lib/apt/lists || true
 
-# ---- 实用工具 + SSH 依赖 + Nginx ----
+# ---- Utilities + SSH dependencies + Nginx ----
 RUN set -eux; \
     apt-get update -y; \
     apt-get install -y --no-install-recommends \
@@ -58,23 +58,23 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# ---- Python 依赖更新 ----
+# ---- Python dependency update ----
 RUN set -eux; \
     python3 -m pip install --no-cache-dir -U pip setuptools wheel
 
-# ---- Jupyter + 常用 CLI ----
+# ---- Jupyter + common CLI tools ----
 RUN python3 -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
       huggingface-hub datasets
 
-# ---- 动态检测 Python 版本并创建 python3.11 符号链接（兼容 start.sh）----
+# ---- Dynamically detect Python version and create python3.11 symlink (for start.sh compatibility) ----
 RUN set -eux; \
     PYTHON_BIN=$(which python3); \
     echo "Detected Python: $PYTHON_BIN"; \
     ln -sf "$PYTHON_BIN" /usr/bin/python3.11; \
     python3.11 --version
 
-# ---- SSH 配置：默认更安全（推荐商用：key-only）----
+# ---- SSH configuration: more secure by default (recommended for production: key-only) ----
 RUN set -eux; \
     sed -i \
       -e 's@^#\?PermitRootLogin .*@PermitRootLogin prohibit-password@g' \
@@ -83,11 +83,11 @@ RUN set -eux; \
       -e 's@^#\?UsePAM .*@UsePAM yes@g' \
       /etc/ssh/sshd_config
 
-# ---- COPY 官方模板 start.sh（来自 container-template/start.sh）----
+# ---- COPY official template start.sh (from container-template/start.sh) ----
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
-# ---- 关键兜底：平台覆盖 PID1/ENTRYPOINT 时自动启动 sshd + nginx ----
+# ---- Critical fallback: auto-start sshd + nginx when platform overrides PID1/ENTRYPOINT ----
 RUN cat >> /etc/bash.bashrc <<'EOS'
 
 # ---- Yotta: auto-start services when a shell is opened (platform may override PID1) ----
@@ -108,33 +108,33 @@ fi
 # ------------------------------------------------------------------------------------
 EOS
 
-# ---- Yotta 商业化元素 ----
-# 1) 创建 branding 文本
+# ---- Yotta branding elements ----
+# 1) Create branding text
 RUN set -eux; \
     echo "YottaLabs AI - Miles AI Agent Platform" > /etc/yotta.txt; \
     cat /etc/yotta.txt
 
-# 2) /etc/profile.d - 对所有登录场景生效
+# 2) /etc/profile.d - applies to all login scenarios
 RUN printf '%s\n' \
   'cat /etc/yotta.txt 2>/dev/null || true' \
   'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' \
   > /etc/profile.d/yotta.sh && chmod +x /etc/profile.d/yotta.sh
 
-# 3) 追加到 root bashrc（仅对 root 的交互 bash 生效）
+# 3) Append to root bashrc (only applies to root's interactive bash)
 RUN touch /root/.bashrc && \
     echo 'cat /etc/yotta.txt 2>/dev/null || true' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
 COPY Miles_Demo.ipynb /workspace/
 
-# ---- 允许脚本不存在：避免 build fail ----
+# ---- Allow scripts to be absent: avoid build fail ----
 RUN chmod +x /post_start.sh /start.sh 2>/dev/null || true
 
-# ---- 暴露端口 ----
+# ---- Expose ports ----
 EXPOSE 22 80 8888
 USER root
 WORKDIR /root
 
-# ---- 默认入口 ----
+# ---- Default entrypoint ----
 ENTRYPOINT ["/start.sh"]
 

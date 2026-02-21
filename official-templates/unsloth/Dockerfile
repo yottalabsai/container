@@ -119,25 +119,25 @@ RUN set -eux; \
     cd /tmp; \
     git clone --depth=1 https://github.com/unslothai/notebooks.git unsloth-notebooks-src; \
     \
-    # 确保目标目录存在
+    # Ensure target directory exists
     mkdir -p /workspace/unsloth-notebooks; \
     \
-    # 把 original_template 里的脚本全部拷到目标目录
+    # Copy all scripts from original_template to the target directory
     cp -a unsloth-notebooks-src/original_template/. /workspace/unsloth-notebooks/; \
     \
-    # 同时把 template.ipynb 也拷过去（如果你要）
+    # Also copy template.ipynb (if needed)
     cp -a unsloth-notebooks-src/template.ipynb /workspace/unsloth-notebooks/ || true; \
     \
-    # 权限修正（Jupyter 用 unsloth 用户）
+    # Fix permissions (Jupyter runs as unsloth user)
     chown -R unsloth:unsloth /workspace/unsloth-notebooks; \
     \
-    # 清理
+    # Cleanup
     rm -rf /tmp/unsloth-notebooks-src
 
 
 # =========================================================
-# ✅ 关键修正点：不直接 COPY unsloth-notebooks
-#    而是 COPY 整个构建上下文，然后“有就拷，没有就算”
+# Key fix: do not COPY unsloth-notebooks directly
+#    instead COPY the entire build context, then copy if present, skip if absent
 # =========================================================
 COPY . /__build_context__
 

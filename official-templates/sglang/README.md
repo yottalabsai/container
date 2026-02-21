@@ -7,7 +7,7 @@
 Example:
 
 ```bash
-cd containers/official-templates/sglang
+cd official-templates/sglang
 
 docker buildx bake sglang --push
 ```
@@ -27,7 +27,7 @@ curl -X POST http://localhost:30000/generate \
   -H "Content-Type: application/json" \
   -d '{
     "model": "Qwen/Qwen2.5-3B-Instruct",
-    "prompt": "用两句话解释量子纠缠。",
+    "prompt": "Explain quantum entanglement in two sentences.",
     "sampling_params": {
       "temperature": 0.7,
       "max_tokens": 256

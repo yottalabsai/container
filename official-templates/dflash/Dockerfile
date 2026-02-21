@@ -4,18 +4,18 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
-# 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
+# Note: use the full version number (python.org has no tarball for short forms like '3.11')
 ARG PYTHON_VERSION="3.11.14"
 
-# PyTorch：对齐 sglang/sgl-kernel 要求的稳定版 torch==2.9.1（CUDA 12.8 wheels）
-# 说明：不要用 nightly；否则 pip 会报警依赖冲突，客户侧可能踩 ABI/扩展包雷
+# PyTorch: pinned to stable torch==2.9.1 required by sglang/sgl-kernel (CUDA 12.8 wheels)
+# Note: do not use nightly; pip will warn about dependency conflicts and may cause ABI/extension issues
 ARG TORCH_INDEX_URL="https://download.pytorch.org/whl/cu128"
 ARG TORCH="torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1"
 
 ARG SGLANG_VERSION="0.5.8.post1"
 ARG NCCL_TESTS_VERSION="v2.13.11"
 
-# 可选：按 bake.hcl 控制是否拉 dflash 源码
+# Optional: controlled by bake.hcl — set INSTALL_DFLASH=1 to clone the dflash source
 ARG INSTALL_DFLASH="0"
 ARG DFLASH_REPO="https://github.com/z-lab/dflash.git"
 ARG DFLASH_REF="main"
@@ -32,8 +32,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda
 
 # ===============================
-# CUDA env 固化（解决 sglang / flashinfer JIT 编译找不到 cuda_runtime.h）
-# 不使用 heredoc，避免 dockerfile parser 炸
+# Persist CUDA env (fixes sglang / flashinfer JIT compilation failing to find cuda_runtime.h)
+# Avoid heredoc to prevent Dockerfile parser issues
 # ===============================
 RUN set -eux; \
     printf '%s\n' \
@@ -43,7 +43,7 @@ RUN set -eux; \
 'export PATH=$CUDA_HOME/bin:$PATH' \
 'export LD_LIBRARY_PATH=$CUDA_HOME/lib64:${LD_LIBRARY_PATH}' \
 '' \
-'# 显式补 include 路径，避免 nvcc / gcc 找不到 cuda_runtime.h' \
+'# Explicitly add include paths so nvcc / gcc can find cuda_runtime.h' \
 'export CPATH=$CUDA_HOME/include:${CPATH}' \
 'export C_INCLUDE_PATH=$CUDA_HOME/include:${C_INCLUDE_PATH}' \
 'export CPLUS_INCLUDE_PATH=$CUDA_HOME/include:${CPLUS_INCLUDE_PATH}' \
@@ -59,8 +59,8 @@ WORKDIR /
 RUN mkdir -p /workspace && chmod 777 /workspace
 
 # ===============================
-# APT helper (NVIDIA repo 偶发 mirror sync：Packages.gz size/hash 不一致)
-# - 用 retries + timeout + 二次 update，增强抗抖
+# APT helper (NVIDIA repo occasionally has mirror sync issues: Packages.gz size/hash mismatch)
+# - Use retries + timeout + a second update attempt for robustness
 # ===============================
 RUN set -eux; \
     apt-get update -y \
@@ -73,7 +73,7 @@ RUN set -eux; \
       -o Acquire::https::Timeout=30)
 
 # ===============================
-# Base system packages（按你给的案例原样 + 补 ninja + 补 libnuma1）
+# Base system packages (+ ninja + libnuma1)
 # ===============================
 RUN set -eux; \
     apt-get install -y --no-install-recommends \
@@ -93,8 +93,8 @@ RUN set -eux; \
 
 # ===============================
 # uv (Astral) - Python package manager
-# - 固定安装到 /usr/local/bin
-# - 避免修改 shell profile（适合容器/CI）
+# - Install to /usr/local/bin
+# - Avoids modifying shell profile (suitable for containers/CI)
 # ===============================
 ARG UV_VERSION="latest"
 RUN set -eux; \
@@ -130,8 +130,8 @@ RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
 
 # ===============================
 # Python 3.11 (build from source, with ensurepip)
-# - 保留 system python3.11：给 /start.sh / jupyter 之类用（你原有逻辑）
-# - 但不再把 /usr/bin/python 指向 system python，避免 runtime 跑到“没装 torch”的 python
+# - Keep system python3.11 available for /start.sh / jupyter compatibility
+# - Do not point /usr/bin/python to system python to avoid runtime using a Python without torch installed
 # ===============================
 RUN set -eux; \
     apt-get update -y \
@@ -163,9 +163,9 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# 关键修复：让“python/pip 默认就是 conda python”
-# - 避免 start.sh / 登录 shell PATH 不含 /opt/conda/bin 时跑到 system python
-# - system python 仍然可用：/usr/local/bin/python3.11
+# Key fix: make python/pip default to conda python
+# - Prevents start.sh / login shell from falling back to system python when PATH lacks /opt/conda/bin
+# - System python remains available at /usr/local/bin/python3.11
 # ===============================
 RUN set -eux; \
     ln -sf /opt/conda/bin/python /usr/bin/python; \
@@ -175,7 +175,7 @@ RUN set -eux; \
     chmod 644 /etc/profile.d/00-conda-path.sh
 
 # ===============================
-# PyTorch (stable cu128, pinned) —— 永远用 conda python 装
+# PyTorch (stable cu128, pinned) — always install via conda python
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
@@ -185,9 +185,9 @@ RUN set -eux; \
     /opt/conda/bin/python -c $'import torch\nprint("torch:", torch.__version__)\nprint("cuda:", torch.version.cuda)\nprint("cuda available:", torch.cuda.is_available())'
 
 # ===============================
-# Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
-# - conda python：你主要跑推理/训练用
-# - system python3.11：补齐 /start.sh 可能需要的 jupyter 依赖
+# Jupyter + common CLI tools (huggingface-cli / datasets-cli)
+# - conda python: used for inference/training
+# - system python3.11: provides jupyter deps that /start.sh may require
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir \
@@ -199,7 +199,7 @@ RUN set -eux; \
     /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
 
 # ===============================
-# SGLang（默认安装）
+# SGLang (installed by default)
 # ===============================
 RUN set -eux; \
     /opt/conda/bin/python -m pip install --no-cache-dir -U pip setuptools wheel; \
@@ -207,9 +207,9 @@ RUN set -eux; \
     /opt/conda/bin/python -m pip check
 
 # ===============================
-# DFlash（可选：由 INSTALL_DFLASH 控制）
-# - dflash 仓库不是 Python package（没有 setup.py/pyproject.toml，也没有 dflash/ 包）
-# - 这里只保留源码到 /opt/dflash-src，并按 requirements.txt 安装依赖（过滤掉 sglang 相关）
+# DFlash (optional: controlled by INSTALL_DFLASH)
+# - dflash repo is not a Python package (no setup.py/pyproject.toml, no dflash/ package)
+# - Source is cloned to /opt/dflash-src; dependencies from requirements.txt are installed (sglang entries filtered out)
 # ===============================
 RUN set -eux; \
     if [ "${INSTALL_DFLASH}" = "1" ]; then \
@@ -233,7 +233,7 @@ RUN set -eux; \
     fi
 
 # ===============================
-# SGLang 最小 smoke 脚本（Qwen 7B + 启动 + 一次请求）
+# SGLang minimal smoke test script (Qwen 7B: start server + send one request)
 # ===============================
 RUN set -eux; \
     cat >/usr/local/bin/sglang_basic_smoke.sh <<'SH'
@@ -291,7 +291,7 @@ RUN useradd -ms /bin/bash ubuntu && \
     echo "ubuntu:ubuntu" | chpasswd
 
 # ===============================
-# SSH config (start.sh 负责启动 sshd；这里确保配置允许密码登录)
+# SSH config (start.sh handles sshd startup; ensure password login is allowed)
 # ===============================
 RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -359,12 +359,12 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # ===============================
-# Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
+# Ports (no inline comments — some platforms fail to parse containerPort with trailing comments)
 # ===============================
 EXPOSE 22 80 8888 30000
 
 # ===============================
-# Entrypoint: root 直接跑 entrypoint.sh（entrypoint 内部会 exec /start.sh）
+# Entrypoint: run entrypoint.sh as root (entrypoint.sh execs /start.sh internally)
 # ===============================
 USER root
 WORKDIR /root

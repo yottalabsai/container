@@ -4,10 +4,10 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
-# 注意：用完整版本号（否则 python.org 没有 3.11 这种 tarball）
+# Note: use full version number (python.org does not have tarballs for short versions like 3.11)
 ARG PYTHON_VERSION="3.11.14"
 
-# PyTorch 2.9：这里用 nightly cu128（按你原来的方式）
+# PyTorch 2.9: using nightly cu128
 ARG TORCH="torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128"
 
 ARG NCCL_TESTS_VERSION="v2.13.11"
@@ -49,8 +49,8 @@ RUN apt-get update -y && \
 
 # ===============================
 # uv (Astral) - Python package manager
-# - 固定安装到 /usr/local/bin
-# - 避免修改 shell profile（适合容器/CI）
+# - Install to /usr/local/bin
+# - Avoids modifying shell profile (suitable for container/CI)
 # ===============================
 ARG UV_VERSION="latest"
 RUN set -eux; \
@@ -117,7 +117,7 @@ RUN set -eux; \
 RUN python -m pip install --no-cache-dir ${TORCH}
 
 # ===============================
-# Jupyter + 常用 CLI（huggingface-cli / datasets-cli）
+# Jupyter + common CLI tools (huggingface-cli / datasets-cli)
 # ===============================
 RUN python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
@@ -125,13 +125,13 @@ RUN python -m pip install --no-cache-dir \
 
 # ===============================
 # Patch: ensure python3.11 has Jupyter (required by /start.sh)
-# 不改你现有的 python -m pip 安装逻辑，仅补齐 python3.11 环境
+# Only adds jupyter to the python3.11 environment, does not modify the existing pip install logic
 # ===============================
 RUN /usr/local/bin/python3.11 -m ensurepip --upgrade && \
     /usr/local/bin/python3.11 -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3
 
-# 构建期断言：避免推坏镜像
+# Build-time assertion: prevents pushing a broken image
 RUN /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
 
 # ===============================
@@ -153,7 +153,7 @@ RUN useradd -ms /bin/bash ubuntu && \
     echo "ubuntu:ubuntu" | chpasswd
 
 # ===============================
-# SSH config (start.sh 负责启动 sshd；这里确保配置允许密码登录)
+# SSH config (start.sh handles sshd startup; this ensures password login is enabled)
 # ===============================
 RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
     sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
@@ -181,12 +181,12 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
 # ===============================
-# Ports (不要写行尾注释，避免某些平台解析 containerPort 失败)
+# Ports (avoid inline comments to prevent containerPort parsing failures on some platforms)
 # ===============================
 EXPOSE 22 80 8888
 
 # ===============================
-# Entrypoint: root 直接跑 start.sh（不改你的公共 start.sh）
+# Entrypoint: root runs start.sh directly (does not modify the shared start.sh)
 # ===============================
 USER root
 WORKDIR /root
