@@ -1,125 +1,80 @@
-# Wan2.2-Animate-14B — Runtime Usage Guide
+# Wan 2.2 Animate - ComfyUI
 
-This document describes how to run the **Wan-AI Wan2.2-Animate-14B** ComfyUI-enabled container, including the core environment variables, ports, and model download behavior.
+Pre-configured **ComfyUI** environment with **Wan 2.2 Animate 14B** model for high-quality image-to-video generation.
 
-Wan2.2-Animate-14B is a **14B-parameter** high-capacity video generation and animation model, integrated here as a ComfyUI runtime with automatic model downloading via `hf_download.sh`.
+## What's Included
 
----
+- ✅ **Wan 2.2 Animate 14B** (FP8 optimized, ~28GB)
+- ✅ **ComfyUI** web interface on port 8188
+- ✅ **Pre-loaded models**: I2V diffusion models, VAE, text encoder, LoRAs
+- ✅ **PyTorch 2.4.1** with CUDA 12.1 support
+- ✅ **Python 3.11** runtime environment
 
-## 1. Runtime Environment Variables
+## Model Capabilities
 
-The container exposes a small set of user-facing environment variables that control how the model is downloaded and loaded at startup.
+**Wan 2.2 Animate** specializes in:
+- **Image-to-Video (I2V)**: Transform static images into smooth animations
+- **High/Low Noise Models**: Dual noise configurations for quality control
+- **LightX2V LoRAs**: 4-step acceleration for faster generation
+- **14B Parameters**: State-of-the-art video generation quality
 
-### Core Variables (for most users)
+## Using ComfyUI
 
-| Variable | Default | Required | Description |
-|---------|---------|----------|-------------|
-| `WAN_MODEL_ID` | `Wan-AI/Wan2.2-Animate-14B` | false | HuggingFace model repo ID. Override to use a different Wan2.2 variant or your own fine-tuned repo. |
-| `HF_TOKEN` | *(empty)* | true (for gated models) | HuggingFace access token used for downloading gated/private models if `WAN_HF_TOKEN` is not set. |
-| `WAN_AUTO_DOWNLOAD` | `true` | false | When `true`, the container automatically downloads the model into `WAN_ROOT` if the directory is empty. When `false`, you must mount or pre-package the model manually. |
+### Web Interface
 
-### Advanced Options
+1. Click "Connect" or  open  `http://<your-pod>:8188` in your browser
+2. Load workflow from ComfyUI Manager
+3. Upload your input image
+4. Configure generation parameters:
+   - **Steps**: 4-50 (use LoRA for 4-step generation)
+   - **Noise Level**: High/Low (two separate models)
+   - **Resolution**: Up to 1024×1024
+5. Click **Queue Prompt** to generate
+
+### Pre-installed Models
+
+Located in `/home/ubuntu/ComfyUI/models/`:
+
+| Type | Model | Purpose |
+|------|-------|---------|
+| Diffusion | `wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors` | High noise I2V |
+| Diffusion | `wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors` | Low noise I2V |
+| Text Encoder | `umt5_xxl_fp8_e4m3fn_scaled.safetensors` | Text conditioning |
+| VAE | `wan2.2_vae.safetensors` | Video encoder/decoder |
+| LoRA | `wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors` | 4-step acceleration (high) |
+| LoRA | `wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors` | 4-step acceleration (low) |
+
+## System Requirements
+
+- **GPU**: Recommended RTX 5090
+
+## Configuration
 
 | Variable | Default | Description |
-|---------|---------|-------------|
-| `WAN_HF_TOKEN` | *(empty)* | Optional high-priority token. If set, it is used instead of `HF_TOKEN`. |
-| `WAN_ROOT` | `/home/ubuntu/ComfyUI/models/wan` | Root directory under which the model will be stored. The effective path is `${WAN_ROOT}/<model-name>`. |
+|----------|---------|-------------|
+| `COMFYUI_PORT` | `8188` | ComfyUI web interface port |
+| `PYTHON_VERSION` | `3.11` | Python runtime version |
+| `TORCH_VERSION` | `2.4.1` | PyTorch version |
 
-### Model Storage Path
+## Tips for Best Results
 
-By default, with `WAN_MODEL_ID=Wan-AI/Wan2.2-Animate-14B`:
+1. **Use LoRAs for speed**: Enable 4-step LoRAs for 10× faster generation
+2. **Choose noise level**: High noise for creative results, low noise for faithful reproduction
+3. **Image quality matters**: Higher resolution inputs produce better outputs
+4. **Aspect ratio**: 16:9 or 1:1 work best
 
-```text
-/home/ubuntu/ComfyUI/models/wan/Wan2.2-Animate-14B
-```
+## Troubleshooting
 
-If this directory exists and is non-empty, download is skipped.
-
----
-
-## 2. Exposed Ports
-
-| Port | Description |
-|------|-------------|
-| **8188** | ComfyUI Web UI |
-| **80** | nginx reverse proxy (optional frontend entrypoint) |
-| **22** | SSH access (if enabled) |
-
-Once the container is running, ComfyUI is available at:
-
-```text
-http://localhost:8188/
-```
-
----
-
-## 3. Quickstart Example
-
-Minimal recommended launch command:
-
+### Check ComfyUI logs
 ```bash
-docker run -it --gpus all   -e WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"   -e HF_TOKEN="hf_xxx"   -e WAN_AUTO_DOWNLOAD=true   -p 8188:8188   <your-image>
+tail -f /home/ubuntu/comfyui.log
 ```
 
-If you want to use a dedicated token and custom root:
-
+### Verify models are loaded
 ```bash
-docker run -it --gpus all   -e WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"   -e WAN_HF_TOKEN="hf_xxx"   -e WAN_ROOT="/home/ubuntu/ComfyUI/models/wan"   -e WAN_AUTO_DOWNLOAD=true   -p 8188:8188   <your-image>
-```
+ls -lh /home/ubuntu/ComfyUI/models/diffusion_models/
+ls -lh /home/ubuntu/ComfyUI/models/vae/
+``
 
-On the first startup, the model will be downloaded automatically if the model directory is empty.
 
----
 
-## 4. Model Auto-Download Behavior
-
-The `post_start.sh` script implements the following logic:
-
-| Condition | Action |
-|----------|--------|
-| `WAN_AUTO_DOWNLOAD=true` and `${MODEL_DIR}` is empty | Download model using `hf_download.sh` (`MODEL_DIR=${WAN_ROOT}/basename(WAN_MODEL_ID)`). |
-| `WAN_AUTO_DOWNLOAD=true` and `${MODEL_DIR}` has files | Skip download. |
-| `WAN_AUTO_DOWNLOAD!=true` | Do not download; assume model is already present (mounted or baked). |
-| No token (`WAN_HF_TOKEN` and `HF_TOKEN` both empty) | Exit with an error for gated repositories. |
-
-Download logs are printed to the container log and the HuggingFace cache is stored under:
-
-```text
-/home/ubuntu/.cache/huggingface
-```
-
----
-
-## 5. ComfyUI Runtime
-
-After the model bootstrap phase, ComfyUI is started as:
-
-```bash
-python -u main.py   --listen 0.0.0.0   --port "${COMFYUI_PORT:-8188}"
-```
-
-Runtime logs are written to:
-
-```text
-/home/ubuntu/comfyui.log
-```
-
----
-
-## 6. Recommended Hardware
-
-- **GPU VRAM**: ≥ 24–32 GB recommended for stable video generation  
-- **Precision**: FP16 or BF16  
-- **Use case**: high-quality text-to-video, animation, character motion, and production-style creative workflows
-
----
-
-## 7. Summary
-
-This image aims to make Wan2.2-Animate-14B easy to use:
-
-- Configure **3 core environment variables** (`WAN_MODEL_ID`, `HF_TOKEN`/`WAN_HF_TOKEN`, `WAN_AUTO_DOWNLOAD`)  
-- Expose **port 8188**  
-- Let the container automatically download and manage the model under `WAN_ROOT`
-
-The rest of the complexity is handled for you by the startup scripts and the integrated ComfyUI environment.
