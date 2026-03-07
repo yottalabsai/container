@@ -4,21 +4,21 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
-# 可由 bake 覆盖的参数
+# Parameters overridable by bake
 ARG PYTHON_VERSION="3.11"
 
-# 默认跑 Verl，大模型写死为 Wan2.2
+# Default runs Verl, large model hardcoded to Wan2.2
 ARG VLLM_MODEL="Verl/Wan2.2"
 
 ARG VLLM_HOST="0.0.0.0"
 ARG VLLM_PORT="8000"
 
-# 资源相关（TP、大 context、显存利用率）
+# Resource settings (TP, large context, GPU memory utilization)
 ARG TP_SIZE="1"
 ARG MAX_MODEL_LEN="32768"
 ARG GPU_MEM_UTIL="0.92"
 
-# FlashAttn / FlashInfer 开关（true/false）
+# FlashAttn / FlashInfer toggle (true/false)
 ARG INSTALL_FLASHATTN="false"
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
@@ -55,7 +55,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     python /tmp/get-pip.py && rm -f /tmp/get-pip.py && \
     python -m pip install --no-cache-dir -U pip setuptools wheel
 
-# ===== PyTorch: nightly cu126（适配 RTX 5090 / Blackwell）=====
+# ===== PyTorch: nightly cu126 (compatible with RTX 5090 / Blackwell) =====
 RUN python -m pip install --no-cache-dir --pre \
     torch torchvision torchaudio \
     --index-url https://download.pytorch.org/whl/nightly/cu126
@@ -68,7 +68,7 @@ RUN python -m pip install --no-cache-dir \
       huggingface_hub \
       hf_transfer
 
-# ===== FlashAttn / FlashInfer（按需开启）=====
+# ===== FlashAttn / FlashInfer (enable on demand) =====
 RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
       set -euo pipefail; \
       echo "[FlashAttn] trying wheel..."; \
@@ -76,7 +76,7 @@ RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
       (echo "[FlashAttn] wheel failed, skipping"); \
     fi
 
-# ===== 运行时参数写入环境变量 =====
+# ===== Write runtime parameters to environment variables =====
 ENV VLLM_MODEL=${VLLM_MODEL} \
     VLLM_HOST=${VLLM_HOST} \
     VLLM_PORT=${VLLM_PORT} \
@@ -84,7 +84,7 @@ ENV VLLM_MODEL=${VLLM_MODEL} \
     MAX_MODEL_LEN=${MAX_MODEL_LEN} \
     GPU_MEM_UTIL=${GPU_MEM_UTIL}
 
-# ===== 入口脚本：只启动 vLLM OpenAI API =====
+# ===== Entrypoint script: only starts vLLM OpenAI API =====
 RUN cat >/entry.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -107,7 +107,7 @@ EOF
 RUN chmod +x /entry.sh
 
 # ==============================
-# Branding：进入容器提示
+# Branding: container login message
 # ==============================
 RUN cat <<'EOF' > /etc/yotta.txt
 --------------------------------------------------
@@ -116,11 +116,11 @@ RUN cat <<'EOF' > /etc/yotta.txt
 --------------------------------------------------
 EOF
 
-# root 登录提示
+# root login message
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# ubuntu 登录提示
+# ubuntu login message
 RUN echo 'cat /etc/yotta.txt' >> /home/${UBUNTU_USER}/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /home/${UBUNTU_USER}/.bashrc && \
     chown ${UBUNTU_USER}:${UBUNTU_USER} /home/${UBUNTU_USER}/.bashrc

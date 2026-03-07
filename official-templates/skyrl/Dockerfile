@@ -9,7 +9,7 @@ COPY container-template/start.sh start.sh
 
 # nginx config / landing page (keep as its own stage to match existing COPY --from=proxy)
 FROM scratch AS proxy
-# 下面两个文件需要在 build context 里存在；不在根目录就改路径
+# These two files must exist in the build context; adjust paths if not at root
 COPY nginx.conf nginx.conf
 COPY readme.html readme.html
 
@@ -135,7 +135,7 @@ COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 
 # =========================================================
-# start.sh (必须原样保留)
+# start.sh (must be kept as-is)
 # =========================================================
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
@@ -148,10 +148,10 @@ RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc || true
 
 COPY SkyRL_Demo.ipynb /workspace/
 # =========================================================
-# post_start hook (关键)
-# - 你的平台 PID1 实际跑的是: sudo -E /start.sh
-# - 所以 ENTRYPOINT/CMD 不可靠；用 /post_start.sh 注入最稳
-# - 全程不依赖 root，不碰 /home/ubuntu，日志写 /workspace
+# post_start hook (important)
+# - Platform PID1 actually runs: sudo -E /start.sh
+# - ENTRYPOINT/CMD is unreliable; injecting via /post_start.sh is most stable
+# - No root dependency, does not touch /home/ubuntu, logs written to /workspace
 # =========================================================
 RUN set -eux; \
   cat > /post_start.sh <<'SH'
@@ -161,16 +161,16 @@ set -e
 LOG_DIR="/workspace"
 TB_LOG="${LOG_DIR}/tensorboard.log"
 
-# 记录一下我们是否真的被执行到
+# Log whether we were actually invoked
 echo "[post_start] invoked at $(date -Is) uid=$(id -u) gid=$(id -g)" >> "${TB_LOG}" 2>/dev/null || true
 
-# 避免重复启动（容器重启/多次调用时）
+# Avoid duplicate startup (on container restart or multiple invocations)
 if ss -lntp 2>/dev/null | grep -q ':6006'; then
   echo "[post_start] tensorboard already listening on 6006" >> "${TB_LOG}" 2>/dev/null || true
   exit 0
 fi
 
-# 启动 TensorBoard（后台），日志追加到 /workspace（通常是可写卷）
+# Start TensorBoard (background), append logs to /workspace (usually a writable volume)
 nohup tensorboard \
   --logdir=/workspace \
   --host=0.0.0.0 \
@@ -184,7 +184,7 @@ SH
 RUN chmod +x /post_start.sh
 
 # =========================================================
-# Permissions (尽量不假设可写 /home/ubuntu；/workspace 通常挂载可写)
+# Permissions (avoid assuming /home/ubuntu is writable; /workspace is usually a writable mount)
 # =========================================================
 RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu || true
 
@@ -194,7 +194,7 @@ RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu || true
 EXPOSE 22 80 8888 6006
 
 # =========================================================
-# Entrypoint (对你们平台可能会被覆盖；保留无伤大雅)
+# Entrypoint (may be overridden by the platform; keeping it is harmless)
 # =========================================================
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform will run /start.sh.'; sleep infinity"]

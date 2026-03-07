@@ -1,31 +1,31 @@
 # ==============================
-# Wan2.2-Animate-14B ComfyUI 基座构建参数
+# Wan2.2-Animate-14B ComfyUI Base Build Arguments
 # ==============================
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 ARG COMFYUI_PORT="8188"
 
-# 是否安装 Nunchaku（默认：否，由 bake 覆盖）
+# Whether to install Nunchaku (default: no, overridable via bake)
 ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-# Torch / CUDA 相关参数（直接走 stable）
+# Torch / CUDA parameters (using stable channel)
 ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
-ARG TORCH_CUDA="cu121"  # cu121 在官方有 2.4.1 轮子
+ARG TORCH_CUDA="cu121"  # cu121 has official 2.4.1 wheels
 
-# Wan2.2-Animate 模型（构建阶段下载）
+# Wan2.2-Animate model (downloaded at build time)
 ARG WAN_MODEL_ID="Wan-AI/Wan2.2-Animate-14B"
-# 关键：直接用 ComfyUI 的 models 根目录
+# Key: use ComfyUI's models root directory directly
 ARG WAN_ROOT="/home/ubuntu/ComfyUI/models"
 
-# 构建时使用的 HF_TOKEN（通过 buildx 注入，不在镜像里写死）
+# HF_TOKEN used at build time (injected via buildx, not hardcoded in image)
 ARG HF_TOKEN=""
 
 # ==============================
-# Base: CUDA + 系统依赖 + Python + SSH
+# Base: CUDA + system dependencies + Python + SSH
 # ==============================
 FROM ${BASE_IMAGE} AS base
 
@@ -62,7 +62,7 @@ RUN apt-get update -y && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 创建普通用户
+# Create regular user
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
@@ -70,12 +70,12 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chmod 700 /home/${UBUNTU_USER}/.ssh && \
     mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
-# SSH 配置：允许密码登录，但禁 root
+# SSH configuration: allow password login but disable root
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# 安装指定版本 Python + pip
+# Install specified Python version + pip
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -86,11 +86,11 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
       /usr/bin/python /tmp/get-pip.py || true) && \
     rm -f /tmp/get-pip.py
 
-# 兜底：保证 python -m pip 可用
+# Fallback: ensure python -m pip is available
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# python-env: 安装 PyTorch（stable + cu121）
+# python-env: install PyTorch (stable + cu121)
 # ==============================
 FROM base AS python-env
 
@@ -111,13 +111,13 @@ RUN python -m pip install --upgrade pip wheel setuptools && \
       "torchaudio==${TORCH_VERSION}" \
       --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"
 
-# 安装 jupyter 以兼容 start.sh
+# Install jupyter for start.sh compatibility
 RUN python -m pip install --no-cache-dir \
       "jupyterlab>=4.0.0" \
       "notebook" \
       "ipykernel"
 
-# 简单的环境自检
+# Simple environment sanity check
 RUN python - <<'PY'
 import torch, platform
 print("PyTorch:", torch.__version__)
@@ -154,7 +154,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd ComfyUI-Manager && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
-# 安装 GitPython + PyGithub + toml + huggingface_hub[cli]，并写入通用 hf_download.sh（root）
+# Install GitPython + PyGithub + toml + huggingface_hub[cli], write generic hf_download.sh (as root)
 USER root
 RUN python -m pip install --no-cache-dir \
       "GitPython>=3.1.44" \
@@ -162,7 +162,7 @@ RUN python -m pip install --no-cache-dir \
       "toml" \
       "huggingface_hub[cli]"
 
-# 通用 huggingface 下载脚本
+# Generic HuggingFace download script
 RUN cat >/usr/local/bin/hf_download.sh <<'HF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -222,14 +222,14 @@ HF
 
 RUN chmod +x /usr/local/bin/hf_download.sh
 
-# 回到 ubuntu 用户继续后续步骤
+# Switch back to ubuntu user for subsequent steps
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
       "GitPython>=3.1.44" \
       "PyGithub" \
       "toml"
 
-# 可选：Nunchaku
+# Optional: Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
         echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
@@ -245,7 +245,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 模型 & 目录结构
+# Model & directory structure
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -256,7 +256,7 @@ RUN mkdir -p \
       /home/${UBUNTU_USER}/ComfyUI/models \
       "${WAN_ROOT}"
 
-# ========= 构建阶段下载 Wan2.2-Animate-14B + I2V / VAE / Text Encoder / LoRA =========
+# ========= Download Wan2.2-Animate-14B + I2V / VAE / Text Encoder / LoRA at build time =========
 RUN set -euo pipefail && \
     echo "[WAN2.2][build] MODEL_ID=${WAN_MODEL_ID}" && \
     echo "[WAN2.2][build] WAN_ROOT=${WAN_ROOT}" && \
@@ -265,12 +265,12 @@ RUN set -euo pipefail && \
       echo "[WAN2.2][build] WARNING: HF_TOKEN is empty, will try anonymous download (may fail if gated)" >&2; \
     fi && \
     \
-    # 1) 主仓：Wan-AI/Wan2.2-Animate-14B（有就下，失败也不阻塞）
+    # 1) Main repo: Wan-AI/Wan2.2-Animate-14B (download if available, non-blocking on failure)
     echo "[WAN2.2][build] Downloading base repo: ${WAN_MODEL_ID}" && \
     hf_download.sh "${WAN_MODEL_ID}" "${WAN_ROOT}/wan2.2_animate_raw" "${HF_TOKEN}" || \
       echo "[WAN2.2][build] WARN: base repo download failed or partial, continuing with Comfy-Org repack..." >&2 && \
     \
-    # 2) 从 Comfy-Org/Wan_2.2_ComfyUI_Repackaged 精确拉取所需文件并放到标准目录
+    # 2) Pull required files from Comfy-Org/Wan_2.2_ComfyUI_Repackaged into standard directories
     echo "[WAN2.2][build] Downloading I2V / VAE / text encoder / loras from Comfy-Org/Wan_2.2_ComfyUI_Repackaged" && \
     HF_TOKEN_ENV="${HF_TOKEN:-}" python - <<'PY'
 import os
@@ -287,7 +287,7 @@ patterns = [
     # diffusion (i2v)
     "split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
     "split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-    # 你要是想顺带把 t2v / ti2v 也拉进来，可以加更多 pattern
+    # Add more patterns here to also pull t2v / ti2v models
     # "split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
     # "split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
     # "split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
@@ -356,20 +356,20 @@ FROM comfy-builder AS runtime
 ARG UBUNTU_USER
 ARG COMFYUI_PORT
 
-# 运行时只需要端口，不需要模型相关 ENV
+# At runtime only the port is needed, no model-related ENV
 ENV COMFYUI_PORT=${COMFYUI_PORT}
 
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
-# 这些来自 docker buildx bake 的额外上下文（scripts/proxy/logo）
+# These come from extra contexts defined in docker buildx bake (scripts/proxy/logo)
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
 COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
-# post_start.sh：容器内只负责启动 ComfyUI（不再下载模型）
+# post_start.sh: only starts ComfyUI inside container (no model download)
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -394,15 +394,15 @@ RUN chmod +x /post_start.sh /start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nFor docs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
-# 注意：不再把 /home/ubuntu/ComfyUI/models 声明成 VOLUME，避免覆盖镜像内模型
+# Note: /home/ubuntu/ComfyUI/models is no longer declared as VOLUME to avoid overwriting baked-in models
 VOLUME ["/home/${UBUNTU_USER}/models", "/home/${UBUNTU_USER}/output"]
 
-# 暴露端口：Nginx / ComfyUI / SSH
+# Expose ports: Nginx / ComfyUI / SSH
 EXPOSE 80
 EXPOSE ${COMFYUI_PORT}
 EXPOSE 22
 
-# 健康检查：直接探 ComfyUI HTTP 端口
+# Health check: probe ComfyUI HTTP port directly
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${COMFYUI_PORT:-8188}/" >/dev/null || exit 1
 

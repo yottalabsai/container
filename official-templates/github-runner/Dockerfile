@@ -1,4 +1,5 @@
-FROM runpod/pytorch:3.10-2.0.0-117
+ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
+FROM ${BASE_IMAGE}
 
 WORKDIR /
 
@@ -13,7 +14,7 @@ ARG RUNNER_VERSION
 RUN apt-get update -y && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
-        curl nodejs wget unzip vim git azure-cli jq build-essential libssl-dev libffi-dev python3 python3-venv python3-dev python3-pip && \
+    curl nodejs wget unzip vim git azure-cli jq build-essential libssl-dev libffi-dev python3 python3-venv python3-dev python3-pip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

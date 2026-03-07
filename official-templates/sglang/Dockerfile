@@ -1,19 +1,19 @@
 # ========================================
-# 基础镜像（可由 bake 覆盖）
+# Base image (can be overridden by bake)
 # ========================================
 ARG BASE_IMAGE="nvidia/cuda:12.1.1-devel-ubuntu22.04"
 FROM ${BASE_IMAGE}
 
 # ========================================
-# 构建参数（全部允许 bake 覆盖）
+# Build arguments (all can be overridden by bake)
 # ========================================
 ARG TZ="UTC"
 ARG PYTHON_VERSION="3.11"
 
-# TORCH：默认留空 = 使用稳定 2.5.1+cu121 组合
+# TORCH: leave empty by default = use stable 2.5.1+cu121 combination
 ARG TORCH=""
 
-# 性能相关
+# Performance-related
 ARG CMAKE_BUILD_PARALLEL_LEVEL=""
 ARG PIP_DISABLE_PIP_VERSION_CHECK=1
 ARG PYTHONUNBUFFERED=1
@@ -25,10 +25,10 @@ ARG SGLANG_MODEL="Qwen/Qwen2.5-3B-Instruct"
 ARG SGLANG_HOST="0.0.0.0"
 ARG SGLANG_PORT="30000"
 
-# ⚠️ 不再写任何默认值，由外部传入
+# ⚠️ No default value set here; must be passed in from outside
 ARG SGLANG_EXTRA=""
 
-# Prefetch / TP 策略：auto / lazy / eager
+# Prefetch / TP strategy: auto / lazy / eager
 ARG SGLANG_PREFETCH="auto"
 ARG SGLANG_TP="auto"
 
@@ -41,7 +41,7 @@ ARG CCACHE_COMPRESS="1"
 ARG CCACHE_MAXSIZE="10G"
 
 # ========================================
-# 环境变量
+# Environment variables
 # ========================================
 ENV TZ=${TZ} \
     CUDA_HOME=/usr/local/cuda \
@@ -87,7 +87,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     rm -rf /var/lib/apt/lists/*
 
 # ========================================
-# root SSH 目录（避免 start.sh 里 tee authorized_keys 报错）
+# root SSH directory (prevents tee authorized_keys error in start.sh)
 # ========================================
 RUN set -eux; \
     mkdir -p /root/.ssh; \
@@ -113,7 +113,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     '
 
 # ========================================
-# PyTorch（默认 2.5.1+cu121）
+# PyTorch (default 2.5.1+cu121)
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     bash -lc 'set -eux; \
@@ -129,13 +129,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     '
 
 # ========================================
-# sgl-kernel：wheel
+# sgl-kernel: wheel
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir sgl-kernel
 
 # ========================================
-# 安装 SGLang（GPU 版本）
+# Install SGLang (GPU version)
 # ========================================
 RUN --mount=type=cache,target=/root/.cache/pip \
     python3 -m pip install --no-cache-dir "sglang[gpu]"
@@ -153,13 +153,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       hf_transfer
 
 # ========================================
-# 可选 ubuntu 用户（以后要 ssh 的时候用；默认运行还是 root）
+# Optional ubuntu user (for future SSH access; default runtime is still root)
 # ========================================
 RUN useradd -ms /bin/bash ubuntu || true && \
     chown -R ubuntu:ubuntu /workspace "$HF_HOME" || true
 
 # ========================================
-# Start Script：/post_start.sh（root 来跑）
+# Start Script: /post_start.sh (runs as root)
 # ========================================
 RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -172,13 +172,13 @@ echo "[Prefetch Env]    : ${SGLANG_PREFETCH:-auto}"
 echo "[TP Env]          : ${SGLANG_TP:-auto}"
 echo "$(date -u)"
 
-# ---- 检测 GPU 数量 ----
+# ---- Detect GPU count ----
 GPU_COUNT=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l || echo 1)
 if [ "${GPU_COUNT}" -lt 1 ]; then
   GPU_COUNT=1
 fi
 
-# ---- 解析 TP ----
+# ---- Parse TP ----
 TP_ENV="${SGLANG_TP:-auto}"
 if [ "${TP_ENV}" = "auto" ]; then
   if [ "${GPU_COUNT}" -ge 2 ]; then
@@ -192,7 +192,7 @@ else
   echo "[TP] Use tp-size from env: ${TP_SIZE}"
 fi
 
-# ---- 解析 Prefetch ----
+# ---- Parse Prefetch ----
 PREFETCH_ENV="${SGLANG_PREFETCH:-auto}"
 if [ "${PREFETCH_ENV}" = "auto" ]; then
   if [ "${GPU_COUNT}" -ge 2 ]; then
@@ -208,7 +208,7 @@ fi
 
 echo "[SGLang] Extra Args: ${SGLANG_EXTRA:-<empty>}"
 
-# ---- eager 预下载权重 ----
+# ---- eager pre-download weights ----
 if [ "${PREFETCH_MODE}" = "eager" ]; then
   python3 - <<'PY'
 import os
@@ -230,7 +230,7 @@ print("[Prefetch] Downloaded to:", path)
 PY
 fi
 
-# ---- 启动 sglang server ----
+# ---- Start sglang server ----
 exec python3 -m sglang.launch_server \
     --model-path "${SGLANG_MODEL}" \
     --host "${SGLANG_HOST}" \
@@ -239,7 +239,7 @@ exec python3 -m sglang.launch_server \
     ${SGLANG_EXTRA}
 EOF
 
-# 关键两行：让 /start.sh 也存在，并直接复用 /post_start.sh
+# Key two lines: ensure /start.sh exists and directly reuses /post_start.sh
 RUN chmod +x /post_start.sh && \
     ln -sf /post_start.sh /start.sh
 
@@ -251,12 +251,12 @@ RUN cat >/entrypoint.sh <<'EOF'
 set -euo pipefail
 
 if [ "${SGLANG_AUTOSTART:-true}" != "true" ]; then
-  echo "[DEBUG] SGLANG_AUTOSTART=false → 手动模式，不自动启动 SGLang。"
-  echo "[DEBUG] 容器已就绪，你可以 kubectl exec 进去执行：/post_start.sh"
+  echo "[DEBUG] SGLANG_AUTOSTART=false → manual mode, SGLang will not start automatically."
+  echo "[DEBUG] Container is ready. You can kubectl exec into it and run: /post_start.sh"
   exec tail -f /dev/null
 fi
 
-echo "[INFO] 自动启动 SGLang 服务..."
+echo "[INFO] Auto-starting SGLang service..."
 exec /post_start.sh
 EOF
 

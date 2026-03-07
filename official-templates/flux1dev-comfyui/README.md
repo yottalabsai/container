@@ -7,15 +7,16 @@
 Example:
 
 ```bash
-# 标准版
-HF_TOKEN=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 \
+# Standard edition
+HF_TOKEN=<your_hf_token> \
 docker buildx bake flux1dev-comfyui --push
 
-# Nunchaku 版
-HF_TOKEN=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 \
+# Nunchaku edition
+HF_TOKEN=<your_hf_token> \
 docker buildx bake flux1dev-comfyui-nunchaku --push
 
-HF_TOKEN=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 \
+# Build all variants
+HF_TOKEN=<your_hf_token> \
 docker buildx bake flux1dev-all --no-cache --push
 ```
 
@@ -27,18 +28,18 @@ docker buildx bake flux1dev-all --no-cache --push
 
 ## Test
 
-# 检查 ComfyUI 是否启动
+```bash
+# Check if ComfyUI is running
 curl -s http://localhost:8188/system_stats | jq .
 
-# 或查看队列状态
+# Or check queue status
 curl -s http://localhost:8188/queue | jq .
+```
 
-env:
-  - name: HF_TOKEN
-    value: "hf_xxx"                # 必填
+## Environment Variables
 
-  - name: FLUX_MODEL_DIR           # 可选，不配就用 /home/ubuntu/ComfyUI/models
-    value: "/data/flux-models"
-
-  - name: ENABLE_FLUX_VAE          # 可选，默认 true
-    value: "true"
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `HF_TOKEN` | Yes | — | HuggingFace access token |
+| `FLUX_MODEL_DIR` | No | `/home/ubuntu/ComfyUI/models` | Path to store downloaded models |
+| `ENABLE_FLUX_VAE` | No | `true` | Enable FLUX VAE model download |

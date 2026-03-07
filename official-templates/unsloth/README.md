@@ -2,19 +2,14 @@
 
 ### A GPU-optimized environment for efficient LLM fine-tuning, focused on fast LoRA/QLoRA workflows with minimal memory usage.
 
-基于官方 `unsloth/unsloth` 镜像，叠加 Yotta 工具层，用于大模型微调（SFT / DPO / GRPO 等）。
+Built on the official `unsloth/unsloth` image with an added Yotta tools layer for LLM fine-tuning (SFT / DPO / GRPO, etc.).
 
 ## Build Instructions
 
 ```bash
-docker buildx bake \
-  --allow=fs.read=/root/projects/container/container-template \
-  unsloth --no-cache --push
-  
 docker buildx bake unsloth --no-cache --push
 
 docker build -t unsloth:local .
-
 ```
 
 ## Run (Interactive Shell)

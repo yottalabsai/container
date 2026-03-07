@@ -47,16 +47,16 @@ RUN if [ -n "${PYTHON_VERSION}" ]; then \
     fi; \
     pip install --upgrade --no-cache-dir pip setuptools wheel
 
-# ===== PyTorch（可选）=====
+# ===== PyTorch (optional) =====
 RUN if [ -n "${TORCH}" ]; then pip install --no-cache-dir ${TORCH}; fi
 
-# ===== 拉取 ComfyUI 源码 + 依赖 =====
+# ===== Clone ComfyUI source + install dependencies =====
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git /opt/ComfyUI && \
     mkdir -p /workspace/ComfyUI/models && \
     rm -rf /opt/ComfyUI/models && ln -s /workspace/ComfyUI/models /opt/ComfyUI/models && \
     pip install --no-cache-dir -r /opt/ComfyUI/requirements.txt
 
-# ===== 用户与权限 =====
+# ===== User and permissions =====
 RUN useradd -ms /bin/bash ubuntu && \
     usermod -aG sudo ubuntu && \
     echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
@@ -83,7 +83,7 @@ RUN echo 'echo -e "\nFor detailed documentation and guides, please visit:\n\033[
 COPY --from=scripts start.sh /
 RUN chmod +x /start.sh
 
-# ===== post_start：后台启动 ComfyUI =====
+# ===== post_start: start ComfyUI in the background =====
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail

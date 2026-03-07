@@ -11,9 +11,9 @@ ARG UBUNTU_USER="ubuntu"
 ARG INSTALL_FLASHATTN="false"
 ARG INSTALL_FLASHINFER="false"
 
-# 模型 ID 也作为构建参数（配合 bake 里的 HF_MODEL_ID）
+# Model ID also as a build argument (used with HF_MODEL_ID in bake)
 ARG HF_MODEL_ID="Qwen/Qwen3-30B-A3B-Instruct-2507"
-# 构建期 HuggingFace Token
+# Build-time HuggingFace Token
 ARG HF_TOKEN
 
 SHELL ["/bin/bash","-o","pipefail","-c"]
@@ -37,7 +37,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CMAKE_CUDA_ARCHITECTURES="120" \
     \
     # ------------------------------
-    # vLLM runtime defaults (Pod 可覆盖)
+    # vLLM runtime defaults (overridable at Pod level)
     # ------------------------------
     VLLM_MODEL="Qwen/Qwen3-30B-A3B-Instruct-2507" \
     HF_MODEL_ID="${HF_MODEL_ID}" \
@@ -55,7 +55,7 @@ WORKDIR /
 RUN mkdir -p /workspace "$HF_HOME" && chmod -R 777 /workspace "$HF_HOME"
 
 # ==============================
-# System deps (UTC 固定时区)
+# System deps (UTC fixed timezone)
 # ==============================
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -77,7 +77,7 @@ RUN apt-get update -y && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# root SSH 目录（给平台注入 key 用）
+# root SSH directory (for platform key injection)
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 # ==============================
@@ -127,7 +127,7 @@ RUN python -m pip install --no-cache-dir --pre \
 RUN python -m pip install --no-cache-dir \
       vllm transformers sentencepiece "huggingface_hub[cli]" hf_transfer einops
 
-# Flash 加速（按需）
+# Flash acceleration (optional)
 RUN if [[ "${INSTALL_FLASHATTN}" = "true" ]]; then \
       python -m pip install --no-cache-dir flash-attn || true; \
     fi
@@ -137,7 +137,7 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
     fi
 
 # ==============================
-# 构建阶段下载模型（使用 HF_TOKEN）
+# Download model at build time (using HF_TOKEN)
 # ==============================
 RUN set -euo pipefail && \
     mkdir -p "${HF_HOME}" && \
@@ -146,7 +146,7 @@ RUN set -euo pipefail && \
     echo "[build] HF_MODEL_ID=${HF_MODEL_ID}" && \
     echo "[build] MODEL_DIR=${MODEL_DIR}" && \
     \
-    # 1) 强制要求 HF_TOKEN 非空
+    # 1) Require non-empty HF_TOKEN
     if [[ -z "${HF_TOKEN:-}" ]]; then \
       echo "[build] ERROR: HF_TOKEN is empty." >&2; \
       echo "[build] Please pass HF_TOKEN via buildx bake, e.g.:" >&2; \
@@ -154,7 +154,7 @@ RUN set -euo pipefail && \
       exit 2; \
     fi && \
     \
-    # 2) 下载模型（必须成功）
+    # 2) Download model (must succeed)
     echo "[build] Downloading model at build time..." && \
     huggingface-cli download \
       "${HF_MODEL_ID}" \
@@ -163,7 +163,7 @@ RUN set -euo pipefail && \
       --resume-download \
       --token "${HF_TOKEN}" && \
     \
-    # 3) 下载完成后检查目录
+    # 3) Verify model directory after download
     if [[ ! -d "${MODEL_DIR}" ]]; then \
       echo "[build] ERROR: MODEL_DIR ${MODEL_DIR} does not exist after download" >&2; \
       exit 3; \
@@ -180,11 +180,11 @@ RUN set -euo pipefail && \
 COPY --from=scripts start.sh /start_platform.sh
 RUN chmod +x /start_platform.sh
 
-# 拷贝品牌文案
+# Copy branding
 COPY --from=logo yotta.txt /etc/yotta.txt
 
 # ==============================
-# post_start.sh: 只负责检查 & 启动 vLLM（不再下载）
+# post_start.sh: only responsible for checking & starting vLLM (no model download)
 # ==============================
 RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
@@ -286,16 +286,16 @@ RUN cat >/start.sh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 先跑平台原生启动（SSH/Nginx/用户注入等）
+# Run platform native startup first (SSH/Nginx/user injection, etc.)
 /start_platform.sh &
 
-# 给平台服务一点点启动窗口
+# Give platform services a brief startup window
 sleep 1
 
-# 再启动 vLLM（仅检查 + 启动，不再下载模型）
+# Then start vLLM (check & start only, no model download)
 /post_start.sh
 
-# 保持容器前台
+# Keep container in foreground
 wait -n
 EOF
 

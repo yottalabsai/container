@@ -27,7 +27,7 @@ variable "HF_MODEL_ID" {
 }
 
 variable "VLLM_PORT" {
-  # 默认 8001：规避平台常见 8000 冲突
+  # Default 8001: avoids the common port 8000 conflict on the platform
   default = "8001"
 }
 

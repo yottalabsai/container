@@ -1,39 +1,39 @@
-# Verl 镜像 - 使用示例（Console 输出为主）
+# Verl Image — Usage Examples
 
-> 说明：Verl 是用于 LLM 后训练 / 强化学习训练（RL）的框架。  
-> 本镜像额外提供了一个 **Qwen/Qwen2.5-0.5B-Instruct 推理 demo**，方便用户验证环境可用。
+> Note: Verl is a framework for LLM post-training and reinforcement learning (RL).
+> This image includes a **Qwen/Qwen2.5-0.5B-Instruct inference demo** to help you verify the environment is working.
 
-## 1. 进入容器后快速验证
+## 1. Quick verification after entering the container
 
 ```bash
 python -c "import verl; print('verl OK')"
 python -c "import torch; print('torch OK, cuda:', torch.cuda.is_available())"
 ```
 
-## 2. 运行预制 Demo（首次会下载模型）
+## 2. Run the pre-built demo (downloads model on first run)
 
 ```bash
 python /workspace/demo_qwen_infer.py
 ```
 
-你也可以自定义提示词与生成参数：
+You can also customize the prompt and generation parameters:
 
 ```bash
-export DEMO_PROMPT="请用三点解释什么是 PPO。"
+export DEMO_PROMPT="Explain what PPO is in three bullet points."
 export MAX_NEW_TOKENS=256
 export TEMPERATURE=0.7
 export TOP_P=0.9
 python /workspace/demo_qwen_infer.py
 ```
 
-## 3. 使用 Jupyter（可选）
+## 3. Using Jupyter (optional)
 
-镜像的启动脚本与平台保持一致：**只有设置了 `JUPYTER_PASSWORD` 才会启动 JupyterLab（8888）**。
+The image startup script follows the platform convention: **JupyterLab (port 8888) only starts when `JUPYTER_PASSWORD` is set**.
 
-- Notebook：`/workspace/Verl_Qwen2.5_Demo.ipynb`
+- Notebook: `/workspace/Verl_Qwen2.5_Demo.ipynb`
 
-## 4. 缓存目录
+## 4. Cache directory
 
-- HuggingFace cache：`/workspace/.cache/huggingface`
+- HuggingFace cache: `/workspace/.cache/huggingface`
 
-> 说明：把缓存放在 /workspace 下，方便你们平台做持久化卷映射（如果有）。
+> The cache is placed under /workspace for easy persistent volume mapping on the Yotta platform.

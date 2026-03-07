@@ -1,31 +1,31 @@
 # ==============================
-# Wan2.1-T2V-1.3B ComfyUI 基座构建参数
+# Wan2.1-T2V-1.3B ComfyUI Base Build Arguments
 # ==============================
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
 ARG PYTHON_VERSION="3.11"
 ARG UBUNTU_USER="ubuntu"
 ARG COMFYUI_PORT="8188"
 
-# 是否安装 Nunchaku（默认：否，由 bake 覆盖）
+# Whether to install Nunchaku (default: no, overridable via bake)
 ARG INSTALL_NUNCHAKU="false"
 ARG NUNCHAKU_REPO=""
 ARG NUNCHAKU_REF=""
 
-# Torch / CUDA 相关参数
+# Torch / CUDA parameters
 ARG TORCH_CHANNEL="nightly"
 ARG TORCH_VERSION="2.4.1"
 ARG TORCH_VISION_VERSION="0.19.1"
 ARG TORCH_CUDA="cu128"
 ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 
-# Wan 模型（构建期就下好）
+# Wan model (downloaded at build time)
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 
-# HF token：必须在 bake 里传进来
+# HF token: must be passed in via bake
 ARG HF_TOKEN=""
 
 # ==============================
-# Base: CUDA + 系统依赖 + Python + SSH
+# Base: CUDA + system dependencies + Python + SSH
 # ==============================
 FROM ${BASE_IMAGE} AS base
 
@@ -62,7 +62,7 @@ RUN apt-get update -y && \
     chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 创建普通用户
+# Create regular user
 RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     echo "${UBUNTU_USER}:ubuntu" | chpasswd && \
     mkdir -p /home/${UBUNTU_USER}/.ssh && \
@@ -70,12 +70,12 @@ RUN useradd -m -s /bin/bash "${UBUNTU_USER}" || true && \
     chmod 700 /home/${UBUNTU_USER}/.ssh && \
     mkdir -p "${HF_HOME}" && chown -R ${UBUNTU_USER}:${UBUNTU_USER} "${HF_HOME}"
 
-# SSH 配置
+# SSH configuration
 RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PermitRootLogin prohibit-password/PermitRootLogin no/" /etc/ssh/sshd_config
 
-# 安装 Python
+# Install Python
 RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
     apt-get update -y || true && \
     apt-get install -y --no-install-recommends \
@@ -89,7 +89,7 @@ RUN add-apt-repository ppa:deadsnakes/ppa -y || true && \
 RUN python -m pip --version || (ln -sf /usr/bin/python3 /usr/bin/python && python -m ensurepip)
 
 # ==============================
-# python-env: 安装 PyTorch
+# python-env: install PyTorch
 # ==============================
 FROM base AS python-env
 
@@ -119,7 +119,7 @@ RUN python -m pip install --upgrade pip wheel setuptools && \
         --index-url "https://download.pytorch.org/whl/${TORCH_CUDA}"; \
     fi
 
-# 安装 jupyter 以兼容 start.sh
+# Install jupyter for start.sh compatibility
 RUN python -m pip install --no-cache-dir \
       "jupyterlab>=4.0.0" \
       "notebook" \
@@ -144,11 +144,11 @@ ARG INSTALL_NUNCHAKU
 ARG NUNCHAKU_REPO
 ARG NUNCHAKU_REF
 
-# 构建期 Wan 模型参数
+# Build-time Wan model parameters
 ARG WAN_MODEL_ID="Wan-AI/Wan2.1-T2V-1.3B"
 ARG HF_TOKEN
 
-# 统一模型根目录（默认放 /data，下盘大）
+# Unified model root directory (defaults to /data, large storage)
 ARG MODELS_ROOT="/data/comfyui/models"
 
 ENV MODELS_ROOT=${MODELS_ROOT} \
@@ -157,12 +157,12 @@ ENV MODELS_ROOT=${MODELS_ROOT} \
 
 WORKDIR /home/${UBUNTU_USER}
 
-# ComfyUI 本体
+# ComfyUI core
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git && \
     cd ComfyUI && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-# Manager 节点
+# Manager node
 RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     cd /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     git clone --depth=1 https://github.com/Comfy-Org/ComfyUI-Manager.git ComfyUI-Manager && \
@@ -170,7 +170,7 @@ RUN mkdir -p /home/${UBUNTU_USER}/ComfyUI/custom_nodes && \
     sed -i "s/^import manager_server  # noqa: F401$/try:\\n    import manager_server  # noqa: F401\\nexcept Exception as e:\\n    print('[ComfyUI-Manager] import failed:', e)/" __init__.py
 
 # =========================================
-# 安装 huggingface-cli + 通用下载脚本
+# Install huggingface-cli + generic download script
 # =========================================
 USER root
 RUN python -m pip install --no-cache-dir \
@@ -242,18 +242,18 @@ HF
 
 RUN chmod +x /usr/local/bin/hf_download.sh
 
-# 在镜像里预建 /data/comfyui/models，并授权给 ubuntu
+# Pre-create /data/comfyui/models in image and grant access to ubuntu user
 RUN mkdir -p "${MODELS_ROOT}" && \
     chown -R ${UBUNTU_USER}:${UBUNTU_USER} "$(dirname "${MODELS_ROOT}")"
 
-# 回到 ubuntu 用户继续后续步骤
+# Switch back to ubuntu user for subsequent steps
 USER ${UBUNTU_USER}
 RUN python -m pip install --no-cache-dir --user \
       "GitPython>=3.1.44" \
       "PyGithub" \
       "toml"
 
-# 可选：Nunchaku
+# Optional: Nunchaku
 RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       if [[ -z "${NUNCHAKU_REPO}" ]]; then \
         echo "[ERROR] INSTALL_NUNCHAKU=true but NUNCHAKU_REPO is empty" >&2; exit 2; \
@@ -269,7 +269,7 @@ RUN if [[ "${INSTALL_NUNCHAKU}" == "true" ]]; then \
       fi; \
     fi
 
-# 基础目录：这里不再真实建 ComfyUI/models，而是软链到 MODELS_ROOT
+# Base directories: no longer create ComfyUI/models directly, symlink to MODELS_ROOT instead
 RUN mkdir -p \
       /home/${UBUNTU_USER}/models/ckpt \
       /home/${UBUNTU_USER}/models/vae \
@@ -280,7 +280,7 @@ RUN mkdir -p \
       "${MODELS_ROOT}" && \
     ln -sfn "${MODELS_ROOT}" "/home/${UBUNTU_USER}/ComfyUI/models"
 
-# ========= 构建阶段下载 Wan 模型（HF_TOKEN 必填，完整 snapshot，不再拆散） =========
+# ========= Download Wan model at build time (HF_TOKEN required, full snapshot) =========
 RUN set -euo pipefail && \
     if [ -z "${HF_TOKEN:-}" ]; then \
       echo "[WAN][build] ERROR: HF_TOKEN is empty."; \
@@ -309,11 +309,11 @@ RUN set -euo pipefail && \
     fi && \
     echo "[WAN][build] Download finished, snapshot at ${MODEL_DIR}" && \
     \
-    # 给一个更短好记的 symlink，ComfyUI 里好选
+    # Create a shorter, more memorable symlink for easy selection in ComfyUI
     ln -sfn "${MODEL_DIR}" "/home/${UBUNTU_USER}/ComfyUI/models/wan2.1" && \
     echo "[WAN][build] Symlink created: /home/${UBUNTU_USER}/ComfyUI/models/wan2.1 -> ${MODEL_DIR}"
 
-# ========= 补齐 Wan2.1 Fun Camera 1.3B 相关模型 =========
+# ========= Download supplementary Wan2.1 Fun Camera 1.3B models =========
 RUN set -euo pipefail && \
     REPACK_DIR="${MODELS_ROOT}/wan21_repack" && \
     echo "[WAN2.1-FUN][build] download Comfy-Org/Wan_2.1_ComfyUI_repackaged -> ${REPACK_DIR}" && \
@@ -321,10 +321,10 @@ RUN set -euo pipefail && \
       echo "[WAN2.1-FUN][build] WARNING: HF_TOKEN is empty, will try anonymous download (may fail if repo is gated)" >&2; \
     fi && \
     \
-    # 1) 把 Comfy-Org 的 repack 仓库完整拉下来到 /data/comfyui/models/wan21_repack
+    # 1) Download the full Comfy-Org repack repo to /data/comfyui/models/wan21_repack
     hf_download.sh "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "${REPACK_DIR}" "${HF_TOKEN}" && \
     \
-    # 2) 确保标准目录存在（都在 MODELS_ROOT 下）
+    # 2) Ensure standard directories exist (all under MODELS_ROOT)
     mkdir -p \
       "${MODELS_ROOT}/diffusion_models" \
       "${MODELS_ROOT}/vae" \
@@ -379,7 +379,7 @@ ENV COMFYUI_PORT=${COMFYUI_PORT}
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
-# 这些 context 依赖 buildx bake 里的 contexts 配置
+# These contexts depend on the contexts configuration in buildx bake
 COPY --from=proxy   nginx.conf /etc/nginx/nginx.conf
 COPY --from=proxy   readme.html /usr/share/nginx/html/readme.html
 COPY README.md      /usr/share/nginx/html/README.md
@@ -387,7 +387,7 @@ COPY --from=logo    yotta.txt /etc/yotta.txt
 COPY --from=scripts start.sh /start.sh
 
 # ==============================
-# post_start.sh：仅检查 + 启动 ComfyUI（不再下载）
+# post_start.sh: only checks and starts ComfyUI (no model download)
 # ==============================
 RUN cat >/post_start.sh <<'EOS'
 #!/usr/bin/env bash
@@ -411,7 +411,7 @@ else
   echo "[WAN][runtime][WARN] Model dir not found. Make sure model is baked into image or mounted via volume."
 fi
 
-# ========= 启动 ComfyUI =========
+# ========= Start ComfyUI =========
 sudo -u ubuntu bash -lc "
   cd /home/ubuntu/ComfyUI && \
   python -u main.py \

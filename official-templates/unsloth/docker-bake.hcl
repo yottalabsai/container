@@ -1,20 +1,20 @@
 # ==============================
-# Unsloth Official + Yotta Wrapper 构建
+# Unsloth Official + Yotta Wrapper build
 # ==============================
 
 variable "PUBLISHER"  { default = "yottalabsai" }
 variable "TAG_SUFFIX" { default = "2025122201" }
 
-# 官方推荐：直接用 unsloth/unsloth 作为底座
+# Official recommendation: use unsloth/unsloth directly as the base
 variable "BASE_IMAGE" { default = "unsloth/unsloth:latest" }
 
-# 组：default 只构建一个 unsloth 目标
+# Group: default builds only the single unsloth target
 group "default" {
   targets = ["unsloth"]
 }
 
 # ==============================
-# Unsloth - 官方底座 + Yotta 工具
+# Unsloth - official base + Yotta tools
 # ==============================
 target "unsloth" {
   description = "Official Unsloth Docker image with Yotta tooling"
@@ -25,7 +25,7 @@ target "unsloth" {
     "${PUBLISHER}/unsloth:0.6.9-py3.11-cuda12.1-cudnn-devel-ubuntu22.04",
   ]
 
-  # 为了和你现有体系对齐，这里保留 contexts
+  # Keeping contexts here to align with your existing setup
   contexts = {
     scripts = "../../container-template"
     proxy   = "../../container-template/proxy"

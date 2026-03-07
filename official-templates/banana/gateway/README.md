@@ -1,10 +1,10 @@
 # Go Model Gateway (OpenAI-compatible passthrough)
 
-一个轻量的 **Model API 网关/代理服务**：
-- 对外暴露 OpenAI 风格接口：`/v1/chat/completions`, `/v1/embeddings`, `/v1/responses`
-- 对内把请求转发到你的 **UPSTREAM Model API**（默认 `https://api.openai.com`）
-- 支持 **stream=true 的 SSE 透传**（不解析内容，纯字节流转发）
-- 支持可选默认模型注入、基础限流、结构化日志
+A lightweight **Model API gateway/proxy service**:
+- Exposes OpenAI-style endpoints: `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses`
+- Forwards requests internally to your **UPSTREAM Model API** (default `https://api.openai.com`)
+- Supports **SSE passthrough for streaming** (pure byte-stream forwarding, no content parsing)
+- Supports optional default model injection, basic rate limiting, and structured logging
 
 ## Quick Start (local)
 
@@ -40,16 +40,16 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
 
 | Env | Default | Note |
 |---|---:|---|
-| `ADDR` | `:8080` | 服务监听地址 |
-| `UPSTREAM_BASE_URL` | `https://api.openai.com` | 上游 API Base URL |
-| `UPSTREAM_API_KEY` | *(empty)* | 上游 Key（为空则不注入） |
-| `UPSTREAM_DEFAULT_MODEL` | *(empty)* | 若请求体无 `model`，则注入默认模型 |
-| `UPSTREAM_API_KEY_HEADER` | `Authorization` | 认证头，默认 `Authorization: Bearer <key>` |
-| `RESPECT_CLIENT_AUTH` | `false` | 若客户端已带 Authorization，则不覆盖 |
-| `LOG_REQUESTS` | `true` | 额外请求日志（chi middleware） |
+| `ADDR` | `:8080` | Service listen address |
+| `UPSTREAM_BASE_URL` | `https://api.openai.com` | Upstream API base URL |
+| `UPSTREAM_API_KEY` | *(empty)* | Upstream key (not injected if empty) |
+| `UPSTREAM_DEFAULT_MODEL` | *(empty)* | Default model injected if request body has no `model` field |
+| `UPSTREAM_API_KEY_HEADER` | `Authorization` | Auth header, default `Authorization: Bearer <key>` |
+| `RESPECT_CLIENT_AUTH` | `false` | If client already sends Authorization, do not override |
+| `LOG_REQUESTS` | `true` | Extra request logging (chi middleware) |
 | `LOG_LEVEL` | `info` | debug/info/warn/error |
-| `RATE_LIMIT_RPS` | `0` | 简单限流，0=关闭 |
-| `RATE_LIMIT_BURST` | `0` | burst，默认≈RPS |
+| `RATE_LIMIT_RPS` | `0` | Simple rate limit, 0=disabled |
+| `RATE_LIMIT_BURST` | `0` | Burst size, defaults to ≈RPS |
 
 ## Build image
 

@@ -26,6 +26,7 @@ This repository contains the Dockerfiles for the official [Yotta Labs](https://y
 | [AI Toolkit](official-templates/ai-toolkit/) | `yottalabs/ai-toolkit` | Comprehensive AI/ML toolkit |
 | [VS Code](official-templates/vs-code/) | `yottalabs/vs-code` | Desktop VS Code development environment |
 | [VS Code Server](official-templates/vscode-server/) | `yottalabs/vscode-server` | Browser-based VS Code Server |
+| [GitHub Runner](official-templates/github-runner/) | `yottalabs/github-runner` | GPU-enabled GitHub Actions self-hosted runner |
 
 ## Container Requirements
 

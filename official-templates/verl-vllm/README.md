@@ -7,10 +7,9 @@
 Example:
 
 ```bash
-cd containers/official-templates/verl-vllm
+cd official-templates/verl-vllm
 
 docker buildx bake verl-vllm --push
-
 ```
 
 ## Exposed Ports
@@ -38,7 +37,7 @@ curl http://localhost:8000/v1/chat/completions \
     "model": "Qwen/Qwen2.5-0.5B-Instruct",
     "messages": [
       {"role": "system", "content": "You are Qwen."},
-      {"role": "user", "content": "用两句话解释量子纠缠。"}
+      {"role": "user", "content": "Explain quantum entanglement in two sentences."}
     ],
     "temperature": 0.7,
     "max_tokens": 256
