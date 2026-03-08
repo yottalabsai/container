@@ -1,0 +1,79 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'official-templates/**'
+  workflow_dispatch:
+    inputs:
+      template:
+        description: 'Template name to build (e.g. pytorch). Leave empty to build all changed.'
+        required: false
+        type: string
+
+jobs:
+  detect:
+    name: Detect changed templates
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine templates to build
+        id: set-matrix
+        run: |
+          if [ -n "${{ inputs.template }}" ]; then
+            # Manual dispatch: build the specified template
+            TEMPLATES='["${{ inputs.template }}"]'
+          else
+            # Auto: detect which template directories changed in this push
+            TEMPLATES=$(git diff --name-only HEAD~1 HEAD \
+              | grep '^official-templates/' \
+              | awk -F'/' '{print $2}' \
+              | sort -u \
+              | grep -v '^\s*$' \
+              | while read -r dir; do
+                  [ -f "official-templates/$dir/docker-bake.hcl" ] && echo "$dir"
+                done \
+              | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          fi
+          echo "matrix=${TEMPLATES}" >> "$GITHUB_OUTPUT"
+          echo "Templates to build: ${TEMPLATES}"
+
+  build:
+    name: Build ${{ matrix.template }}
+    needs: detect
+    if: needs.detect.outputs.matrix != '[]' && needs.detect.outputs.matrix != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        working-directory: official-templates/${{ matrix.template }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Pass HF_TOKEN for templates that download models at build time.
+          # Templates without model downloads will ignore the empty arg.
+          docker buildx bake --push \
+            --set "*.args.HF_TOKEN=${HF_TOKEN:-}"
