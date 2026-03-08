@@ -1,0 +1,6 @@
+failure-threshold: warning
+
+ignore:
+  - DL3008  # apt-get: pin package versions — impractical for GPU base images
+  - DL3013  # pip: pin package versions — managed per-template via requirements
+  - DL3059  # multiple consecutive RUN — intentional for layer caching control
