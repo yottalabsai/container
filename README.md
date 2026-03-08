@@ -96,4 +96,4 @@ To report a security vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) © Yotta Labs
+[Apache 2.0](LICENSE) © Yotta Labs
