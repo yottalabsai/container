@@ -21,7 +21,7 @@ All notable changes to this repository are documented here.
 - Updated `wan22-comfyui` and `openclaw` Dockerfiles with improved startup logic
 
 ### Removed
-- Archived legacy templates: `gpt4all`, `log-debugger`, `runpod-stack`, `sd-auto-base`, `sd-models`, `sd-torture-test`, `sd-vlad-base`, `torch-cuda12`
+- Archived legacy templates: `gpt4all`, `log-debugger`, `sd-auto-base`, `sd-models`, `sd-torture-test`, `sd-vlad-base`, `torch-cuda12`
 
 ## [2025-02-01]
 
