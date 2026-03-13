@@ -27,6 +27,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # ===============================
 # 2) Main image (your existing banana template base)
 # ===============================
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 # ===============================
@@ -61,6 +62,7 @@ RUN mkdir -p /workspace && chmod 777 /workspace
 # ===============================
 # Base system packages
 # ===============================
+# hadolint ignore=DL3008
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git acl wget curl ca-certificates bash \

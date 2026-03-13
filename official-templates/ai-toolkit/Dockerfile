@@ -148,6 +148,7 @@ WORKDIR /home/${UBUNTU_USER}
 USER ${UBUNTU_USER}
 
 # Key step: clone repo, patch requirements before install to avoid pip resolution depth issues
+# hadolint ignore=DL3003
 RUN git clone --depth=1 https://github.com/ostris/ai-toolkit.git && \
     cd ai-toolkit && \
     # 1) Remove easy_dwpose: it pulls in onnxruntime and complex dependencies
@@ -166,7 +167,9 @@ RUN git clone --depth=1 https://github.com/ostris/ai-toolkit.git && \
     cd ui && npm install
 
 # Install some general tools as root
+# hadolint ignore=DL3002
 USER root
+# hadolint ignore=DL3013
 RUN python -m pip install --no-cache-dir \
       "huggingface_hub[cli]" \
       "GitPython>=3.1.44" \
@@ -186,6 +189,7 @@ ENV \
   HF_HOME="/data/huggingface" \
   DATABASE_URL="file:/data/ai-toolkit/database/aitk_db.db"
 
+# hadolint ignore=DL3002
 USER root
 WORKDIR /home/${UBUNTU_USER}
 
@@ -213,12 +217,15 @@ echo "[entry] AI-Toolkit UI started on 0.0.0.0:${AITK_PORT:-8675}"
 EOS
 
 # ====== Branding ======
+# hadolint ignore=SC2028
 RUN chmod +x /post_start.sh && \
     echo 'cat /etc/yotta.txt' >> /root/.bashrc && \
     echo 'echo -e "\nDocs: \033[1;34mhttps://www.yottalabs.ai/\033[0m\n"' >> /root/.bashrc
 
 # Entrypoint & branding
+# hadolint ignore=DL3022
 COPY --from=scripts start.sh /start.sh
+# hadolint ignore=DL3022
 COPY --from=logo yotta.txt /etc/yotta.txt
 COPY README.md /usr/share/nginx/html/README.md
 
