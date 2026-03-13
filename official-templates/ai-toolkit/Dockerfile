@@ -16,6 +16,7 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 # ==============================
 # Base OS Layer
 # ==============================
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE} AS base
 ARG PYTHON_VERSION
 ARG UBUNTU_USER
@@ -33,6 +34,7 @@ ENV \
   HF_HOME="/home/${UBUNTU_USER}/.cache/huggingface"
 
 # Base dependencies + non-interactive tzdata configuration
+# hadolint ignore=DL3008
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git git-lfs curl wget ca-certificates \
@@ -61,6 +63,7 @@ RUN sed -i "s/#PasswordAuthentication yes/PasswordAuthentication yes/" /etc/ssh/
     mkdir -p /var/run/sshd
 
 # Python installation
+# hadolint ignore=DL3008,DL3015
 RUN add-apt-repository ppa:deadsnakes/ppa -y && \
     apt-get update -y && \
     apt-get install -y \
@@ -92,6 +95,7 @@ USER ${UBUNTU_USER}
 WORKDIR /home/${UBUNTU_USER}
 
 # Install torch first (requirements depend on it)
+# hadolint ignore=DL3013,SC3010
 RUN python -m pip install --upgrade pip wheel setuptools && \
     if [[ "${TORCH_CHANNEL}" == "nightly" ]]; then \
        echo "[Torch] using nightly channel"; \
@@ -108,6 +112,7 @@ RUN python -m pip install --upgrade pip wheel setuptools && \
     fi
 
 # Jupyter (used with start.sh)
+# hadolint ignore=DL3013
 RUN python -m pip install --no-cache-dir \
       "jupyterlab>=4.0.0" \
       "notebook" \
@@ -116,6 +121,7 @@ RUN python -m pip install --no-cache-dir \
 # Node.js 23
 USER root
 WORKDIR /tmp
+# hadolint ignore=DL3008,DL3015
 RUN curl -sL https://deb.nodesource.com/setup_23.x -o nodesource_setup.sh && \
     bash nodesource_setup.sh && \
     apt-get update && \
