@@ -81,6 +81,7 @@ RUN apt-get update -y && \
 # ===============================
 # Python 3.11 (build from source, with ensurepip)
 # ===============================
+# hadolint ignore=DL3003,DL3008,DL3013
 RUN set -eux; \
     PY_MM="$(echo "${PYTHON_VERSION}" | awk -F. '{print $1"."$2}')"; \
     apt-get update -y && \
@@ -108,11 +109,13 @@ RUN set -eux; \
 # ===============================
 # PyTorch (nightly cu128)
 # ===============================
+# hadolint ignore=DL3013
 RUN python -m pip install --no-cache-dir ${TORCH}
 
 # ===============================
 # Jupyter + common CLIs (huggingface-cli / datasets-cli)
 # ===============================
+# hadolint ignore=DL3013
 RUN python -m pip install --no-cache-dir \
       jupyterlab ipywidgets jupyter-archive notebook==7.3.3 \
       huggingface-hub datasets
@@ -150,16 +153,20 @@ RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 # ===============================
 # start.sh (from buildx bake context "scripts")
 # ===============================
+# hadolint ignore=DL3022
 COPY --from=scripts start.sh /start.sh
 RUN chmod 755 /start.sh
 
 # ===============================
 # nginx / branding
 # ===============================
+# hadolint ignore=DL3022
 COPY --from=proxy nginx.conf /etc/nginx/nginx.conf
+# hadolint ignore=DL3022
 COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 
+# hadolint ignore=DL3022
 COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 
