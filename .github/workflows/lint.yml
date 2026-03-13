@@ -17,3 +17,4 @@ jobs:
         with:
           recursive: true
           config: .hadolint.yaml
+          ignore: DL3006 DL3008 DL3013 DL3059 SC3010

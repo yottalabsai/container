@@ -1,6 +1,8 @@
 failure-threshold: warning
 
 ignore:
+  - DL3006  # FROM without explicit tag — base image supplied via build ARG
   - DL3008  # apt-get: pin package versions — impractical for GPU base images
   - DL3013  # pip: pin package versions — managed per-template via requirements
   - DL3059  # multiple consecutive RUN — intentional for layer caching control
+  - SC3010  # [[ ]] in POSIX sh — false positive; SHELL is set to /bin/bash
