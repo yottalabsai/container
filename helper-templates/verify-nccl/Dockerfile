@@ -5,6 +5,7 @@ ENV NCCL_DEBUG=TRACE
 WORKDIR /verify-nccl
 
 # Install additional packages
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nano \
     pciutils \
