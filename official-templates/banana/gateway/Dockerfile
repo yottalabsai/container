@@ -3,6 +3,7 @@
 FROM golang:1.22-alpine AS builder
 WORKDIR /src
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates git
 
 COPY go.mod go.sum ./
