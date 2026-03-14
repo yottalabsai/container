@@ -21,6 +21,7 @@ COPY start.sh start.sh
 # ==============================
 # Base Image
 # ==============================
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 WORKDIR /
