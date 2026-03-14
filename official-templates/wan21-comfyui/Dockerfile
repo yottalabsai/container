@@ -27,6 +27,7 @@ ARG HF_TOKEN=""
 # ==============================
 # Base: CUDA + system dependencies + Python + SSH
 # ==============================
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE} AS base
 
 ARG PYTHON_VERSION
