@@ -17,5 +17,4 @@ jobs:
         with:
           recursive: true
           config: .hadolint.yaml
-          failure-threshold: warning
-          ignore: DL3006 DL3008 DL3013 DL3059 SC3010 DL3022 DL3002 DL3003 DL3018
+          failure-threshold: error
