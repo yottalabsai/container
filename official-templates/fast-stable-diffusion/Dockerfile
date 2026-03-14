@@ -58,7 +58,7 @@ RUN mkdir -p /root/.cache/huggingface && mkdir /auto-models && mkdir /workspace
 WORKDIR /workspace
 COPY --from=sd-models /SDv1-5.ckpt /auto-models/SDv1-5.ckpt
 COPY --from=sd-models /SDv2-768.ckpt /auto-models/SDv2-768.ckpt
-ADD jupyter_lab_config.py /root/.jupyter/jupyter_lab_config.py
+COPY jupyter_lab_config.py /root/.jupyter/jupyter_lab_config.py
 RUN wget https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors -O /auto-models/sd_xl_base_1.0.safetensors && \
     wget https://huggingface.co/stabilityai/stable-diffusion-xl-refiner-1.0/resolve/main/sd_xl_refiner_1.0.safetensors -O /auto-models/sd_xl_refiner_1.0.safetensors
 
