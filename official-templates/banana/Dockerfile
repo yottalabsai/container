@@ -185,6 +185,7 @@ EXPOSE 22 80 8888 8080
 # ===============================
 # Entrypoint: root runs start.sh directly (without modifying your shared start.sh)
 # ===============================
+# hadolint ignore=DL3002
 USER root
 WORKDIR /root
 CMD ["/bin/bash", "-lc", "exec /start.sh"]

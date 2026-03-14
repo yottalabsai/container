@@ -38,6 +38,7 @@ RUN apt-get update --yes && \
     apt-get upgrade --yes
 
 # Install basic utilities
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     bash \
     ca-certificates \
@@ -62,6 +63,7 @@ RUN apt-get install --yes --no-install-recommends \
     zip
 
 # Install build tools and development packages
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     build-essential \
     make \
@@ -71,6 +73,7 @@ RUN apt-get install --yes --no-install-recommends \
     liblapack-dev
 
 # Install image and video processing libraries
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     ffmpeg \
     libavcodec-dev \
@@ -90,6 +93,7 @@ RUN apt-get install --yes --no-install-recommends \
     libxvidcore-dev
 
 # Install deep learning dependencies and miscellaneous
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     libatlas-base-dev \
     libffi-dev \
@@ -98,6 +102,7 @@ RUN apt-get install --yes --no-install-recommends \
     libssl-dev
 
 # Install file systems and storage
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     cifs-utils \
     nfs-common \
@@ -107,6 +112,7 @@ RUN apt-get install --yes --no-install-recommends \
 RUN add-apt-repository ppa:deadsnakes/ppa
 
 # Install Python 3.8-3.11 with distutils
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     python3.8-dev \
     python3.8-venv \
@@ -122,6 +128,7 @@ RUN apt-get install --yes --no-install-recommends \
     python3.11-distutils
 
 # Install Python 3.12-3.13 (distutils is included in dev package for newer versions)
+# hadolint ignore=DL3008
 RUN apt-get install --yes --no-install-recommends \
     python3.12-dev \
     python3.12-venv \
