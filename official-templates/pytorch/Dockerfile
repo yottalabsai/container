@@ -21,13 +21,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    JUPYTER_PASSWORD=ubuntu
+    JUPYTER_PASSWORD=yotta
 
 # ===============================
 # Workspace
 # ===============================
 WORKDIR /
-RUN mkdir -p /workspace && chmod 777 /workspace
+RUN mkdir -p /workspace && chmod 777 /workspace /root
 
 # ===============================
 # Base system packages
@@ -43,46 +43,16 @@ RUN apt-get update -y && \
       build-essential pkg-config \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
-    && mkdir -p /var/run/sshd \
+    && mkdir -p /var/run/sshd /var/log/supervisor \
+    && chmod 700 /var/run/sshd /var/log/supervisor \
+    && chmod 755 /var/log \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # ===============================
-# uv (Astral) - Python package manager
-# - Install to /usr/local/bin
-# - Avoids modifying shell profile (suitable for container/CI)
+# Remove ubuntu user (for security: prevent unauthorized SSH access)
 # ===============================
-ARG UV_VERSION="latest"
-RUN set -eux; \
-    if [ "${UV_VERSION}" = "latest" ]; then \
-      curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh; \
-    else \
-      curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh; \
-    fi; \
-    uv --version
-
-# ===============================
-# Miniconda
-# ===============================
-ARG MINICONDA_VERSION="py311_24.1.2-0"
-ARG CONDA_DIR="/opt/conda"
-
-RUN set -eux; \
-    ARCH="$(uname -m)"; \
-    case "${ARCH}" in \
-      x86_64)  MINICONDA_ARCH="x86_64" ;; \
-      aarch64) MINICONDA_ARCH="aarch64" ;; \
-      *) echo "Unsupported arch: ${ARCH}" && exit 1 ;; \
-    esac; \
-    curl -fsSL \
-      "https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Linux-${MINICONDA_ARCH}.sh" \
-      -o /tmp/miniconda.sh; \
-    bash /tmp/miniconda.sh -b -p "${CONDA_DIR}"; \
-    rm -f /tmp/miniconda.sh; \
-    "${CONDA_DIR}/bin/conda" config --system --set auto_activate_base false; \
-    "${CONDA_DIR}/bin/conda" clean -afy
-
-RUN ln -sf /opt/conda/bin/conda /usr/local/bin/conda
+RUN userdel -r ubuntu || true
 
 # ===============================
 # Python 3.11 (build from source, with ensurepip)
@@ -100,7 +70,7 @@ RUN set -eux; \
     && tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1 \
     && rm -f /tmp/Python.tgz \
     && cd /tmp/python-src \
-    && ./configure --enable-optimizations --with-ensurepip=install \
+    && ./configure --with-ensurepip=install \
     && make -j"$(nproc)" \
     && make altinstall \
     && cd / \
@@ -124,15 +94,23 @@ RUN python -m pip install --no-cache-dir \
       huggingface-hub datasets
 
 # ===============================
-# Patch: ensure python3.11 has Jupyter (required by /start.sh)
-# Only adds jupyter to the python3.11 environment, does not modify the existing pip install logic
+# Build-time assertion: verify Jupyter installation
 # ===============================
-RUN /usr/local/bin/python3.11 -m ensurepip --upgrade && \
-    /usr/local/bin/python3.11 -m pip install --no-cache-dir \
-      jupyterlab ipywidgets jupyter-archive notebook==7.3.3
+RUN python -c "import jupyter; import notebook; import jupyterlab; print('jupyter ok')"
 
-# Build-time assertion: prevents pushing a broken image
-RUN /usr/local/bin/python3.11 -c "import jupyter; import notebook; import jupyterlab; print('python3.11 jupyter ok')"
+# ===============================
+# Configure JupyterLab: auto-login with token (no password prompt)
+# ===============================
+RUN mkdir -p /root/.jupyter && printf '%s\n' \
+    'c.ServerApp.token = "yotta"' \
+    'c.ServerApp.password = ""' \
+    'c.ServerApp.allow_remote_access = True' \
+    'c.ServerApp.allow_origin = "*"' \
+    'c.NotebookApp.token = "yotta"' \
+    'c.NotebookApp.password = ""' \
+    'c.NotebookApp.allow_remote_access = True' \
+    > /root/.jupyter/jupyter_lab_config.py && \
+    chmod 600 /root/.jupyter/jupyter_lab_config.py
 
 # ===============================
 # NCCL tests (build from source, force MPI=0 to avoid mpi.h missing)
@@ -144,20 +122,6 @@ RUN set -eux; \
     ln -sf /opt/nccl-tests/build/* /usr/local/bin/; \
     rm -rf /opt/nccl-tests/.git
 
-# ===============================
-# User
-# ===============================
-RUN useradd -ms /bin/bash ubuntu && \
-    usermod -aG sudo ubuntu && \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
-    echo "ubuntu:ubuntu" | chpasswd
-
-# ===============================
-# SSH config (start.sh handles sshd startup; this ensures password login is enabled)
-# ===============================
-RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
-    sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    rm -f /etc/ssh/ssh_host_*
 
 # ===============================
 # CUDA bin convenience
@@ -165,10 +129,16 @@ RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/
 RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 
 # ===============================
-# start.sh (from buildx bake context "scripts")
+# Supervisor configuration
 # ===============================
-COPY --from=scripts start.sh /start.sh
-RUN chmod 755 /start.sh
+RUN mkdir -p /var/log/supervisor /usr/local/bin && \
+    chmod 777 /var/log/supervisor /workspace /var/run /var/lib/nginx && \
+    mkdir -p /run/sshd && \
+    chmod 700 /run/sshd
+
+COPY --from=scripts start1.sh /start1.sh
+RUN chmod 755 /start1.sh && \
+    sed -i 's/\r$//' /start1.sh
 
 # ===============================
 # nginx / branding
@@ -186,8 +156,8 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 EXPOSE 22 80 8888
 
 # ===============================
-# Entrypoint: root runs start.sh directly (does not modify the shared start.sh)
+# Entrypoint: root runs start1.sh with explicit bash (ensures bash syntax works)
 # ===============================
 USER root
 WORKDIR /root
-CMD ["/bin/bash", "-lc", "exec /start.sh"]
+CMD ["/bin/bash", "-c", "exec /bin/bash /start1.sh"]
