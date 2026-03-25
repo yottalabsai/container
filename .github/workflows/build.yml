@@ -190,11 +190,13 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SHA_SHORT="${PR_HEAD_SHA::7}"
+          # On workflow_dispatch PR_HEAD_SHA is empty; fall back to GITHUB_SHA
+          RESOLVE_SHA="${PR_HEAD_SHA:-${GITHUB_SHA}}"
+          SHA_SHORT="${RESOLVE_SHA::7}"
 
-          # Use the bake file at the exact PR HEAD commit so target names and
+          # Use the bake file at the exact commit so target names and
           # Docker Hub tags match what CI built.
-          git checkout "${PR_HEAD_SHA}" -- "official-templates/${TEMPLATE}/docker-bake.hcl"
+          git checkout "${RESOLVE_SHA}" -- "official-templates/${TEMPLATE}/docker-bake.hcl"
 
           # For each bake target, copy its GHCR image to the Docker Hub tag
           # defined in the bake file. skopeo is pre-installed on ubuntu-latest.
