@@ -110,6 +110,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TEMPLATE: ${{ matrix.template }}
+          BUILDX_BAKE_ENTITLEMENTS_FS: "0"
         run: |
           SHA_SHORT="${GITHUB_SHA::7}"
           CACHE_REF="yottalabsai/buildcache:${TEMPLATE}"
