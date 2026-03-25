@@ -14,7 +14,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ===============================
 ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
-    PATH=/usr/local/bin:/usr/bin:/bin:$PATH \
+    PATH=/opt/aws/neuron/bin:/usr/local/bin:/usr/bin:/bin:$PATH \
     NEURON_RT_NUM_CORES=1 \
     HF_HOME=/workspace/hf \
     JUPYTER_PASSWORD=ubuntu
