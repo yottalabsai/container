@@ -6,6 +6,7 @@ FROM ${BASE_IMAGE}
 # ===============================
 ARG TORCH_NEURONX_VERSION="2.*"
 ARG NEURONX_CC_VERSION="2.*"
+ARG MINI_SGLANG_NEURON_COMMIT="e984a5b7aaf539698b94e7f9fdadb1e40b8ff155"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -96,11 +97,22 @@ RUN python3.11 -m pip install --no-cache-dir \
 # Hugging Face stack + JupyterLab
 # ===============================
 RUN python3.11 -m pip install --no-cache-dir \
-      transformers datasets huggingface_hub accelerate \
+      "transformers>=4.56.0,<4.57.3" datasets huggingface_hub accelerate \
       jupyterlab ipywidgets jupyter-archive "notebook==7.3.3"
+
+# ===============================
+# mini-sglang-neuron (Yotta LLM inference for Trainium/Inferentia)
+# ===============================
+RUN python3.11 -m pip install --no-cache-dir ninja && \
+    git clone https://github.com/yottalabsai/mini-sglang-neuron.git \
+      /opt/mini-sglang-neuron && \
+    git -C /opt/mini-sglang-neuron checkout "${MINI_SGLANG_NEURON_COMMIT}" && \
+    python3.11 -m pip install --no-cache-dir /opt/mini-sglang-neuron && \
+    chmod +x /opt/mini-sglang-neuron/server.sh /opt/mini-sglang-neuron/run_minisgl.sh
 
 # Build-time assertion: prevents pushing a broken image
 RUN python3.11 -c "import jupyter; import jupyterlab; print('python3.11 jupyter ok')"
+RUN python3.11 -c "import minisgl; print('minisgl ok')"
 
 # ===============================
 # User
