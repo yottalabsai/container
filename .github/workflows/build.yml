@@ -31,6 +31,10 @@ on:
         default: 'ci'
         type: choice
         options: [ci, cd]
+      sha:
+        description: 'Full or short SHA of the GHCR image to promote (cd mode only). Defaults to HEAD.'
+        required: false
+        type: string
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CI jobs
@@ -190,8 +194,9 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # On workflow_dispatch PR_HEAD_SHA is empty; fall back to GITHUB_SHA
-          RESOLVE_SHA="${PR_HEAD_SHA:-${GITHUB_SHA}}"
+          # Priority: manual sha input → PR head → current HEAD
+          RESOLVE_SHA="${{ inputs.sha }}"
+          RESOLVE_SHA="${RESOLVE_SHA:-${PR_HEAD_SHA:-${GITHUB_SHA}}}"
           SHA_SHORT="${RESOLVE_SHA::7}"
 
           # Use the bake file at the exact commit so target names and
