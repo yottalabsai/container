@@ -78,8 +78,8 @@ docker run --rm --device /dev/neuron0 $IMAGE /opt/aws/neuron/bin/neuron-ls
 docker run --rm --device /dev/neuron0 $IMAGE \
   python3.11 -c "import torch_neuronx; print(torch_neuronx.__version__)"
 
-# Verify neuronx-cc (compiler)
-docker run --rm --device /dev/neuron0 $IMAGE /opt/aws/neuron/bin/neuronx-cc --version
+# Verify neuronx-cc (compiler) — pip-installed, lives in /usr/local/bin
+docker run --rm --device /dev/neuron0 $IMAGE neuronx-cc --version
 ```
 
 Minimal compile-and-run test (inside the container or via `docker exec`):
