@@ -107,7 +107,9 @@ RUN python3.11 -m pip install --no-cache-dir ninja && \
     git clone https://github.com/yottalabsai/mini-sglang-neuron.git \
       /opt/mini-sglang-neuron && \
     git -C /opt/mini-sglang-neuron checkout "${MINI_SGLANG_NEURON_COMMIT}" && \
-    python3.11 -m pip install --no-cache-dir /opt/mini-sglang-neuron && \
+    python3.11 -m pip install --no-cache-dir \
+      --extra-index-url https://pip.repos.neuron.amazonaws.com \
+      /opt/mini-sglang-neuron && \
     chmod +x /opt/mini-sglang-neuron/server.sh /opt/mini-sglang-neuron/run_minisgl.sh
 
 # Build-time assertion: prevents pushing a broken image
