@@ -1,4 +1,5 @@
 ARG BASE_IMAGE
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -37,7 +38,8 @@ RUN apt-get update --yes && \
     apt-get upgrade --yes
 
 # Install basic utilities
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     bash \
     ca-certificates \
     curl \
@@ -61,7 +63,8 @@ RUN apt install --yes --no-install-recommends \
     zip
 
 # Install build tools and development packages
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     build-essential \
     make \
     cmake \
@@ -70,7 +73,8 @@ RUN apt install --yes --no-install-recommends \
     liblapack-dev
 
 # Install image and video processing libraries
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     ffmpeg \
     libavcodec-dev \
     libavfilter-dev \
@@ -89,7 +93,8 @@ RUN apt install --yes --no-install-recommends \
     libxvidcore-dev
 
 # Install deep learning dependencies and miscellaneous
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     libatlas-base-dev \
     libffi-dev \
     libhdf5-serial-dev \
@@ -97,7 +102,8 @@ RUN apt install --yes --no-install-recommends \
     libssl-dev
 
 # Install file systems and storage
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     cifs-utils \
     nfs-common \
     zstd
@@ -106,7 +112,8 @@ RUN apt install --yes --no-install-recommends \
 RUN add-apt-repository ppa:deadsnakes/ppa
 
 # Install Python 3.8-3.11 with distutils
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     python3.8-dev \
     python3.8-venv \
     python3.8-distutils \
@@ -121,7 +128,8 @@ RUN apt install --yes --no-install-recommends \
     python3.11-distutils
 
 # Install Python 3.12-3.13 (distutils is included in dev package for newer versions)
-RUN apt install --yes --no-install-recommends \
+# hadolint ignore=DL3008
+RUN apt-get install --yes --no-install-recommends \
     python3.12-dev \
     python3.12-venv \
     python3.13-dev \

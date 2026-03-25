@@ -1,0 +1,12 @@
+failure-threshold: warning
+
+ignore:
+  - DL3006  # FROM without explicit tag — base image supplied via build ARG
+  - DL3008  # apt-get: pin package versions — impractical for GPU base images
+  - DL3013  # pip: pin package versions — managed per-template via requirements
+  - DL3059  # multiple consecutive RUN — intentional for layer caching control
+  - SC3010  # [[ ]] in POSIX sh — false positive; SHELL is set to /bin/bash
+  - DL3022  # COPY --from references external bake context (proxy, scripts, logo, base)
+  - DL3002  # Last USER is root — intentional for GPU/system containers
+  - DL3003  # Use WORKDIR instead of cd — cd used inside complex RUN scripts
+  - DL3018  # Pin versions in apk add — base image version managed externally
