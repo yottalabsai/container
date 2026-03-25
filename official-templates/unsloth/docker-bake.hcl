@@ -3,7 +3,7 @@
 # ==============================
 
 variable "PUBLISHER"  { default = "yottalabsai" }
-variable "TAG_SUFFIX" { default = "2026032501" }
+variable "TAG_SUFFIX" { default = "2025122201" }
 
 # Official recommendation: use unsloth/unsloth directly as the base
 variable "BASE_IMAGE" { default = "unsloth/unsloth:latest" }
