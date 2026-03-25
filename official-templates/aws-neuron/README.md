@@ -5,6 +5,7 @@ Container image for AWS Inferentia2 (inf2) and Trainium (trn1/trn2) hardware.
 ### What's included
 
 - Python 3.11
+- **[Mini-SGLang](https://github.com/yottalabsai/mini-sglang-neuron)** — Yotta Labs LLM inference server (Radix Cache, chunked prefill, tensor parallelism)
 - torch-neuronx, torchvision, torchaudio (Neuron pip repo)
 - neuronx-cc (Neuron compiler)
 - transformers-neuronx, neuronx-distributed
@@ -72,7 +73,7 @@ Add `--device /dev/neuron1`, `--device /dev/neuron2`, … for multi-chip instanc
 IMAGE="yottalabsai/aws-neuron:py3.11-ubuntu22.04-<tag>"
 
 # List Neuron devices
-docker run --rm --device /dev/neuron0 $IMAGE /opt/aws/neuron/bin/neuron-ls
+docker run --rm --device /dev/neuron0 $IMAGE neuron-ls
 
 # Verify torch-neuronx
 docker run --rm --device /dev/neuron0 $IMAGE \
@@ -95,6 +96,47 @@ print(traced(example))  # runs on NeuronCore
 ```
 
 > **Common gotcha**: `RuntimeError: No Neuron devices found` means either the host driver is not installed or `--device /dev/neuron0` was omitted from the `docker run` command.
+
+---
+
+## Mini-SGLang Inference Server
+
+Mini-SGLang is pre-installed at `/opt/mini-sglang-neuron`. Start the OpenAI-compatible API server:
+
+```bash
+docker exec -it aws-neuron bash
+cd /opt/mini-sglang-neuron
+bash server.sh
+```
+
+Or run a model directly:
+
+```bash
+docker exec -it aws-neuron bash /opt/mini-sglang-neuron/run_minisgl.sh
+```
+
+---
+
+## Verify
+
+```bash
+# Neuron devices
+docker exec aws-neuron neuron-ls
+
+# torch-neuronx version
+docker exec aws-neuron python3.11 -c "import torch_neuronx; print(torch_neuronx.__version__)"
+
+# Mini-SGLang
+docker exec aws-neuron python3.11 -c "import minisgl; print('Mini-SGLang ready')"
+```
+
+---
+
+## Source
+
+- Container templates: [github.com/yottalabsai/container](https://github.com/yottalabsai/container)
+- Mini-SGLang: [github.com/yottalabsai/mini-sglang-neuron](https://github.com/yottalabsai/mini-sglang-neuron)
+- Yotta Labs: [yottalabs.ai](https://yottalabs.ai)
 
 ---
 
