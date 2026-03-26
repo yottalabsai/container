@@ -4,8 +4,8 @@ FROM ${BASE_IMAGE}
 # ===============================
 # Build args
 # ===============================
-ARG TORCH_NEURONX_VERSION="2.*"
-ARG NEURONX_CC_VERSION="2.*"
+ARG TORCH_NEURONX_VERSION="2.8.*"
+ARG NEURONX_CC_VERSION="2.21.*"
 ARG MINI_SGLANG_NEURON_COMMIT="e984a5b7aaf539698b94e7f9fdadb1e40b8ff155"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
