@@ -1,0 +1,54 @@
+name: Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  hadolint:
+    name: Dockerfile lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install hadolint
+        run: |
+          curl -sSLo /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x /usr/local/bin/hadolint
+
+      - name: Run Hadolint
+        run: |
+          # Exclude files that use bash heredocs (cat <<'EOF') inside RUN instructions,
+          # which confuse hadolint v2.12 parser — tracked for fix in a follow-up PR.
+          #
+          # Rules suppressed (GPU containers intentionally violate these best-practices):
+          #   DL3006 FROM without explicit tag (base image via ARG)
+          #   DL3008 pin apt-get versions (impractical for GPU base images)
+          #   DL3013 pin pip versions (managed per-template via requirements)
+          #   DL3059 multiple consecutive RUN (intentional for layer caching)
+          #   SC3010 [[ ]] in POSIX sh (false positive; SHELL is /bin/bash)
+          #   DL3022 COPY --from external bake context (proxy, scripts, logo)
+          #   DL3002 last USER is root (intentional for GPU/system containers)
+          #   DL3003 cd in RUN (used inside complex shell scripts)
+          #   DL3018 pin apk versions (base image version managed externally)
+          #   DL3042 pip cache dir (using --no-cache-dir where needed)
+          find . -name Dockerfile \
+            ! -path './official-templates/comfyui/Dockerfile' \
+            ! -path './official-templates/dflash/Dockerfile' \
+            ! -path './official-templates/flux1dev-comfyui/Dockerfile' \
+            ! -path './official-templates/skyrl/Dockerfile' \
+            ! -path './official-templates/wan22-comfyui/Dockerfile' \
+            -print0 | sort -z | xargs -0 hadolint \
+              --failure-threshold error \
+              --ignore DL3006 \
+              --ignore DL3008 \
+              --ignore DL3013 \
+              --ignore DL3059 \
+              --ignore SC3010 \
+              --ignore DL3022 \
+              --ignore DL3002 \
+              --ignore DL3003 \
+              --ignore DL3018 \
+              --ignore DL3042

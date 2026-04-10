@@ -1,0 +1,219 @@
+name: Build and Push
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CI  — triggered on every PR: builds images and pushes to GHCR for validation.
+# CD  — triggered when a PR is merged: promotes the GHCR image to Docker Hub
+#        via skopeo copy (no rebuild).
+# ──────────────────────────────────────────────────────────────────────────────
+
+on:
+  # CI: validate every PR that touches a template
+  pull_request:
+    paths:
+      - 'official-templates/**'
+
+  # CD: promote on merge
+  pull_request_target:
+    types: [closed]
+    paths:
+      - 'official-templates/**'
+
+  # Manual override for both CI and CD
+  workflow_dispatch:
+    inputs:
+      template:
+        description: 'Template name to build (e.g. pytorch). Leave empty to build all changed.'
+        required: false
+        type: string
+      mode:
+        description: 'ci = build to GHCR only, cd = promote GHCR → Docker Hub'
+        required: false
+        default: 'ci'
+        type: choice
+        options: [ci, cd]
+      sha:
+        description: 'Full or short SHA of the GHCR image to promote (cd mode only). Defaults to HEAD.'
+        required: false
+        type: string
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CI jobs
+# ──────────────────────────────────────────────────────────────────────────────
+jobs:
+  ci-detect:
+    name: CI — Detect changed templates
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'ci')
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine templates to build
+        id: set-matrix
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "${{ inputs.template }}" ]; then
+            TEMPLATES='["${{ inputs.template }}"]'
+          else
+            TEMPLATES=$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" \
+              | grep '^official-templates/' \
+              | awk -F'/' '{print $2}' \
+              | sort -u \
+              | grep -v '^\s*$' \
+              | while read -r dir; do
+                  [ -f "official-templates/$dir/docker-bake.hcl" ] && echo "$dir"
+                done \
+              | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          fi
+          echo "matrix=${TEMPLATES}" >> "$GITHUB_OUTPUT"
+          echo "Templates to build: ${TEMPLATES}"
+
+  ci-build:
+    name: CI — Build ${{ matrix.template }}
+    needs: ci-detect
+    if: needs.ci-detect.outputs.matrix != '[]' && needs.ci-detect.outputs.matrix != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.ci-detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub (for registry cache read)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push to GHCR
+        working-directory: official-templates/${{ matrix.template }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TEMPLATE: ${{ matrix.template }}
+          BUILDX_BAKE_ENTITLEMENTS_FS: "0"
+        run: |
+          SHA_SHORT="${GITHUB_SHA::7}"
+          CACHE_REF="yottalabsai/buildcache:${TEMPLATE}"
+
+          # Override each bake target's tags to GHCR.
+          # Tag scheme: ghcr.io/yottalabsai/<template>:<target>-sha-<sha>
+          # Using per-target tags handles multi-target bake files (e.g. base has 8 targets).
+          OVERRIDES=$(docker buildx bake --print 2>/dev/null \
+            | jq -r --arg tmpl "${TEMPLATE}" --arg sha "${SHA_SHORT}" \
+                '.target | keys[] | "--set \(.).tags=ghcr.io/yottalabsai/\($tmpl):\(.)-sha-\($sha)"' \
+            | tr '\n' ' ')
+
+          eval "docker buildx bake ${OVERRIDES} \
+            --set '*.cache-from=type=registry,ref=${CACHE_REF}' \
+            --set '*.cache-to=type=registry,ref=${CACHE_REF},mode=max' \
+            --set '*.args.HF_TOKEN=${HF_TOKEN:-}' \
+            --push"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CD jobs
+# ──────────────────────────────────────────────────────────────────────────────
+  cd-detect:
+    name: CD — Detect merged templates
+    if: >
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true) ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'cd')
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine templates to promote
+        id: set-matrix
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "${{ inputs.template }}" ]; then
+            TEMPLATES='["${{ inputs.template }}"]'
+          else
+            TEMPLATES=$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" \
+              | grep '^official-templates/' \
+              | awk -F'/' '{print $2}' \
+              | sort -u \
+              | grep -v '^\s*$' \
+              | while read -r dir; do
+                  [ -f "official-templates/$dir/docker-bake.hcl" ] && echo "$dir"
+                done \
+              | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          fi
+          echo "matrix=${TEMPLATES}" >> "$GITHUB_OUTPUT"
+          echo "Templates to promote: ${TEMPLATES}"
+
+  cd-promote:
+    name: CD — Promote ${{ matrix.template }} → Docker Hub
+    needs: cd-detect
+    if: needs.cd-detect.outputs.matrix != '[]' && needs.cd-detect.outputs.matrix != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.cd-detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Promote GHCR → Docker Hub
+        env:
+          TEMPLATE: ${{ matrix.template }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Priority: manual sha input → PR head → current HEAD
+          RESOLVE_SHA="${{ inputs.sha }}"
+          RESOLVE_SHA="${RESOLVE_SHA:-${PR_HEAD_SHA:-${GITHUB_SHA}}}"
+          SHA_SHORT="${RESOLVE_SHA::7}"
+
+          # Use the bake file at the exact commit so target names and
+          # Docker Hub tags match what CI built.
+          git checkout "${RESOLVE_SHA}" -- "official-templates/${TEMPLATE}/docker-bake.hcl"
+
+          # For each bake target, copy its GHCR image to the Docker Hub tag
+          # defined in the bake file. skopeo is pre-installed on ubuntu-latest.
+          cd "official-templates/${TEMPLATE}"
+          docker buildx bake --print 2>/dev/null \
+            | jq -r '.target | to_entries[] | "\(.key) \(.value.tags[])"' \
+            | while IFS=' ' read -r target dh_tag; do
+                src="docker://ghcr.io/yottalabsai/${TEMPLATE}:${target}-sha-${SHA_SHORT}"
+                dst="docker://${dh_tag}"
+                echo "Promoting ${src} → ${dst}"
+                skopeo copy \
+                  --src-creds "x-access-token:${GITHUB_TOKEN}" \
+                  --dest-creds "${DOCKERHUB_USERNAME}:${DOCKERHUB_TOKEN}" \
+                  "${src}" "${dst}"
+              done

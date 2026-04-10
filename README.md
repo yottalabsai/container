@@ -38,18 +38,6 @@ All official images must include the following to integrate with the Yotta platf
 - `openssh-server` — SSH access to the container
 - `jupyterlab` — JupyterLab notebook access
 
-### `yotta.yaml`
-
-Each container folder must include a `yotta.yaml` describing its version and exposed services:
-
-```yaml
-version: '1.0.0'
-services:
-  - name: 'my-service'
-    port: 9000
-    proxy_port: 9001
-```
-
 ### `README.md`
 
 Each container folder must include a `README.md`. This file is displayed on Docker Hub and in the Yotta platform UI. It is also served to users when a proxied port is not yet ready.

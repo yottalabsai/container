@@ -21,6 +21,7 @@ COPY start.sh start.sh
 # ==============================
 # Base Image
 # ==============================
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 WORKDIR /
@@ -92,7 +93,7 @@ RUN set -eux; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# root SSH 目录（给平台注入 key 用）
+# root SSH directory (for platform key injection)
 RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 # ==============================
@@ -155,7 +156,7 @@ RUN if [[ "${INSTALL_FLASHINFER}" = "true" ]]; then \
     fi
 
 # ==============================
-# 构建阶段下载模型（使用 HF_TOKEN）
+# Download model at build time (using HF_TOKEN)
 # ==============================
 ARG HF_TOKEN
 RUN set -euo pipefail && \
@@ -165,7 +166,7 @@ RUN set -euo pipefail && \
     echo "[build] HF_MODEL_ID=${HF_MODEL_ID}" && \
     echo "[build] MODEL_DIR=${MODEL_DIR}" && \
     \
-    # 1) 强制要求 HF_TOKEN 非空
+    # 1) Require non-empty HF_TOKEN
     if [[ -z "${HF_TOKEN:-}" ]]; then \
       echo "[build] ERROR: HF_TOKEN is empty." >&2; \
       echo "[build] Please pass HF_TOKEN via buildx bake, e.g.:" >&2; \    
@@ -173,7 +174,7 @@ RUN set -euo pipefail && \
       exit 2; \
     fi && \
     \
-    # 2) 下载模型（必须成功）
+    # 2) Download model (must succeed)
     echo "[build] Downloading model at build time..." && \
     huggingface-cli download \
       "${HF_MODEL_ID}" \
@@ -182,7 +183,7 @@ RUN set -euo pipefail && \
       --resume-download \
       --token "${HF_TOKEN}" && \
     \
-    # 3) 下载完成后检查目录
+    # 3) Verify model directory after download
     if [[ ! -d "${MODEL_DIR}" ]]; then \
       echo "[build] ERROR: MODEL_DIR ${MODEL_DIR} does not exist after download" >&2; \
       exit 3; \
@@ -226,7 +227,7 @@ COPY --from=logo yotta.txt /etc/yotta.txt
 RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc || true
 
 # ==============================
-# post_start.sh: 启动 vLLM(root) + OpenClaw(user)
+# post_start.sh: start vLLM (root) + OpenClaw (user)
 # ==============================
 RUN cat >/post_start.sh <<'EOF'
 #!/usr/bin/env bash
