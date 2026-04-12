@@ -60,7 +60,7 @@ setup_ssh() {
     echo "SSH host keys:"
     for key in /etc/ssh/*.pub; do
         echo "Key: $key"
-        ssh-keygen -lf $key
+        ssh-keygen -lf "$key"
     done
 
 }
