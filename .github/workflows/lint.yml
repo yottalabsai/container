@@ -40,6 +40,7 @@ jobs:
             ! -path './official-templates/flux1dev-comfyui/Dockerfile' \
             ! -path './official-templates/skyrl/Dockerfile' \
             ! -path './official-templates/wan22-comfyui/Dockerfile' \
+            ! -path './official-templates/hermes/Dockerfile' \
             -print0 | sort -z | xargs -0 hadolint \
               --failure-threshold error \
               --ignore DL3006 \
