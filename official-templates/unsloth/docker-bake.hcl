@@ -22,7 +22,7 @@ target "unsloth" {
   platforms   = ["linux/amd64"]
 
   tags = [
-    "${PUBLISHER}/unsloth:0.6.9-py3.11-cuda12.1-cudnn-devel-ubuntu22.04",
+    "${PUBLISHER}/unsloth:0.6.9-py3.11-cuda12.1-cudnn-devel-ubuntu22.04-260407",
   ]
 
   # Keeping contexts here to align with your existing setup
