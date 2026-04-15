@@ -97,7 +97,6 @@ RUN python -m pip install --no-cache-dir \
 # Build-time assertion: verify Jupyter installation
 # ===============================
 RUN python -c "import jupyter; import notebook; import jupyterlab; print('jupyter ok')"
-
 # ===============================
 # Configure JupyterLab: auto-login with token (no password prompt)
 # ===============================
@@ -136,9 +135,9 @@ RUN mkdir -p /usr/local/bin && \
     mkdir -p /run/sshd && \
     chmod 700 /run/sshd
 
-COPY --from=scripts start1.sh /start1.sh
-RUN chmod 755 /start1.sh && \
-    sed -i 's/\r$//' /start1.sh
+COPY --from=scripts updated_start.sh /updated_start.sh
+RUN chmod 755 /updated_start.sh && \
+    sed -i 's/\r$//' /updated_start.sh
 
 # ===============================
 # nginx / branding
@@ -156,8 +155,8 @@ RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
 EXPOSE 22 80 8888
 
 # ===============================
-# Entrypoint: root runs start1.sh with explicit bash (ensures bash syntax works)
+# Entrypoint: root runs updated_start.sh with explicit bash (ensures bash syntax works)
 # ===============================
 USER root
 WORKDIR /root
-CMD ["/bin/bash", "-c", "exec /bin/bash /start1.sh"]
+CMD ["/bin/bash", "-c", "exec /bin/bash /updated_start.sh"]
