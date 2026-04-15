@@ -131,8 +131,8 @@ RUN ln -sf /usr/local/cuda/bin/* /usr/bin/ || true
 # ===============================
 # Supervisor configuration
 # ===============================
-RUN mkdir -p /var/log/supervisor /usr/local/bin && \
-    chmod 777 /var/log/supervisor /workspace /var/run /var/lib/nginx && \
+RUN mkdir -p /usr/local/bin && \
+    chmod 755 /workspace /var/run /var/lib/nginx && \
     mkdir -p /run/sshd && \
     chmod 700 /run/sshd
 
