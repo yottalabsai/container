@@ -70,7 +70,7 @@ RUN set -eux; \
     && tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1 \
     && rm -f /tmp/Python.tgz \
     && cd /tmp/python-src \
-    && ./configure --with-ensurepip=install \
+    && ./configure --enable-optimizations --with-ensurepip=install \
     && make -j"$(nproc)" \
     && make altinstall \
     && cd / \
