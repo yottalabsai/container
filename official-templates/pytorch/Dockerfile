@@ -1,4 +1,5 @@
 ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 # ===============================
@@ -70,7 +71,7 @@ RUN set -eux; \
     && tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1 \
     && rm -f /tmp/Python.tgz \
     && cd /tmp/python-src \
-    && ./configure --enable-optimizations --with-ensurepip=install \
+    && ./configure --with-ensurepip=install \
     && make -j"$(nproc)" \
     && make altinstall \
     && cd / \

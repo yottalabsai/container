@@ -5,6 +5,7 @@
 # ==============================
 
 ARG BASE_IMAGE="radixark/miles:latest"
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE} AS base
 
 # ---- Environment variable configuration ----

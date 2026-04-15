@@ -21,6 +21,7 @@ ARG TORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly"
 # ==============================
 # Base: CUDA + system dependencies + Python + SSH
 # ==============================
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE} AS base
 
 ARG PYTHON_VERSION
