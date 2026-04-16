@@ -11,7 +11,7 @@ FROM scratch AS logo
 COPY container-template/yotta.txt yotta.txt
 
 FROM scratch AS scripts
-COPY start1.sh start1.sh
+COPY updated_start.sh updated_start.sh
 
 # nginx config / landing page (keep as its own stage to match existing COPY --from=proxy)
 FROM scratch AS proxy
@@ -155,9 +155,9 @@ COPY README.md /usr/share/nginx/html/README.md
 # =========================================================
 # start.sh (must be kept as-is)
 # =========================================================
-COPY --from=scripts start1.sh /start1.sh
-RUN chmod 755 /start1.sh && \
-    sed -i 's/\r$//' /start1.sh
+COPY --from=scripts updated_start.sh /updated_start.sh
+RUN chmod 755 /updated_start.sh && \
+    sed -i 's/\r$//' /updated_start.sh
 
 # =========================================================
 # Branding
@@ -178,8 +178,8 @@ RUN chown -R root:root /workspace || true
 EXPOSE 22 80 8888 6006
 
 # =========================================================
-# Entrypoint: root runs start1.sh with explicit bash
+# Entrypoint: root runs updated_start.sh with explicit bash
 # =========================================================
 USER root
 WORKDIR /root
-CMD ["/bin/bash", "-c", "exec /bin/bash /start1.sh"]
+CMD ["/bin/bash", "-c", "exec /bin/bash /updated_start.sh"]
