@@ -1,11 +1,17 @@
 # ===============================
+# Build args
+# ===============================
+ARG PYTHON_VERSION="3.12.11"
+ARG NCCL_TESTS_VERSION="v2.13.11"
+
+# ===============================
 # logo + scripts + proxy stages
 # ===============================
 FROM scratch AS logo
 COPY container-template/yotta.txt yotta.txt
 
 FROM scratch AS scripts
-COPY container-template/start.sh start.sh
+COPY updated_start.sh updated_start.sh
 
 # nginx config / landing page (keep as its own stage to match existing COPY --from=proxy)
 FROM scratch AS proxy
@@ -18,13 +24,20 @@ COPY readme.html readme.html
 # =========================================================
 FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04
 
+# Re-declare ARGs after FROM so they are available in this stage
+ARG PYTHON_VERSION="3.12.11"
+ARG NCCL_TESTS_VERSION="v2.13.11"
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
+    JUPYTER_PASSWORD=yotta
 
 WORKDIR /workspace
 
@@ -43,69 +56,74 @@ RUN set -eux; \
       iproute2 iputils-ping dnsutils \
       nginx openssh-server openssh-client \
       libnccl2 libnccl-dev \
-      python3 python3-venv python3-pip \
       software-properties-common \
+      libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+      libffi-dev libncursesw5-dev xz-utils tk-dev uuid-dev liblzma-dev \
       tini; \
     git lfs install; \
     ln -sf /usr/share/zoneinfo/UTC /etc/localtime; \
     echo "C.UTF-8 UTF-8" > /etc/locale.gen; \
     locale-gen; \
+    mkdir -p /var/run/sshd /var/log/supervisor; \
+    chmod 700 /var/run/sshd /var/log/supervisor; \
+    chmod 755 /var/log; \
     rm -rf /var/lib/apt/lists/*
 
 # =========================================================
-# Users: ubuntu (compat)
+# Workspace initialization
 # =========================================================
-RUN set -eux; \
-    useradd -ms /bin/bash ubuntu || true; \
-    usermod -aG sudo ubuntu || true; \
-    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu; \
-    echo "ubuntu:ubuntu" | chpasswd || true
+RUN mkdir -p /workspace && chmod 777 /workspace /root
 
 # =========================================================
-# Python 3.11
+# Python 3.12 (build from source, with ensurepip)
 # =========================================================
 RUN set -eux; \
-    add-apt-repository ppa:deadsnakes/ppa -y; \
-    apt-get update -y; \
-    apt-get install -y --no-install-recommends \
-      python3.11 \
-      python3.11-venv \
-      python3.11-distutils; \
-    rm -rf /var/lib/apt/lists/*
+    PY_MM="3.12"; \
+    curl -fSL --retry 10 --retry-delay 2 --retry-all-errors \
+      "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz" \
+      -o /tmp/Python.tgz; \
+    mkdir -p /tmp/python-src; \
+    tar -xzf /tmp/Python.tgz -C /tmp/python-src --strip-components=1; \
+    rm -f /tmp/Python.tgz; \
+    cd /tmp/python-src; \
+    ./configure --with-ensurepip=install; \
+    make -j"$(nproc)"; \
+    make altinstall; \
+    cd /; \
+    rm -rf /tmp/python-src; \
+    ln -sf "/usr/local/bin/python${PY_MM}" /usr/bin/python; \
+    ln -sf "/usr/local/bin/python${PY_MM}" /usr/bin/python3; \
+    python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # =========================================================
-# Default Python -> 3.11
+# SkyRL + fsdp backend (from GitHub, using uv for override support)
 # =========================================================
 RUN set -eux; \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 311; \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 311; \
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.11; \
-    python3.11 -m pip install --no-cache-dir -U pip setuptools wheel
+    pip install --no-cache-dir uv; \
+    git clone --depth 1 https://github.com/NovaSky-AI/SkyRL.git /opt/skyrl; \
+    cd /opt/skyrl; \
+    printf '%s\n' \
+      'transformers>=5.0.0,<=5.3.0' \
+      'nvidia-resiliency-ext; sys_platform == "never"' \
+      'mamba-ssm; sys_platform == "never"' \
+      'causal-conv1d; sys_platform == "never"' \
+      > /tmp/overrides.txt; \
+    uv pip install --system --no-cache \
+      --index-strategy unsafe-best-match \
+      --extra-index-url https://download.pytorch.org/whl/cu128 \
+      --extra-index-url https://flashinfer.ai/whl/cu128 \
+      --override /tmp/overrides.txt \
+      -e ".[fsdp]"; \
+    rm -f /tmp/overrides.txt; \
+    rm -rf /opt/skyrl/.git
 
 # =========================================================
-# Python tools
+# Additional Python tools (Jupyter, monitoring, etc.)
 # =========================================================
-RUN set -eux; \
-    python -m pip install --no-cache-dir \
-      ray[default,data,train,tune,serve]==2.51.1 \
-      torch>=2.0.0 \
-      transformers \
-      datasets \
-      accelerate \
-      tensorboard \
-      wandb \
-      jupyterlab \
-      ipywidgets \
-      notebook \
-      huggingface_hub \
-      bitsandbytes \
-      unsloth
-
-# =========================================================
-# Megatron-LM (optional)
-# =========================================================
-RUN git clone --depth 1 https://github.com/NVIDIA/Megatron-LM.git /opt/megatron-lm && \
-    pip install -e /opt/megatron-lm
+RUN python -m pip install --no-cache-dir \
+      jupyterlab ipywidgets notebook \
+      tensorboard wandb \
+      bitsandbytes
 
 # =========================================================
 # nccl-tests
@@ -137,56 +155,22 @@ COPY README.md /usr/share/nginx/html/README.md
 # =========================================================
 # start.sh (must be kept as-is)
 # =========================================================
-COPY --from=scripts start.sh /start.sh
-RUN chmod 755 /start.sh
+COPY --from=scripts updated_start.sh /updated_start.sh
+RUN chmod 755 /updated_start.sh && \
+    sed -i 's/\r$//' /updated_start.sh
 
 # =========================================================
 # Branding
 # =========================================================
 COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /home/ubuntu/.bashrc || true
+RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc || true
 
 COPY SkyRL_Demo.ipynb /workspace/
-# =========================================================
-# post_start hook (important)
-# - Platform PID1 actually runs: sudo -E /start.sh
-# - ENTRYPOINT/CMD is unreliable; injecting via /post_start.sh is most stable
-# - No root dependency, does not touch /home/ubuntu, logs written to /workspace
-# =========================================================
-RUN set -eux; \
-  cat > /post_start.sh <<'SH'
-#!/usr/bin/env bash
-set -e
-
-LOG_DIR="/workspace"
-TB_LOG="${LOG_DIR}/tensorboard.log"
-
-# Log whether we were actually invoked
-echo "[post_start] invoked at $(date -Is) uid=$(id -u) gid=$(id -g)" >> "${TB_LOG}" 2>/dev/null || true
-
-# Avoid duplicate startup (on container restart or multiple invocations)
-if ss -lntp 2>/dev/null | grep -q ':6006'; then
-  echo "[post_start] tensorboard already listening on 6006" >> "${TB_LOG}" 2>/dev/null || true
-  exit 0
-fi
-
-# Start TensorBoard (background), append logs to /workspace (usually a writable volume)
-nohup tensorboard \
-  --logdir=/workspace \
-  --host=0.0.0.0 \
-  --port=6006 \
-  >> "${TB_LOG}" 2>&1 &
-
-sleep 1
-ss -lntp 2>/dev/null | grep 6006 >> "${TB_LOG}" 2>&1 || true
-echo "[post_start] tensorboard launch done at $(date -Is)" >> "${TB_LOG}" 2>/dev/null || true
-SH
-RUN chmod +x /post_start.sh
 
 # =========================================================
-# Permissions (avoid assuming /home/ubuntu is writable; /workspace is usually a writable mount)
+# Permissions (ensure /workspace is writable)
 # =========================================================
-RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu || true
+RUN chown -R root:root /workspace || true
 
 # =========================================================
 # Ports
@@ -194,7 +178,8 @@ RUN chown -R ubuntu:ubuntu /workspace /home/ubuntu || true
 EXPOSE 22 80 8888 6006
 
 # =========================================================
-# Entrypoint (may be overridden by the platform; keeping it is harmless)
+# Entrypoint: root runs updated_start.sh with explicit bash
 # =========================================================
-ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/bin/bash", "-lc", "echo 'Image ready. Platform will run /start.sh.'; sleep infinity"]
+USER root
+WORKDIR /root
+CMD ["/bin/bash", "-c", "exec /bin/bash /updated_start.sh"]

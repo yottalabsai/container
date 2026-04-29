@@ -1,4 +1,4 @@
-ARG BASE_IMAGE="nvidia/cuda:12.8.1-cudnn-devel-ubuntu22.04"
+ARG BASE_IMAGE="nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04"
 # hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
@@ -22,7 +22,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SHELL=/bin/bash \
     PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/nvidia/lib64:$LD_LIBRARY_PATH \
-    JUPYTER_PASSWORD=yotta
+    JUPYTER_PASSWORD=yotta \
+    # 问题6: 抑制 pip root 用户警告
+    PIP_ROOT_USER_ACTION=ignore \
+    # 问题4: uv 默认安装到系统 Python，无需每次加 --system
+    UV_SYSTEM_PYTHON=1
 
 # ===============================
 # Workspace
@@ -33,15 +37,18 @@ RUN mkdir -p /workspace && chmod 777 /workspace /root
 # ===============================
 # Base system packages
 # ===============================
+# 问题7b: 新增 cmake（编译 CUDA 扩展 / flash-attn 必需）
+# 问题8:  新增 nano（新手友好编辑器）、screen（后台会话）、nvtop（GPU 实时监控）
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
       git acl wget curl ca-certificates bash \
       libgl1 software-properties-common \
       locales tzdata \
       openssh-server nginx sudo \
-      tmux vim zsh zip unzip less procps net-tools htop \
+      tmux vim nano screen zsh zip unzip less procps net-tools htop \
       jq tree rsync netcat-openbsd \
-      build-essential pkg-config \
+      build-essential pkg-config cmake \
+      nvtop \
     && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
     && locale-gen \
     && mkdir -p /var/run/sshd /var/log/supervisor \
@@ -78,6 +85,9 @@ RUN set -eux; \
     && rm -rf /tmp/python-src \
     && ln -sf "/usr/local/bin/python${PY_MM}" /usr/bin/python \
     && ln -sf "/usr/local/bin/python${PY_MM}" /usr/bin/python3 \
+    # 问题3: 创建 pip / pip3 软链接，确保 `pip install` 直接可用
+    && ln -sf "/usr/local/bin/pip${PY_MM}" /usr/local/bin/pip \
+    && ln -sf "/usr/local/bin/pip${PY_MM}" /usr/local/bin/pip3 \
     && python -m pip install --no-cache-dir --upgrade pip setuptools wheel \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -95,9 +105,36 @@ RUN python -m pip install --no-cache-dir \
       huggingface-hub datasets
 
 # ===============================
+# 问题5: 科学计算与 ML 常用包（避免用户每写一行 import 就要停下来安装）
+# ===============================
+RUN python -m pip install --no-cache-dir \
+      numpy \
+      scipy \
+      pandas \
+      matplotlib \
+      Pillow \
+      scikit-learn \
+      opencv-python-headless \
+      tqdm \
+      transformers \
+      accelerate \
+      tokenizers \
+      safetensors \
+      tensorboard \
+      einops
+
+# ===============================
+# 问题4: 安装 uv（UV_SYSTEM_PYTHON=1 已在 ENV 中设置，直接 uv pip install 即可）
+# ===============================
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -sf /root/.local/bin/uv /usr/local/bin/uv && \
+    ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
+
+# ===============================
 # Build-time assertion: verify Jupyter installation
 # ===============================
 RUN python -c "import jupyter; import notebook; import jupyterlab; print('jupyter ok')"
+
 # ===============================
 # Configure JupyterLab: auto-login with token (no password prompt)
 # ===============================
@@ -121,7 +158,6 @@ RUN set -eux; \
     make -C /opt/nccl-tests -j"$(nproc)" MPI=0; \
     ln -sf /opt/nccl-tests/build/* /usr/local/bin/; \
     rm -rf /opt/nccl-tests/.git
-
 
 # ===============================
 # CUDA bin convenience
@@ -148,7 +184,16 @@ COPY --from=proxy readme.html /usr/share/nginx/html/readme.html
 COPY README.md /usr/share/nginx/html/README.md
 
 COPY --from=logo yotta.txt /etc/yotta.txt
-RUN echo 'cat /etc/yotta.txt' >> /root/.bashrc
+
+# 问题9: branding 写入 /etc/profile（对所有登录 shell 生效，包括 SSH 直接登录）
+# 同时保留 .bashrc（兼容交互式非登录 shell）
+RUN echo 'cat /etc/yotta.txt' >> /etc/profile && \
+    echo 'cat /etc/yotta.txt' >> /root/.bashrc
+
+# 问题7(SSH/Jupyter 身份一致): 强制 SSH 以 root 登录，与 Jupyter 保持一致
+# 注意: updated_start.sh 中若有创建非 root 用户的逻辑，需同步移除
+RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && \
+    echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
 
 # ===============================
 # Ports (avoid inline comments to prevent containerPort parsing failures on some platforms)

@@ -1,5 +1,5 @@
 variable "PUBLISHER"  { default = "yottalabsai" }
-variable "TAG_SUFFIX" { default = "2026031701" }
+variable "TAG_SUFFIX" { default = "20260429" }
 
 group "default" {
   targets = ["pytorch290"]
